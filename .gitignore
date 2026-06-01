@@ -29,6 +29,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Builds and simulator output
+*.ehpk
 dist/
 build/
 .vite/

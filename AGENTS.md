@@ -106,7 +106,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
   - `npm run typecheck --prefix web`
   - `npm test --prefix web`
   - `npm run build:tailscale --prefix web`
-  - `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o even-telegram-0.1.1.ehpk`
+  - `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o even-telegram-0.1.2.ehpk`
 - Even Hub simulator smoke validation passes for startup rendering, automation health, screenshot capture, and click input. With no Telegram credentials configured, the expected QR-login error screen renders cleanly.
 - Telegram app credentials have been configured locally in ignored `server/.env`.
 - QR login now uses a backend pending-login state, background Telethon wait task, status endpoint, and local PNG QR endpoint. Simulator validation confirms the browser/debug view shows a scannable QR code.
@@ -126,7 +126,8 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Sending a message refreshes the newest page before display; incoming replies detected while reading older pages automatically jump the message view back to the newest/bottom page, while unchanged polls leave older pages in place.
 - Tailscale is the default device-test backend route. `TAILSCALE_ENABLED=true` enables CORS for Tailscale 100.64.0.0/10 origins, and `npm run configure:tailscale --prefix web` writes `web/.env.local` plus updates `app.json` with the detected backend origin.
 - Device input mapping now runs raw Even Hub events through the SDK parser and a fallback mapper that accepts proto-style keys, snake_case keys, numeric strings, and press/tap aliases. This is intended to handle real G2 payloads where list scrolling works but single-click selection is not shaped like the simulator event.
-- A hardware-test package has been built at `even-telegram-0.1.1.ehpk` after the device click-mapping fix.
+- The app manifest version has been bumped to `0.1.2` so the packaged `.ehpk` metadata now matches the file name.
+- A hardware-test package has been built at `even-telegram-0.1.2.ehpk` after the device click-mapping fix.
 - Real Telegram login has succeeded and `server/data/telegram.session` is present locally.
 - Real chat loading, forum topic listing, and forum topic message loading have been validated against the Akira Agents group. For Telethon 1.43, forum message history uses the forum `topic.id`, not `topMessageId`; `topMessageId` remains part of the DTO for display/debug context.
 - Frontend now ignores too-short/all-zero simulator audio recordings instead of invoking Whisper on silent audio.
@@ -140,6 +141,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Single-click and double-click cannot be handled as immediate independent events without coalescing. Single-click actions must wait briefly for the double-click window, otherwise double press is seen as two single presses.
 - List selection state should not trigger a full list rebuild on every swipe. Rebuilding can snap selection back to the first item and cause stale chat/topic openings.
 - List click handling should prefer the selected index from the click event when present. Relying only on controller state can open the wrong item after hardware-side scrolling.
+- On real G2 hardware, a list click may surface only as a selection event with the same index already highlighted. Chats/topics should interpret `selectIndex` on the current item as a press so users can open a thread without relying on simulator-style click payloads.
 - Message ordering must be normalized oldest-to-newest after every Telegram API response. Telegram pagination and new-message refreshes can otherwise make the visible conversation order appear jumbled.
 - The newest message page should be treated as the bottom boundary. Scrolling down at the bottom should stay there, not cycle pages or reload history in a way that changes order.
 - After send or incoming reply detection, the message view should jump to the newest/bottom page because that matches Telegram user expectations.
@@ -151,12 +153,13 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 
 ## Pending Checklist
 
-- Validate `even-telegram-0.1.1.ehpk` on real G2 hardware to confirm the broader click-event mapper fixes chat/topic selection.
+- Validate `even-telegram-0.1.2.ehpk` on real G2 hardware to confirm the broader click-event mapper fixes chat/topic selection.
 - If hardware clicks still fail, add a temporary debug screen or backend log endpoint that displays the raw last Even Hub event payload on the glasses/browser.
 - Add real Telegram update subscriptions or a server-sent events/WebSocket stream for incoming messages and typing indicators. Current behavior is polling/checking status, not true live typing presence.
 - Add production-grade backend process management for device testing, such as a launch script, `uvicorn` service wrapper, health check, and clearer restart instructions.
 - Decide whether production should use Tailscale HTTP, Tailscale Serve HTTPS, a LAN URL, or a hosted HTTPS backend. Update `app.json` whitelist and frontend config accordingly.
 - Add a package/version script that builds Tailscale output and writes a versioned `.ehpk` in one command.
+- Before every repack, bump `app.json` `version` first and delete stale `.ehpk` outputs so the workspace only keeps the latest package artifact.
 - Add on-device QA cases for phone locked/backgrounded, idle for 2+ minutes, returning from another phone app, root-page exit behavior, and recovery after backend disconnect.
 - Add stronger backend tests for real-ish Telethon forum topic pagination and send-message payloads using saved mocked entity fixtures.
 - Add a user-facing reconnect/retry state when the backend is unreachable after the packaged app launches.

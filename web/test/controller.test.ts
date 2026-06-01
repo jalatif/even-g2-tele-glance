@@ -96,6 +96,17 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'messages', topic: topics[1] })
   })
 
+  it('opens the currently selected chat when the glasses emit a selection-only click event', async () => {
+    const api = fakeApi({ authorized: true })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'selectIndex', index: 0 })
+
+    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, limit: 8 })
+    expect(controller.snapshot).toMatchObject({ screen: 'messages' })
+  })
+
   it('opens messages directly for normal chats', async () => {
     const api = fakeApi({ authorized: true })
     const controller = new TelegramAppController(api, fakeBridge())

@@ -52,6 +52,10 @@ export class TelegramAppController {
     }
 
     const state = this.state
+    if ((state.screen === 'chats' || state.screen === 'topics') && input.type === 'selectIndex' && input.index === state.selectedIndex) {
+      await this.dispatch({ type: 'press', index: input.index })
+      return
+    }
     switch (state.screen) {
       case 'auth':
         await this.handleAuth(state, input)
