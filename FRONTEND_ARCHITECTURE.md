@@ -61,9 +61,27 @@ The controller exposes phone-facing APIs in addition to glasses input dispatch:
 
 `sendTextFromPhone(text)` only works while the controller is in a state with an active message thread. It sends to the current chat/topic, refreshes newest messages, normalizes ordering, resets the visible pointer to latest, and re-renders glasses.
 
+## Glasses Message Projection
+
+`screenModel` is a glasses-only projection and owns the 576x288 constraints:
+
+- It builds bottom-anchored visible pages from the chronological message buffer.
+- Compact messages are grouped into full visible pages.
+- Messages over twenty-five words become structured boxed pages.
+- Multi-page boxed messages remain separate scroll stops until the user reaches the first/last page.
+- The returned `body` remains useful for the phone/debug pane, but the glasses bridge uses structured `box` metadata for native bordered containers.
+
+Avoid parsing ASCII/debug text to infer native glasses layout. That caused duplicated text-box content because the native container and the old marker format could both render.
+
+## Realtime Updates
+
+The backend exposes `/api/updates` as an SSE stream for Telegram message updates. The React context subscribes once, forwards matching updates to the shared controller, and the controller refreshes the active thread or root chats as needed.
+
 ## Hardware Notes
 
 The browser/debug pane and glasses display are not interchangeable for layout validation. The G2 display is not a true monospace grid, so long-message borders on glasses must use native `TextContainerProperty` borders rather than text-drawn rectangles.
+
+Hardware input can emit duplicate same-direction swipes. Event mapping debounces those bursts so one physical gesture advances one message page.
 
 ## Validation
 

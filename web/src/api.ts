@@ -8,6 +8,7 @@ import type {
   SendMessageRequest,
   SendMessageResponse,
   Topic,
+  TelegramUpdate,
   TranscriptionResult,
 } from './types'
 
@@ -20,6 +21,7 @@ export interface TelegramApi {
   listMessages(chatId: Id, options?: { topicId?: Id; beforeId?: Id; limit?: number }): Promise<Message[]>
   sendMessage(chatId: Id, request: SendMessageRequest): Promise<Message>
   transcribe(wav: Blob): Promise<TranscriptionResult>
+  subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event) => void): () => void
 }
 
 export function defaultApiBaseUrl() {
@@ -95,6 +97,16 @@ export class HttpTelegramApi implements TelegramApi {
     const form = new FormData()
     form.append('audio', wav, 'reply.wav')
     return this.request('/api/transcribe', { method: 'POST', body: form })
+  }
+
+  subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event) => void) {
+    if (typeof EventSource === 'undefined') return () => undefined
+    const source = new EventSource(`${this.baseUrl}/api/updates`)
+    source.addEventListener('message', (event) => {
+      onUpdate(JSON.parse(event.data) as TelegramUpdate)
+    })
+    if (onError) source.addEventListener('error', onError)
+    return () => source.close()
   }
 
   private get<T>(path: string): Promise<T> {

@@ -12,7 +12,7 @@ import { defaultApiBaseUrl } from '../api'
 import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
-export const APP_BUILD_VERSION = '0.1.24'
+export const APP_BUILD_VERSION = '0.1.28'
 
 type EvenBridgeOptions = {
   debugEventsEnabled?: () => boolean
@@ -85,8 +85,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
 type PageContainerClass = typeof CreateStartUpPageContainer | typeof RebuildPageContainer
 
 function buildTextPage(model: Extract<ScreenModel, { kind: 'text' }>, Container: PageContainerClass) {
-  const boxedBody = parseBoxedBody(model.body)
-  if (boxedBody && model.footer) return buildBoxedTextPage(model, boxedBody, Container)
+  if (model.box && model.footer) return buildBoxedTextPage(model, model.box, Container)
 
   const hasFooter = Boolean(model.footer)
   const title = new TextContainerProperty({
@@ -166,7 +165,7 @@ function buildBoxedTextPage(model: Extract<ScreenModel, { kind: 'text' }>, boxed
   const box = new TextContainerProperty({
     containerID: 5,
     containerName: 'msg-box',
-    content: trimForContainer(boxedBody.content, 999),
+    content: trimForContainer(formatBoxContent(boxedBody), 999),
     xPosition: 14,
     yPosition: 58,
     width: 548,
@@ -197,9 +196,7 @@ function buildBoxedTextPage(model: Extract<ScreenModel, { kind: 'text' }>, boxed
   })
 }
 
-type BoxedBody = {
-  content: string
-}
+type BoxedBody = NonNullable<Extract<ScreenModel, { kind: 'text' }>['box']>
 
 function buildListPage(model: Extract<ScreenModel, { kind: 'list' }>, Container: PageContainerClass) {
   const content = new TextContainerProperty({
@@ -288,25 +285,8 @@ function trimForContainer(value: string, maxLength: number) {
   return `${output}${suffix}`
 }
 
-function parseBoxedBody(body: string): BoxedBody | undefined {
-  const lines = body.split('\n')
-  if (lines.length < 5) return undefined
-  if (!isBoxBorder(lines[0]) || !isBoxBorder(lines[2]) || !isBoxBorder(lines[lines.length - 1])) return undefined
-
-  const heading = unboxLine(lines[1])
-  const message = lines.slice(3, -1).map(unboxLine).join(' ').replace(/\s+/g, ' ').trim()
-  return {
-    content: message ? `${heading}\n\n${message}` : heading,
-  }
-}
-
-function isBoxBorder(line: string) {
-  return /^\+-+\+$/.test(line)
-}
-
-function unboxLine(line: string) {
-  const withoutBars = line.startsWith('|') && line.endsWith('|') ? line.slice(1, -1) : line
-  return withoutBars.replace(/\u00a0/g, ' ').trim()
+function formatBoxContent(boxedBody: BoxedBody) {
+  return boxedBody.content ? `${boxedBody.heading}\n\n${boxedBody.content}` : boxedBody.heading
 }
 
 function formatListAsText(model: Extract<ScreenModel, { kind: 'list' }>) {

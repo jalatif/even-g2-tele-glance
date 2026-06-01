@@ -55,6 +55,13 @@ class MessageSummary(ApiModel):
     outgoing: bool = False
 
 
+class TelegramUpdate(ApiModel):
+    type: Literal["message"] = "message"
+    chat_id: int
+    topic_id: Optional[int] = None
+    message: MessageSummary
+
+
 class SendMessageRequest(ApiModel):
     text: str = Field(min_length=1)
     topic_id: Optional[int] = None

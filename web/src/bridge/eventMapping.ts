@@ -33,9 +33,12 @@ export function createInputCoalescer(
   onInput: (input: AppInput) => void | Promise<void>,
   duplicateTapDebounceMs = 90,
   tapCooldownMs = 220,
+  duplicateSwipeDebounceMs = 220,
 ) {
   let lastTapTime = 0
   let lastTapKind: 'press' | 'doublePress' | undefined
+  let lastSwipeTime = 0
+  let lastSwipeKind: 'swipeUp' | 'swipeDown' | undefined
 
   function emit(input: AppInput) {
     void onInput(input)
@@ -63,6 +66,18 @@ export function createInputCoalescer(
 
       lastTapTime = now
       lastTapKind = 'press'
+      emit(input)
+      return
+    }
+
+    if (input.type === 'swipeUp' || input.type === 'swipeDown') {
+      const now = Date.now()
+      const elapsed = now - lastSwipeTime
+
+      if (lastSwipeKind === input.type && elapsed < duplicateSwipeDebounceMs) return
+
+      lastSwipeTime = now
+      lastSwipeKind = input.type
       emit(input)
       return
     }

@@ -10,9 +10,11 @@ from app.models import (
     MessageSummary,
     QrLoginStart,
     SendMessageResponse,
+    TelegramUpdate,
     TopicSummary,
     TranscriptionResponse,
 )
+from app.services.telegram import TelegramServiceTimeoutError
 
 
 class FakeTelegramService:
@@ -59,6 +61,17 @@ class FakeTelegramService:
         self.sent.append({"chat_id": chat_id, "text": text, "topic_id": topic_id})
         return SendMessageResponse(id=55)
 
+    async def update_events(self):
+        yield TelegramUpdate(
+            chat_id=1,
+            message=MessageSummary(
+                id=9,
+                sender="Ada",
+                text="Streamed",
+                sent_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        )
+
 
 class FakeTranscriptionService:
     def __init__(self):
@@ -67,6 +80,14 @@ class FakeTranscriptionService:
     async def transcribe_wav(self, wav_bytes):
         self.payloads.append(wav_bytes)
         return TranscriptionResponse(text="send the update", language="en", duration_seconds=0.5)
+
+
+class TimeoutTelegramService(FakeTelegramService):
+    async def auth_status(self):
+        raise TelegramServiceTimeoutError("Telegram request timed out. Please retry.")
+
+    async def list_chats(self, limit):
+        raise TelegramServiceTimeoutError("Telegram request timed out. Please retry.")
 
 
 @pytest.fixture
@@ -95,6 +116,23 @@ async def test_auth_status_without_session(app):
         "authorized": False,
         "qrLoginAvailable": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_telegram_timeout_returns_gateway_timeout(fake_services):
+    _, transcription = fake_services
+    app = create_app()
+    app.dependency_overrides[get_telegram_service] = lambda: TimeoutTelegramService()
+    app.dependency_overrides[get_transcription_service] = lambda: transcription
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        auth = await client.get("/api/auth/status")
+        chats = await client.get("/api/chats?limit=5")
+
+    assert auth.status_code == 504
+    assert chats.status_code == 504
+    assert auth.json() == {"detail": "Telegram request timed out. Please retry."}
+    assert chats.json() == {"detail": "Telegram request timed out. Please retry."}
 
 
 @pytest.mark.asyncio
@@ -164,6 +202,19 @@ async def test_debug_events_skip_audio_chunks(app):
     assert response.status_code == 200
     assert response.json() == {"count": 0}
     assert events.json() == []
+
+
+@pytest.mark.asyncio
+async def test_updates_stream_emits_sse_message(app):
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/updates")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: message" in response.text
+    assert '"chatId":1' in response.text
+    assert '"text":"Streamed"' in response.text
 
 
 @pytest.mark.asyncio

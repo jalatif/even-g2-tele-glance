@@ -1,17 +1,23 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional, Protocol
+from typing import Any, AsyncIterator, Optional, Protocol
 
 from app.config import Settings
-from app.models import ChatSummary, MessageSummary, QrLoginStart, QrLoginStatus, SendMessageResponse, TopicSummary
+from app.models import ChatSummary, MessageSummary, QrLoginStart, QrLoginStatus, SendMessageResponse, TelegramUpdate, TopicSummary
 
 
 class TelegramServiceError(RuntimeError):
     pass
 
 
+class TelegramServiceTimeoutError(TelegramServiceError):
+    pass
+
+
 def wrap_telegram_error(exc: Exception) -> TelegramServiceError:
+    if isinstance(exc, TimeoutError):
+        return TelegramServiceTimeoutError("Telegram request timed out. Please retry.")
     return TelegramServiceError(str(exc) or exc.__class__.__name__)
 
 
@@ -51,6 +57,9 @@ class TelegramService(Protocol):
         text: str,
         topic_id: Optional[int] = None,
     ) -> SendMessageResponse:
+        ...
+
+    def update_events(self) -> AsyncIterator[TelegramUpdate]:
         ...
 
 
@@ -112,6 +121,14 @@ def normalize_message(message: Any, entities_by_peer: Optional[dict[int, Any]] =
     )
 
 
+def normalize_update_message(message: Any, chat_id: Optional[int] = None) -> TelegramUpdate:
+    return TelegramUpdate(
+        chat_id=int(chat_id if chat_id is not None else getattr(message, "chat_id", 0)),
+        topic_id=_message_topic_id(message),
+        message=normalize_message(message),
+    )
+
+
 def _entity_lookup(entities: list[Any]) -> dict[int, Any]:
     lookup: dict[int, Any] = {}
     for entity in entities:
@@ -151,6 +168,17 @@ def _message_peer_key(message: Any) -> Optional[int]:
         return int(utils.get_peer_id(peer))
     except Exception:
         return None
+
+
+def _message_topic_id(message: Any) -> Optional[int]:
+    reply_to = getattr(message, "reply_to", None)
+    if reply_to is None:
+        return None
+    for attr in ("reply_to_top_id", "reply_to_msg_id", "forum_topic_id"):
+        value = getattr(reply_to, attr, None)
+        if value is not None:
+            return int(value)
+    return None
 
 
 def qr_login_start_from_telethon(qr_login: Any) -> QrLoginStart:
@@ -193,6 +221,8 @@ class TelethonTelegramService:
         self._client = None
         self._qr_login = None
         self._qr_login_task: Optional[asyncio.Task] = None
+        self._update_queues: set[asyncio.Queue[TelegramUpdate]] = set()
+        self._updates_registered = False
 
     @property
     def configured(self) -> bool:
@@ -215,7 +245,44 @@ class TelethonTelegramService:
             )
         if not self._client.is_connected():
             await self._client.connect()
+        await self._ensure_update_handler()
         return self._client
+
+    async def _ensure_update_handler(self) -> None:
+        if self._updates_registered or self._client is None:
+            return
+        try:
+            from telethon import events
+        except ImportError as exc:
+            raise TelegramServiceError("Telethon update API is unavailable") from exc
+
+        self._client.add_event_handler(self._handle_new_message, events.NewMessage())
+        self._updates_registered = True
+
+    async def _handle_new_message(self, event: Any) -> None:
+        if not self._update_queues:
+            return
+        message = getattr(event, "message", None)
+        if message is None:
+            return
+        update = normalize_update_message(message, getattr(event, "chat_id", None))
+        for queue in list(self._update_queues):
+            try:
+                queue.put_nowait(update)
+            except asyncio.QueueFull:
+                pass
+
+    async def update_events(self) -> AsyncIterator[TelegramUpdate]:
+        client = await self._get_client()
+        if not await client.is_user_authorized():
+            raise TelegramServiceError("Telegram session is not authorized")
+        queue: asyncio.Queue[TelegramUpdate] = asyncio.Queue(maxsize=50)
+        self._update_queues.add(queue)
+        try:
+            while True:
+                yield await queue.get()
+        finally:
+            self._update_queues.discard(queue)
 
     async def auth_status(self) -> dict[str, bool]:
         if not self.configured:

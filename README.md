@@ -17,10 +17,14 @@ Backend:
 ```sh
 cd server
 python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements-dev.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8787
+.venv/bin/pip install -r requirements-dev.txt
+cd ..
+scripts/start-backend.sh --reload
 ```
+
+Use the repo-local launcher rather than plain `uvicorn`. Plain `uvicorn` can
+silently use another active virtualenv, which will fail at runtime with missing
+backend dependencies such as Telethon.
 
 Frontend:
 
@@ -54,6 +58,10 @@ npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o even-telegram-<ve
 ```
 
 Hardware-specific implementation notes are maintained in [EVEN_REALITIES_HW.md](EVEN_REALITIES_HW.md). In particular, the G2 glasses display does not render text as a true monospace grid, so long-message blocks use native `TextContainerProperty` borders instead of text-drawn rectangles.
+
+Current glasses message rendering uses full visible-page scrolling for compact
+messages and native bordered text boxes for messages over twenty-five words.
+Telegram timeout responses from the backend are retryable `504` errors.
 
 ## Required Environment
 

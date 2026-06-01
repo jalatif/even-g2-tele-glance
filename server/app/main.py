@@ -1,6 +1,7 @@
 from collections import deque
 from datetime import datetime, timezone
 from io import BytesIO
+import json
 from typing import Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
@@ -19,11 +20,18 @@ from app.models import (
     SendMessageRequest,
     SendMessageResponse,
     TopicSummary,
+    TelegramUpdate,
     TranscriptionResponse,
 )
 from app.services.audio import pcm16le_to_wav
-from app.services.telegram import TelegramService, TelegramServiceError
+from app.services.telegram import TelegramService, TelegramServiceError, TelegramServiceTimeoutError
 from app.services.transcription import TranscriptionServiceError, WhisperTranscriptionService
+
+
+def raise_telegram_http_error(exc: Exception) -> None:
+    if isinstance(exc, (TelegramServiceTimeoutError, TimeoutError)):
+        raise HTTPException(status_code=504, detail=str(exc) or "Telegram request timed out. Please retry.") from exc
+    raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -66,7 +74,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def auth_status(
         telegram: TelegramService = Depends(get_telegram_service),
     ) -> AuthStatus:
-        return AuthStatus(**await telegram.auth_status())
+        try:
+            return AuthStatus(**await telegram.auth_status())
+        except (TelegramServiceError, TimeoutError) as exc:
+            raise_telegram_http_error(exc)
 
     @api.post("/api/auth/qr/start", response_model=QrLoginStart)
     async def start_qr_login(
@@ -75,7 +86,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         try:
             return await telegram.start_qr_login()
         except (TelegramServiceError, TimeoutError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise_telegram_http_error(exc)
 
     @api.get("/api/auth/qr/status", response_model=QrLoginStatus)
     async def qr_login_status(
@@ -84,7 +95,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         try:
             return await telegram.qr_login_status()
         except (TelegramServiceError, TimeoutError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise_telegram_http_error(exc)
 
     @api.get("/api/auth/qr/image")
     async def qr_login_image(
@@ -104,7 +115,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 headers={"Cache-Control": "no-store, max-age=0"},
             )
         except (TelegramServiceError, TimeoutError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise_telegram_http_error(exc)
 
     @api.get("/api/chats", response_model=list[ChatSummary])
     async def list_chats(
@@ -114,7 +125,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         try:
             return await telegram.list_chats(limit=limit)
         except (TelegramServiceError, TimeoutError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise_telegram_http_error(exc)
 
     @api.get("/api/chats/{chat_id}/topics", response_model=list[TopicSummary])
     async def list_topics(
@@ -123,8 +134,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     ) -> list[TopicSummary]:
         try:
             return await telegram.list_topics(chat_id)
-        except TelegramServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (TelegramServiceError, TimeoutError) as exc:
+            raise_telegram_http_error(exc)
 
     @api.get("/api/chats/{chat_id}/messages", response_model=list[MessageSummary])
     async def list_messages(
@@ -141,8 +152,30 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 before_id=before_id,
                 limit=limit,
             )
-        except TelegramServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (TelegramServiceError, TimeoutError) as exc:
+            raise_telegram_http_error(exc)
+
+    @api.get("/api/updates")
+    async def stream_updates(
+        telegram: TelegramService = Depends(get_telegram_service),
+    ) -> StreamingResponse:
+        async def events():
+            try:
+                async for update in telegram.update_events():
+                    payload = update.model_dump_json(by_alias=True)
+                    yield f"event: message\ndata: {payload}\n\n"
+            except TelegramServiceError as exc:
+                payload = json.dumps({"detail": str(exc)})
+                yield f"event: error\ndata: {payload}\n\n"
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-store",
+                "Connection": "keep-alive",
+            },
+        )
 
     @api.post("/api/chats/{chat_id}/messages", response_model=SendMessageResponse)
     async def send_message(
@@ -152,8 +185,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     ) -> SendMessageResponse:
         try:
             return await telegram.send_message(chat_id, text=payload.text, topic_id=payload.topic_id)
-        except TelegramServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (TelegramServiceError, TimeoutError) as exc:
+            raise_telegram_http_error(exc)
 
     @api.post("/api/transcribe", response_model=TranscriptionResponse)
     async def transcribe(

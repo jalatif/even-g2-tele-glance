@@ -5,6 +5,7 @@ These notes capture hardware-specific implementation details and quirks observed
 ## Packaging And Runtime
 
 - The `.ehpk` package contains the frontend and `app.json` manifest only. The FastAPI backend is not packaged and must keep running somewhere reachable from the phone/glasses path.
+- Start the backend with `scripts/start-backend.sh --reload` from the repo root, or `../scripts/start-backend.sh --reload` from `server/`. Do not use plain `uvicorn`; it can resolve from another active virtualenv and then fail with missing dependencies such as `ModuleNotFoundError: No module named 'telethon'`.
 - For local hardware testing, Tailscale has been the practical default route:
   - `npm run configure:tailscale --prefix web`
   - `npm run build:tailscale --prefix web`
@@ -42,8 +43,14 @@ These notes capture hardware-specific implementation details and quirks observed
 - While asleep, keep root chat polling active. A changed recent chat with unread count should wake the display into a `New Telegram` prompt; clicking that prompt should open the target chat, and for forum chats it should resolve the first unread topic when available.
 - Manual wake from the app-level asleep screen should only respond to double-click. Single click, swipe, and foreground events should leave the app asleep and re-request screen-off so accidental touches do not turn the display back on.
 - Long message display should include visible block markers before and after each message. Splitting long messages into chunks without separators makes it hard to tell where a Telegram message begins or ends while scrolling.
-- Messages over ten words read better as fixed-width text boxes on G2. Keep short messages compact as `Sender: text`; render long messages with full rectangle box-drawing borders, a sender header, and wrapped content rows.
-- Long-message boxes should paginate as complete rectangles. Each scroll stop should include top border, sender/header, content rows, and bottom border so text never appears outside the box while reading through a long message.
+- Messages over roughly twenty-five words read better as fixed-width/native-bordered text boxes on G2. Keep short messages compact as `Sender: text`; render longer messages with a sender header and wrapped content rows inside a native `TextContainerProperty` border.
+- Do not infer native text-box content by parsing text-drawn ASCII boxes from the glasses body. Keep a structured `box` projection alongside the debug/body text so the bridge can send clean `heading`/`content` to the native bordered container. Otherwise the glasses can show both the native box and old `+---` marker format.
+- Long-message boxes should paginate as complete rectangles. Each scroll stop should include exactly one boxed page so text never appears outside the box while reading through a long message.
+- Compact/non-box messages should scroll by full visible pages, not by individual message blocks. If each short message is its own scroll unit, repeated swipes make the latest page appear to shed one message at a time before a whole-page jump.
+- Boxed-message pages and compact-message pages need different scroll semantics:
+  - Inside a multi-page boxed message, swipe up/down should move one box page at a time.
+  - At the first/last boxed page, the next swipe should move to the adjacent message/page.
+  - For compact messages, one swipe should move to the previous/next visible page.
 - The frontend message window must be both byte-bounded and visible-line-bounded. Sending a latest page that is under `999` bytes but taller than the body container lets firmware keep its own internal scroll position, so `scrollOffset: 0` may show the last page but not the actual last message. Keep the model output to the visible row count so the newest window ends at the latest message marker.
 - Message content and control hints should be separate containers where possible. This avoids mixing scrollable message text with footer/control text.
 
@@ -85,6 +92,7 @@ These notes capture hardware-specific implementation details and quirks observed
   - duplicate double-tap debounce around `140ms`
   - tap cooldown around `220ms`
 - Scroll events may also duplicate on hardware. Caduceus suppresses repeated same-direction scrolls for a short window and suppresses spurious scrolls shortly after text updates.
+- Same-direction swipe bursts should be debounced before reaching the controller. Without this, a single physical Up gesture can emit multiple `swipeUp` inputs and skip through all pages of a long boxed message.
 
 ## Audio
 
@@ -123,6 +131,7 @@ These notes capture hardware-specific implementation details and quirks observed
   - Confirm `build_version` is the expected package version.
   - If the version is stale or null, fully remove/reinstall the packaged app.
   - If no events appear at all, use ADB/logcat because the WebView may not be receiving the event.
+- Telethon operations wrapped with `asyncio.wait_for` can time out transiently when the phone/glasses repeatedly hit chat/message endpoints. Treat these as retryable backend service timeouts (`504`) rather than `400 Bad Request` or `500`, and keep the glasses error copy retry-oriented.
 
 ## Telegram-Specific Hardware Validation
 

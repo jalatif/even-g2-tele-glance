@@ -92,4 +92,22 @@ describe('mapEvenHubEvent', () => {
     expect(onInput).toHaveBeenNthCalledWith(2, { type: 'doublePress' })
     vi.useRealTimers()
   })
+
+  it('debounces duplicate same-direction swipe bursts', () => {
+    vi.useFakeTimers()
+    const onInput = vi.fn()
+    const coalesce = createInputCoalescer(onInput, 90, 220, 250)
+
+    coalesce({ type: 'swipeUp' })
+    coalesce({ type: 'swipeUp' })
+    coalesce({ type: 'swipeDown' })
+    vi.advanceTimersByTime(251)
+    coalesce({ type: 'swipeUp' })
+
+    expect(onInput).toHaveBeenCalledTimes(3)
+    expect(onInput).toHaveBeenNthCalledWith(1, { type: 'swipeUp' })
+    expect(onInput).toHaveBeenNthCalledWith(2, { type: 'swipeDown' })
+    expect(onInput).toHaveBeenNthCalledWith(3, { type: 'swipeUp' })
+    vi.useRealTimers()
+  })
 })

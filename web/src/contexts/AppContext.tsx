@@ -34,6 +34,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
     let unsubscribe: (() => void) | undefined
+    let unsubscribeUpdates: (() => void) | undefined
 
     async function start() {
       try {
@@ -51,6 +52,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (active) setState(next)
         })
         await controller.init()
+        unsubscribeUpdates = api.subscribeUpdates((update) => {
+          void controller.handleTelegramUpdate(update)
+        })
       } catch (error) {
         if (active) setStartupError(error instanceof Error ? error.message : 'Startup failed')
       }
@@ -60,6 +64,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
       unsubscribe?.()
+      unsubscribeUpdates?.()
     }
   }, [])
 

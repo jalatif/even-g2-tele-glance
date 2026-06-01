@@ -42,6 +42,13 @@ export type Message = {
   outgoing?: boolean
 }
 
+export type TelegramUpdate = {
+  type: 'message'
+  chatId: Id
+  topicId?: Id | null
+  message: Message
+}
+
 export type SendMessageRequest = {
   text: string
   topicId?: Id

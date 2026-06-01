@@ -9,8 +9,7 @@ only talks to normalized local API endpoints.
 ```bash
 cd server
 python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements-dev.txt
+.venv/bin/pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
@@ -20,13 +19,28 @@ The default Telethon session path is `server/data/telegram.session`.
 ## Run
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8787
+../scripts/start-backend.sh --reload
 ```
+
+The launcher always uses `server/.venv/bin/python -m uvicorn`. Avoid running
+plain `uvicorn`; it can come from another virtualenv and then fail to import
+Telethon or Whisper dependencies.
+
+## Error Handling
+
+Telegram network calls are wrapped with bounded timeouts. Transient Telethon
+timeouts are returned as `504 Gateway Timeout` with retryable copy instead of
+`400 Bad Request`, because they usually mean Telegram or the local network was
+slow rather than the frontend sent an invalid request.
+
+The `/api/updates` endpoint streams Telegram message updates as server-sent
+events. Clients should treat stream errors as recoverable and fall back to
+normal refresh/poll behavior.
 
 ## Test
 
 ```bash
-python -m pytest ../tests/backend
+PYTHONPYCACHEPREFIX=../.pycache .venv/bin/python -m pytest ../tests/backend
 ```
 
 Tests use fake Telegram and Whisper services; they do not need credentials, network

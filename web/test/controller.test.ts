@@ -227,7 +227,7 @@ describe('TelegramAppController', () => {
       screen: 'messages',
       messages: [...olderMessages, ...messages],
       cursor: 80,
-      scrollOffset: 1,
+      scrollOffset: 0,
     })
   })
 
@@ -260,7 +260,7 @@ describe('TelegramAppController', () => {
       screen: 'messages',
       messages: [...olderMessages, ...[...reversedMessages].reverse()],
       cursor: 80,
-      scrollOffset: 2,
+      scrollOffset: 0,
       isNewestPage: false,
     })
   })
@@ -304,6 +304,40 @@ describe('TelegramAppController', () => {
       cursor: 80,
       isNewestPage: true,
       status: 'New reply',
+    })
+  })
+
+  it('refreshes the active message thread when a server update arrives', async () => {
+    let latestMessages = reversedMessages
+    const newReply: Message = { id: '103', sender: 'Bob', text: 'streamed reply', sentAt: '2026-05-29T10:03:00Z' }
+    const api = fakeApi({ authorized: true, latestMessages: () => latestMessages })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' })
+    latestMessages = [newReply, ...reversedMessages]
+    await controller.handleTelegramUpdate({ type: 'message', chatId: '1', message: newReply })
+
+    expect(controller.snapshot).toMatchObject({
+      screen: 'messages',
+      status: 'New reply',
+      messages: [...reversedMessages, newReply].sort((left, right) => Number(left.id) - Number(right.id)),
+    })
+  })
+
+  it('refreshes root chats when a server update arrives on the chat list', async () => {
+    let currentChats = chats
+    const api = fakeApi({ authorized: true, chats: () => currentChats })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    currentChats = [{ ...chats[0], unreadCount: 1, lastMessage: 'streamed root' }, chats[1]]
+    await controller.handleTelegramUpdate({ type: 'message', chatId: '1', message: { id: '200', sender: 'Alice', text: 'streamed root' } })
+
+    expect(controller.snapshot).toMatchObject({
+      screen: 'newMessage',
+      chat: expect.objectContaining({ id: '1' }),
+      message: 'streamed root',
     })
   })
 
@@ -427,6 +461,7 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
       outgoing: true,
     })),
     transcribe: vi.fn(async () => options.transcription ?? { text: '' }),
+    subscribeUpdates: vi.fn(() => () => undefined),
   }
 }
 

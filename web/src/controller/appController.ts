@@ -1,6 +1,6 @@
 import { pcmChunksToWav } from '../audio/wav'
 import type { TelegramApi } from '../api'
-import type { Chat, Message, Topic } from '../types'
+import type { Chat, Message, TelegramUpdate, Topic } from '../types'
 import type { AppInput, AppState, RecoverableState, ScreenModel } from './model'
 import { messageScrollUnitCount, screenModel } from './model'
 
@@ -112,6 +112,17 @@ export class TelegramAppController {
         scrollOffset: 0,
       })
     }, thread.back)
+  }
+
+  async handleTelegramUpdate(update: TelegramUpdate) {
+    const state = this.state
+    if (state.screen === 'chats' || state.screen === 'asleep' || state.screen === 'newMessage') {
+      await this.refreshRootChats()
+      return
+    }
+    if (state.screen === 'messages' && updateMatchesThread(update, state)) {
+      await this.refreshVisibleMessages()
+    }
   }
 
   async init() {
@@ -884,6 +895,13 @@ function maxScrollOffset(messages: Message[]) {
 
 function messageThreadKey(state: { chat: Chat; topic?: Topic }) {
   return `${String(state.chat.id)}:${String(topicThreadId(state.topic) ?? '')}`
+}
+
+function updateMatchesThread(update: TelegramUpdate, state: { chat: Chat; topic?: Topic }) {
+  if (String(update.chatId) !== String(state.chat.id)) return false
+  const stateTopic = topicThreadId(state.topic)
+  if (stateTopic === undefined) return update.topicId === undefined || update.topicId === null
+  return String(update.topicId ?? '') === String(stateTopic)
 }
 
 function chatFingerprint(chat: Chat) {
