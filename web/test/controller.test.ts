@@ -209,9 +209,21 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[1] })
   })
 
-  it('opens the currently selected chat when the glasses emit a selection-only click event', async () => {
-    const api = fakeApi({ authorized: true })
+  it('ignores an initial selection-only event emitted by the native list render', async () => {
+    const api = fakeApi({ authorized: true, chats: [chats[1], chats[0]] })
     const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'selectIndex', index: 0 })
+
+    expect(api.listTopics).not.toHaveBeenCalled()
+    expect(api.listMessages).not.toHaveBeenCalled()
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0 })
+  })
+
+  it('opens the currently selected chat when the glasses emit an armed selection-only click event', async () => {
+    const api = fakeApi({ authorized: true })
+    const controller = new TelegramAppController(api, fakeBridge(), { selectionOnlyPressDelayMs: 0 })
 
     await controller.init()
     await controller.dispatch({ type: 'selectIndex', index: 0 })

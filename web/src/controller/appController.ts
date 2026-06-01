@@ -19,6 +19,7 @@ const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePollMs: 3000,
   chatPollMs: 5000,
   recordingMinDurationMs: 900,
+  selectionOnlyPressDelayMs: 600,
 }
 
 export type ControllerRuntimeConfig = {
@@ -26,6 +27,7 @@ export type ControllerRuntimeConfig = {
   messagePollMs: number
   chatPollMs: number
   recordingMinDurationMs: number
+  selectionOnlyPressDelayMs: number
 }
 
 type StateListener = (state: AppState) => void
@@ -52,6 +54,7 @@ export class TelegramAppController {
   private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
   private topicPreviewInFlight = new Set<string>()
   private readAckMaxIds = new Map<string, Id>()
+  private selectionOnlyPressReadyAt = 0
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -181,7 +184,7 @@ export class TelegramAppController {
     const state = this.state
     if (state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics') && input.type === 'selectIndex') {
       const idx = state.focus === 'chats' ? state.selectedChatIndex : state.selectedTopicIndex
-      if (input.index === idx) {
+      if (input.index === idx && Date.now() >= this.selectionOnlyPressReadyAt) {
         await this.dispatch({ type: 'press', index: input.index })
         return
       }
@@ -975,6 +978,9 @@ export class TelegramAppController {
 
   private async setState(state: AppState) {
     this.state = state
+    if (state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics')) {
+      this.selectionOnlyPressReadyAt = Date.now() + this.runtimeConfig.selectionOnlyPressDelayMs
+    }
     this.syncMessagePolling()
     this.syncChatPolling()
     this.notify()

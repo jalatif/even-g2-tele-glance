@@ -147,6 +147,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Viewing a message page or selected topic preview now posts `/api/chats/{chat_id}/read` with the newest visible message id. Normal chats use Telethon read acknowledgements; forum topics use `messages.ReadDiscussionRequest`.
 - Read acknowledgements optimistically clear local unread badges for the opened chat/topic. For loaded forum topics, the parent chat unread count becomes the sum of the other still-unread topics, and saved back targets are updated so stale badges do not return after navigating back.
 - Read acknowledgements are deduped per thread/newest visible message id and only sent for locally unread threads or newly arrived active-thread messages. Local unread clearing is folded into the same render that displays messages, avoiding an extra immediate glasses render.
+- Selection-only list events are armed after a short delay when chat/topic lists render. This preserves hardware selection-only click support while ignoring initial native list selection events that can otherwise auto-open the first startup chat.
 
 ## Observed Issues and Learnings
 
@@ -170,6 +171,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Fetching preview messages for every forum topic inside `/topics` scales poorly. A serial 20-topic preview loop can stall the glasses for a long time; return topic metadata first and preview only the selected topic.
 - Forum read state has two visible layers: the selected topic badge and the parent chat badge. Clearing only the topic creates a stale group unread count, so local read handling must propagate to the chat list and any saved navigation/back state.
 - Read acknowledgements are part of the UI hot path on glasses. Sending them for every selected preview, including already-read topics, can make topic scrolling feel slow because each swipe can add backend/Telegram work; gate and dedupe read calls aggressively.
+- Native list containers may emit a selection-only event for the already-selected row during initial render. Treating that immediately as a press can make startup appear frozen by auto-opening a forum chat and launching topic/message fetches before the user clicks.
 - For device testing, the backend is not packaged into `.ehpk`. The `.ehpk` contains the frontend and manifest; the FastAPI backend must stay running and reachable from the phone/glasses path.
 - Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and the frontend's configured backend URL.
 - Simulator microphone input can produce silent/all-zero audio. Guarding that path avoids unnecessary Whisper calls and confusing transcription errors during simulator validation.
