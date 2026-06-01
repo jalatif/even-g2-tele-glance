@@ -42,9 +42,17 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     const sdk = (await waitForEvenAppBridge()) as unknown as EvenBridgeInstance
     const adapter = new EvenHubGlassesBridge(sdk)
     const dispatchInput = createInputCoalescer(onInput)
+    let debugLogInFlight = false
     sdk.onEvenHubEvent((event) => {
       const input = mapEvenHubEvent(event as Parameters<typeof mapEvenHubEvent>[0])
-      if ((options.debugEventsEnabled?.() ?? true) && input?.type !== 'audioChunk') void logHardwareEvent(event, input, options.authConfig)
+      if ((options.debugEventsEnabled?.() ?? false) && input?.type !== 'audioChunk' && !debugLogInFlight) {
+        debugLogInFlight = true
+        setTimeout(() => {
+          void logHardwareEvent(event, input, options.authConfig).finally(() => {
+            debugLogInFlight = false
+          })
+        }, 0)
+      }
       if (input) dispatchInput(input)
     })
     return adapter

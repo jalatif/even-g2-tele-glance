@@ -256,6 +256,41 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
   })
 
+  it('shows loading immediately while opening a chat with slow messages', async () => {
+    const messagePage = deferred<Message[]>()
+    const api = fakeApi({ authorized: true, latestMessages: () => messagePage.promise })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    const opening = controller.dispatch({ type: 'press' })
+    await flushAsync()
+
+    expect(controller.snapshot).toMatchObject({ screen: 'loading', message: 'Loading Alice...' })
+
+    messagePage.resolve(messages)
+    await opening
+
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+  })
+
+  it('shows loading immediately while opening a forum chat with slow topics', async () => {
+    const topicPage = deferred<Topic[]>()
+    const api = fakeApi({ authorized: true, topics: () => topicPage.promise })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    const opening = controller.dispatch({ type: 'press' })
+    await flushAsync()
+
+    expect(controller.snapshot).toMatchObject({ screen: 'loading', message: 'Opening Project...' })
+
+    topicPage.resolve(topics)
+    await opening
+
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'topics' })
+  })
+
   it('marks normal chat messages read and clears the local unread badge when viewed', async () => {
     const unreadChats = [{ ...chats[0], unreadCount: 2 }, chats[1]]
     const api = fakeApi({ authorized: true, chats: unreadChats })
@@ -668,7 +703,7 @@ describe('TelegramAppController', () => {
   })
 })
 
-function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[]); olderMessages?: Message[] | (() => Message[] | Promise<Message[]>); chats?: Chat[] | (() => Chat[]); topics?: Topic[] }): TelegramApi {
+function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[] | Promise<Message[]>); olderMessages?: Message[] | (() => Message[] | Promise<Message[]>); chats?: Chat[] | (() => Chat[]); topics?: Topic[] | (() => Topic[] | Promise<Topic[]>) }): TelegramApi {
   const listMessages = vi.fn(async (_chatId, request) => {
     if (request?.beforeId !== undefined) {
       if (typeof options.olderMessages === 'function') return options.olderMessages()
@@ -684,7 +719,7 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
     verifyPhoneAuth: vi.fn(async () => ({ authorized: options.authorized })),
     logout: vi.fn(async () => undefined),
     listChats: vi.fn(async () => typeof options.chats === 'function' ? options.chats() : options.chats ?? chats),
-    listTopics: vi.fn(async () => options.topics ?? topics),
+    listTopics: vi.fn(async () => typeof options.topics === 'function' ? options.topics() : options.topics ?? topics),
     listMessages,
     sendMessage: vi.fn(async (_chatId, request) => ({
       id: '101',

@@ -771,6 +771,7 @@ export class TelegramAppController {
     const chats = previous.screen === 'sidebar' ? previous.chats : []
     const selectedChatIndex = previous.screen === 'sidebar' ? previous.selectedChatIndex : 0
     await this.run(async () => {
+      await this.setState({ screen: 'loading', message: `Opening ${chat.title}...` })
       const topics = chat.isForum ? await this.api.listTopics(chat.id) : []
       if (topics.length > 0) {
         await this.setState({
@@ -791,6 +792,7 @@ export class TelegramAppController {
     const topics = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.topics : undefined
     const selectedTopicIndex = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.selectedTopicIndex : undefined
     await this.run(async () => {
+      await this.setState({ screen: 'loading', message: `Loading ${topic?.title ?? chat.title}...` })
       const messages = await this.api.listMessages(chat.id, { topicId: topicThreadId(topic), limit: MESSAGE_PAGE_LIMIT })
       const normalized = normalizeMessagePage(messages)
       await this.setStateWithVisibleRead({

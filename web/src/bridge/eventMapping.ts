@@ -132,10 +132,13 @@ function toUint8Array(value: Uint8Array | ArrayBuffer | number[]) {
 
 function normalizeEvent(event: EvenHubEventLike | unknown): EvenHubEventLike {
   const original = isRecord(event) ? event : {}
+  const rawPayload = firstRecord(original.jsonData, original.data)
+  const raw = normalizeRawEvent(original, rawPayload)
+  if (raw) return raw
+
   try {
     const parsed = evenHubEventFromJson(original)
     if (parsed.listEvent || parsed.textEvent || parsed.sysEvent || parsed.audioEvent) {
-      const rawPayload = firstRecord(original.jsonData, original.data)
       return {
         ...parsed,
         listEvent: parsed.listEvent ? mergeDefined(rawPayload, parsed.listEvent as unknown as EventRecord) : undefined,
@@ -147,8 +150,13 @@ function normalizeEvent(event: EvenHubEventLike | unknown): EvenHubEventLike {
     // Fall through to best-effort raw host payload parsing.
   }
 
+  return original as EvenHubEventLike
+}
+
+function normalizeRawEvent(original: EventRecord, rawPayload: EventRecord): EvenHubEventLike | undefined {
+  if (original.audioEvent || original.listEvent || original.textEvent || original.sysEvent) return original as EvenHubEventLike
   const eventType = typeof original.type === 'string' ? normalizeKey(original.type) : undefined
-  const payload = firstRecord(original.jsonData, original.data, original)
+  const payload = Object.keys(rawPayload).length > 0 ? rawPayload : original
   if (eventType?.includes('LIST')) return { listEvent: payload }
   if (eventType?.includes('TEXT')) return { textEvent: payload }
   if (eventType?.includes('SYS') || eventType?.includes('SYSTEM')) return { sysEvent: payload }
@@ -156,7 +164,7 @@ function normalizeEvent(event: EvenHubEventLike | unknown): EvenHubEventLike {
     const audioPcm = pickValue(payload, ['audioPcm', 'AudioPcm', 'audio_pcm', 'audioPCM'])
     return { audioEvent: { audioPcm: audioPcm as Uint8Array | ArrayBuffer | number[] } }
   }
-  return original as EvenHubEventLike
+  return undefined
 }
 
 function readEventType(record: EventRecord | undefined): number | string | undefined {
