@@ -359,6 +359,35 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'messages' })
   })
 
+  it('sends a typed phone reply to the active thread and resets to the newest message', async () => {
+    const api = fakeApi({ authorized: true, latestMessages: reversedMessages })
+    const controller = new TelegramAppController(api, fakeBridge())
+    const states: string[] = []
+    controller.subscribe((state) => states.push(state.screen))
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'swipeUp' })
+    await controller.sendTextFromPhone('typed from phone')
+
+    expect(api.sendMessage).toHaveBeenCalledWith('1', { text: 'typed from phone', topicId: undefined })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'messages',
+      status: 'Sent',
+      isNewestPage: true,
+      scrollOffset: 0,
+    })
+    expect(states).toContain('messages')
+  })
+
+  it('rejects typed phone sends when no message thread is active', async () => {
+    const controller = new TelegramAppController(fakeApi({ authorized: true }), fakeBridge())
+
+    await controller.init()
+
+    await expect(controller.sendTextFromPhone('not yet')).rejects.toThrow('Open a chat or topic before sending.')
+  })
+
   it('cancels from confirmation when Cancel is selected', async () => {
     const api = fakeApi({ authorized: true, transcription: { text: 'Cancel me' } })
     const controller = new TelegramAppController(api, fakeBridge(), 0)

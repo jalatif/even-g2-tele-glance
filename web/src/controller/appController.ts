@@ -15,9 +15,26 @@ const MESSAGE_PAGE_LIMIT = 50
 const OLDER_PREFETCH_LOW_WATER = 35
 const OLDER_PREFETCH_TARGET_MESSAGES = 220
 const CHAT_LIST_LIMIT = 20
+const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
+  messagePressDelayMs: 260,
+  messagePollMs: 3000,
+  chatPollMs: 5000,
+  recordingMinDurationMs: 900,
+}
+
+export type ControllerRuntimeConfig = {
+  messagePressDelayMs: number
+  messagePollMs: number
+  chatPollMs: number
+  recordingMinDurationMs: number
+}
+
+type StateListener = (state: AppState) => void
 
 export class TelegramAppController {
   private state: AppState = { screen: 'loading', message: 'Starting...' }
+  private runtimeConfig: ControllerRuntimeConfig
+  private listeners = new Set<StateListener>()
   private messagePoll: ReturnType<typeof setInterval> | undefined
   private chatPoll: ReturnType<typeof setInterval> | undefined
   private pendingMessagePress: ReturnType<typeof setTimeout> | undefined
@@ -34,11 +51,67 @@ export class TelegramAppController {
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
-    private readonly messagePressDelayMs = 260,
-  ) {}
+    options: Partial<ControllerRuntimeConfig> | number = {},
+  ) {
+    this.runtimeConfig = typeof options === 'number'
+      ? { ...DEFAULT_RUNTIME_CONFIG, messagePressDelayMs: options }
+      : { ...DEFAULT_RUNTIME_CONFIG, ...options }
+  }
 
   get snapshot(): AppState {
     return this.state
+  }
+
+  subscribe(listener: StateListener) {
+    this.listeners.add(listener)
+    listener(this.state)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  updateRuntimeConfig(options: Partial<ControllerRuntimeConfig>) {
+    const previousMessagePollMs = this.runtimeConfig.messagePollMs
+    const previousChatPollMs = this.runtimeConfig.chatPollMs
+    this.runtimeConfig = { ...this.runtimeConfig, ...options }
+    if (this.messagePoll && previousMessagePollMs !== this.runtimeConfig.messagePollMs) {
+      this.stopMessagePolling()
+      this.syncMessagePolling()
+    }
+    if (this.chatPoll && previousChatPollMs !== this.runtimeConfig.chatPollMs) {
+      this.stopChatPolling()
+      this.syncChatPolling()
+    }
+  }
+
+  async sendTextFromPhone(text: string) {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const thread = activeThreadState(this.state)
+    if (!thread) throw new Error('Open a chat or topic before sending.')
+
+    await this.run(async () => {
+      const sent = await this.api.sendMessage(thread.chat.id, {
+        text: trimmed,
+        topicId: topicThreadId(thread.topic),
+      })
+      const refreshed = await this.refreshLatestMessages(thread).catch(() => [])
+      const messages = refreshed.some((message) => String(message.id) === String(sent.id))
+        ? refreshed
+        : normalizeMessagePage([...refreshed, sent])
+      await this.setState({
+        screen: 'messages',
+        chat: thread.chat,
+        topic: thread.topic,
+        messages,
+        cursor: oldestMessageId(messages),
+        back: thread.back,
+        status: 'Sent',
+        newerPages: [],
+        isNewestPage: true,
+        scrollOffset: 0,
+      })
+    }, thread.back)
   }
 
   async init() {
@@ -253,7 +326,7 @@ export class TelegramAppController {
 
   private async scheduleMessagePress(state: Extract<AppState, { screen: 'messages' }>) {
     this.cancelPendingMessagePress()
-    if (this.messagePressDelayMs <= 0) {
+    if (this.runtimeConfig.messagePressDelayMs <= 0) {
       await this.startRecordingFromMessages(state)
       return
     }
@@ -262,7 +335,7 @@ export class TelegramAppController {
       const current = this.state
       if (current.screen !== 'messages') return
       void this.startRecordingFromMessages(current)
-    }, this.messagePressDelayMs)
+    }, this.runtimeConfig.messagePressDelayMs)
     const maybeNodeTimeout = timeout as unknown as { unref?: () => void }
     maybeNodeTimeout.unref?.()
     this.pendingMessagePress = timeout
@@ -295,7 +368,7 @@ export class TelegramAppController {
   private async handleRecording(state: Extract<AppState, { screen: 'recording' }>, input: AppInput) {
     if (input.type === 'doublePress') {
       await this.bridge.setAudioEnabled(false)
-      if (Date.now() - state.startedAt < 900) {
+      if (Date.now() - state.startedAt < this.runtimeConfig.recordingMinDurationMs) {
         await this.goBackFromMessages({
           screen: 'messages',
           chat: state.chat,
@@ -666,7 +739,12 @@ export class TelegramAppController {
     this.state = state
     this.syncMessagePolling()
     this.syncChatPolling()
+    this.notify()
     await this.bridge.render(screenModel(state))
+  }
+
+  private notify() {
+    for (const listener of this.listeners) listener(this.state)
   }
 
   private syncMessagePolling() {
@@ -678,7 +756,7 @@ export class TelegramAppController {
     if (this.messagePoll) return
     this.messagePoll = setInterval(() => {
       void this.refreshVisibleMessages()
-    }, 3000)
+    }, this.runtimeConfig.messagePollMs)
     const maybeNodeInterval = this.messagePoll as unknown as { unref?: () => void }
     maybeNodeInterval.unref?.()
   }
@@ -698,7 +776,7 @@ export class TelegramAppController {
     if (this.chatPoll) return
     this.chatPoll = setInterval(() => {
       void this.refreshRootChats()
-    }, 5000)
+    }, this.runtimeConfig.chatPollMs)
     const maybeNodeInterval = this.chatPoll as unknown as { unref?: () => void }
     maybeNodeInterval.unref?.()
   }
@@ -854,6 +932,26 @@ function sleep(ms: number) {
 
 function topicThreadId(topic: Topic | undefined) {
   return topic?.id
+}
+
+function activeThreadState(state: AppState):
+  | {
+    chat: Chat
+    topic?: Topic
+    back?: RecoverableState
+  }
+  | undefined {
+  switch (state.screen) {
+    case 'messages':
+    case 'recording':
+    case 'transcribing':
+    case 'confirm':
+    case 'sending':
+    case 'sent':
+      return { chat: state.chat, topic: state.topic, back: state.back }
+    default:
+      return undefined
+  }
 }
 
 function oldestMessageId(messages: { id: string | number }[]) {

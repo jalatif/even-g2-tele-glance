@@ -3,9 +3,9 @@ import { messageScrollUnitCount, screenModel } from '../src/controller/model'
 import type { AppState } from '../src/controller/model'
 
 const encoder = new TextEncoder()
-const boxTop = '+----------------------------+'
-const boxMid = '+----------------------------+'
-const boxBottom = '+----------------------------+'
+const boxTop = `+${'-'.repeat(40)}+`
+const boxMid = `+${'-'.repeat(40)}+`
+const boxBottom = `+${'-'.repeat(40)}+`
 
 describe('screenModel', () => {
   it('keeps message text under the Even Hub 999 byte text limit', () => {
@@ -104,6 +104,24 @@ describe('screenModel', () => {
       expect(shortModel.body).toContain('Ada: short note')
       expect(longModel.body).toContain(boxTop)
       expect(longModel.body).toContain('| Lin')
+    }
+  })
+
+  it('wraps boxed messages on word boundaries when words fit the row', () => {
+    const state: AppState = {
+      screen: 'messages',
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [
+        { id: '1', sender: 'Ada', text: 'there are two hundred thirty commits behind available want me to run update' },
+      ],
+    }
+
+    const model = screenModel(state)
+
+    expect(model.kind).toBe('text')
+    if (model.kind === 'text') {
+      expect(model.body).not.toMatch(/commi\s*\n\s*ts/)
+      expect(model.body).toContain('commits')
     }
   })
 

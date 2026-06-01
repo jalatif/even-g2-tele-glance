@@ -4,7 +4,7 @@ const TEXT_CONTAINER_BYTE_LIMIT = 999
 const MESSAGE_ROW_BYTE_LIMIT = 120
 const MESSAGE_ROW_CHAR_LIMIT = 44
 const MESSAGE_VISIBLE_ROW_LIMIT = 8
-const MESSAGE_BOX_WIDTH = 30
+const MESSAGE_BOX_WIDTH = 42
 const MESSAGE_BOX_CONTENT_WIDTH = MESSAGE_BOX_WIDTH - 4
 const MESSAGE_BOX_CONTENT_ROWS = MESSAGE_VISIBLE_ROW_LIMIT - 4
 const MESSAGE_BOX_PAD = '\u00a0'
@@ -215,7 +215,7 @@ function trimBoxText(value: string) {
 }
 
 function splitBoxRows(value: string) {
-  return splitDisplayRows(value, '', MESSAGE_BOX_CONTENT_WIDTH, MESSAGE_ROW_BYTE_LIMIT).map(trimBoxText)
+  return splitDisplayWordRows(value, MESSAGE_BOX_CONTENT_WIDTH, MESSAGE_ROW_BYTE_LIMIT).map(trimBoxText)
 }
 
 function wordCount(value: string) {
@@ -262,4 +262,39 @@ function splitDisplayRows(value: string, prefix: string, maxChars = MESSAGE_ROW_
   }
   if (chunk.length > 0) chunks.push(chunk)
   return chunks
+}
+
+function splitDisplayWordRows(value: string, maxChars: number, maxBytes: number) {
+  const words = value.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return ['']
+  const rows: string[] = []
+  let row = ''
+  for (const word of words) {
+    if (row.length === 0) {
+      if (word.length <= maxChars && utf8ByteLength(word) <= maxBytes) {
+        row = word
+      } else {
+        const chunks = splitDisplayRows(word, '', maxChars, maxBytes)
+        rows.push(...chunks.slice(0, -1))
+        row = chunks[chunks.length - 1] ?? ''
+      }
+      continue
+    }
+
+    const candidate = `${row} ${word}`
+    if (candidate.length <= maxChars && utf8ByteLength(candidate) <= maxBytes) {
+      row = candidate
+      continue
+    }
+    rows.push(row)
+    if (word.length <= maxChars && utf8ByteLength(word) <= maxBytes) {
+      row = word
+    } else {
+      const chunks = splitDisplayRows(word, '', maxChars, maxBytes)
+      rows.push(...chunks.slice(0, -1))
+      row = chunks[chunks.length - 1] ?? ''
+    }
+  }
+  if (row.length > 0) rows.push(row)
+  return rows
 }

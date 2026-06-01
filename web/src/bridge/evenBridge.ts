@@ -12,7 +12,11 @@ import { defaultApiBaseUrl } from '../api'
 import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
-const APP_BUILD_VERSION = '0.1.22'
+export const APP_BUILD_VERSION = '0.1.24'
+
+type EvenBridgeOptions = {
+  debugEventsEnabled?: () => boolean
+}
 
 type EvenBridgeInstance = {
   createStartUpPageContainer(container: unknown): Promise<number>
@@ -30,13 +34,13 @@ export class EvenHubGlassesBridge implements GlassesBridge {
 
   constructor(private readonly sdk: EvenBridgeInstance) {}
 
-  static async create(onInput: (input: AppInput) => void | Promise<void>) {
+  static async create(onInput: (input: AppInput) => void | Promise<void>, options: EvenBridgeOptions = {}) {
     const sdk = (await waitForEvenAppBridge()) as unknown as EvenBridgeInstance
     const adapter = new EvenHubGlassesBridge(sdk)
     const dispatchInput = createInputCoalescer(onInput)
     sdk.onEvenHubEvent((event) => {
       const input = mapEvenHubEvent(event as Parameters<typeof mapEvenHubEvent>[0])
-      if (input?.type !== 'audioChunk') void logHardwareEvent(event, input)
+      if ((options.debugEventsEnabled?.() ?? true) && input?.type !== 'audioChunk') void logHardwareEvent(event, input)
       if (input) dispatchInput(input)
     })
     return adapter
@@ -165,7 +169,7 @@ function buildBoxedTextPage(model: Extract<ScreenModel, { kind: 'text' }>, boxed
     content: trimForContainer(boxedBody.content, 999),
     xPosition: 14,
     yPosition: 58,
-    width: 430,
+    width: 548,
     height: 172,
     borderWidth: 1,
     borderColor: 8,
@@ -290,7 +294,7 @@ function parseBoxedBody(body: string): BoxedBody | undefined {
   if (!isBoxBorder(lines[0]) || !isBoxBorder(lines[2]) || !isBoxBorder(lines[lines.length - 1])) return undefined
 
   const heading = unboxLine(lines[1])
-  const message = lines.slice(3, -1).map(unboxLine).join('\n').trimEnd()
+  const message = lines.slice(3, -1).map(unboxLine).join(' ').replace(/\s+/g, ' ').trim()
   return {
     content: message ? `${heading}\n\n${message}` : heading,
   }

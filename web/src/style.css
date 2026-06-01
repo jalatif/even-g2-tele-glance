@@ -1,103 +1,343 @@
+* {
+  box-sizing: border-box;
+}
+
 html,
 body {
   margin: 0;
   min-height: 100%;
-  background: #0b0f0b;
-  color: #c4f7c1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #080b0a;
+  color: #e6f4e6;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-#app {
-  box-sizing: border-box;
-  width: min(720px, 100vw);
-  max-width: 100vw;
-  min-height: 288px;
-  padding: 12px;
-}
-
-section {
-  width: 576px;
-  max-width: 100%;
-}
-
-.phone-settings {
-  display: flex;
-  align-items: end;
-  gap: 8px;
-  margin: 0 0 14px;
-  padding: 10px;
-  border: 1px solid #2b5a2b;
-  color: #d8fbd5;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-}
-
-.phone-settings label {
-  display: grid;
-  gap: 4px;
-  flex: 1;
-  font-size: 12px;
-}
-
-.phone-settings input,
-.phone-settings button {
-  box-sizing: border-box;
-  min-height: 32px;
-  border: 1px solid #4f8d4f;
-  background: #101810;
-  color: #d8fbd5;
+button,
+input,
+textarea {
   font: inherit;
 }
 
-.phone-settings input {
+button {
+  border: 1px solid #31543a;
+  background: #14301f;
+  color: #ecffed;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled),
+button:focus-visible {
+  border-color: #8ee49a;
+  outline: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+button.secondary {
+  background: #111814;
+}
+
+input,
+textarea {
   width: 100%;
-  padding: 6px 8px;
+  border: 1px solid #31543a;
+  border-radius: 6px;
+  background: #0d140f;
+  color: #f4fff4;
+  padding: 9px 10px;
 }
 
-.phone-settings button {
-  padding: 6px 10px;
+textarea {
+  min-height: 74px;
+  resize: vertical;
 }
 
-h1 {
-  margin: 0 0 10px;
-  font-size: 18px;
-  line-height: 1.2;
-  font-weight: 600;
+#root {
+  min-height: 100dvh;
 }
 
-pre,
-ol,
-footer {
+.app-shell {
+  width: min(760px, 100vw);
+  min-height: 100dvh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: #0a100d;
+  border-left: 1px solid #17281d;
+  border-right: 1px solid #17281d;
+}
+
+.app-header {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1d3425;
+  background: #0e1711;
+}
+
+.app-header h1,
+.app-header p {
   margin: 0;
-  padding: 0;
+}
+
+.app-header h1 {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.eyebrow {
+  color: #89ad8d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.icon-button {
+  min-width: 92px;
+}
+
+.chat-screen,
+.settings-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.phone-panel {
+  border: 1px solid #1e3a27;
+  background: #0c130f;
+  border-radius: 8px;
+}
+
+.message-panel {
+  flex: 1;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.stack h2,
+.thread-heading h2,
+.settings-group h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.stack p,
+.thread-heading p,
+.hint,
+.empty-text {
+  margin: 0;
+  color: #aac7ad;
+  line-height: 1.45;
+}
+
+.stack code {
+  padding: 8px;
+  border: 1px solid #25492f;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  color: #baf2bd;
+  background: #071008;
+}
+
+.stack blockquote {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid #78cf83;
+  background: #101a13;
+}
+
+.thread-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #1e3a27;
+}
+
+.status-pill {
+  border: 1px solid #376a42;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #baf2bd;
+  white-space: nowrap;
+}
+
+.messages-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message-bubble {
+  max-width: 88%;
+  border: 1px solid #24462e;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #111a14;
+  align-self: flex-start;
+}
+
+.message-bubble.outgoing {
+  align-self: flex-end;
+  background: #173820;
+  border-color: #3a7a47;
+}
+
+.message-bubble header {
+  margin-bottom: 4px;
+  color: #95c99a;
+  font-size: 12px;
+}
+
+.message-bubble p {
+  margin: 0;
+  line-height: 1.42;
   white-space: pre-wrap;
-  font-size: 14px;
-  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.qr-code {
-  display: block;
-  width: 160px;
-  height: 160px;
-  margin: 8px 0 12px;
-  image-rendering: pixelated;
-  background: #fff;
+.select-list {
+  display: grid;
+  gap: 8px;
 }
 
-ol {
-  list-style: none;
+.select-list button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  background: #0f1812;
+  text-align: left;
 }
 
-li {
-  padding: 3px 6px;
-  border: 1px solid transparent;
+.select-list button.selected {
+  border-color: #8ee49a;
 }
 
-li[aria-current='true'] {
-  border-color: #c4f7c1;
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #1e3a27;
+  border-radius: 8px;
+  background: #0d160f;
 }
 
-footer {
-  margin-top: 12px;
-  padding: 6px;
-  border: 1px solid #c4f7c1;
+.composer-banner {
+  padding: 12px;
+  border: 1px solid #1e3a27;
+  border-radius: 8px;
+  background: #0d160f;
+  color: #aac7ad;
+}
+
+.composer textarea,
+.composer .field-error {
+  grid-column: 1 / -1;
+}
+
+.field-error,
+.error-banner {
+  margin: 0;
+  color: #ffc3c3;
+}
+
+.error-banner {
+  padding: 10px 16px;
+  border-bottom: 1px solid #553133;
+  background: #2b1114;
+}
+
+.phone-actions,
+.settings-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.settings-screen {
+  overflow-y: auto;
+}
+
+.settings-group {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.settings-group label {
+  display: grid;
+  gap: 6px;
+  color: #c9e7cc;
+}
+
+.inline-setting {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.inline-setting input {
+  width: auto;
+}
+
+.info-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.info-list div {
+  display: grid;
+  gap: 3px;
+}
+
+.info-list dt {
+  color: #89ad8d;
+  font-size: 12px;
+}
+
+.info-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-actions {
+  grid-template-columns: 1fr auto;
+}
+
+@media (max-width: 520px) {
+  .composer,
+  .phone-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .app-header {
+    align-items: flex-start;
+  }
 }
