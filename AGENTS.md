@@ -155,6 +155,10 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Simulator microphone input can produce silent/all-zero audio. Guarding that path avoids unnecessary Whisper calls and confusing transcription errors during simulator validation.
 - Frontend-local Telegram sessions and the backend shared secret improve backend disk privacy but are still sensitive. LocalStorage can be read by anyone with device/browser access, malicious extensions, or injected JavaScript.
 
+- Telethon sessions can expire (logged out elsewhere, auth key revoked) without the service being explicitly disconnected. `AuthKeyUnregisteredError` and `AuthKeyDuplicatedError` must be caught and converted to a distinct `TelegramSessionExpiredError` that the API layer returns as 401, not 400. The Telethon logger must be filtered to suppress background `GetDifferenceRequest` noise from dead sessions (`account is not logged in`). An `_expired` flag on the service provides fast-fail: once set, `_get_client()` raises immediately without reconnecting. After first connect with a saved session string, a lightweight `get_me()` call validates the session before registering update handlers.
+- Message display on the glasses benefits from a blank line between different messages for readability. Implemented as `gap` blocks in the `MessageDisplayBlock` pipeline: `messageDisplayBlocks` inserts empty `{ text: '', gap: true }` blocks between messages; `lineCount` treats gap blocks as 0 lines; `formatPage` trims leading/trailing gaps so page boundaries don't waste display space. The gap only separates different messages — a single long message split across multiple box blocks remains continuous.
+- When no backend shared secret or Telegram API credentials are configured, `init()` must skip all API calls and go directly to the `needsSetup` auth screen with a friendly message. Calling `authStatus()` without credentials throws `Backend shared secret is required` which surfaces as a confusing error screen on first launch.
+
 ## Pending Checklist
 
 - Validate `tele-glance-0.1.2.ehpk` on real G2 hardware to confirm the broader click-event mapper fixes chat/topic selection.
