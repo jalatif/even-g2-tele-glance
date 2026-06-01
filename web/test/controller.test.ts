@@ -288,6 +288,25 @@ describe('TelegramAppController', () => {
     })
   })
 
+  it('does not acknowledge read topic previews just because the parent forum has unread elsewhere', async () => {
+    const mixedTopics = [{ ...topics[0], unreadCount: 0 }, { ...topics[1], unreadCount: 3 }]
+    const api = fakeApi({ authorized: true, chats: [chats[0], { ...chats[1], unreadCount: 3 }], topics: mixedTopics })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    await flushAsync()
+
+    expect(api.markRead).not.toHaveBeenCalled()
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'topics',
+      chat: expect.objectContaining({ unreadCount: 3 }),
+      topics: [expect.objectContaining({ unreadCount: 0 }), expect.objectContaining({ unreadCount: 3 })],
+    })
+  })
+
   it('updates the saved topic-list back target after marking a topic read', async () => {
     const api = fakeApi({ authorized: true })
     const controller = new TelegramAppController(api, fakeBridge())

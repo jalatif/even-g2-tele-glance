@@ -51,6 +51,7 @@ export class TelegramAppController {
   private topicPreviewDebounce: ReturnType<typeof setTimeout> | undefined
   private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
   private topicPreviewInFlight = new Set<string>()
+  private readAckMaxIds = new Map<string, Id>()
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -454,15 +455,14 @@ export class TelegramAppController {
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'topics') return
       if (!topicMatchesSelection(state, topic)) return
-      await this.setState({
+      await this.setStateWithVisibleRead({
         ...state,
         previewTopic: topic,
         previewMessages: cached.messages,
         previewCursor: cached.cursor,
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      })
-      this.markVisibleMessagesRead(chat, topic, cached.messages)
+      }, chat, topic, cached.messages)
       return
     }
 
@@ -478,15 +478,14 @@ export class TelegramAppController {
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'topics') return
       if (!topicMatchesSelection(state, topic)) return
-      await this.setState({
+      await this.setStateWithVisibleRead({
         ...state,
         previewTopic: topic,
         previewMessages: normalized,
         previewCursor: oldestMessageId(normalized),
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      })
-      this.markVisibleMessagesRead(chat, topic, normalized)
+      }, chat, topic, normalized)
     } finally {
       this.topicPreviewInFlight.delete(cacheKey)
     }
@@ -786,7 +785,7 @@ export class TelegramAppController {
     await this.run(async () => {
       const messages = await this.api.listMessages(chat.id, { topicId: topicThreadId(topic), limit: MESSAGE_PAGE_LIMIT })
       const normalized = normalizeMessagePage(messages)
-      await this.setState({
+      await this.setStateWithVisibleRead({
         screen: 'sidebar', focus: 'messages',
         chats, selectedChatIndex,
         chat, topic,
@@ -798,8 +797,7 @@ export class TelegramAppController {
         scrollOffset: 0,
         topics,
         selectedTopicIndex,
-      })
-      this.markVisibleMessagesRead(chat, topic, normalized)
+      }, chat, topic, normalized)
       this.maybePrefetchOlder()
     }, previous)
   }
@@ -1102,25 +1100,46 @@ export class TelegramAppController {
 
       const merged = normalizeMessagePage([...current.messages, ...messages])
       if (!hasMessageChanges(current.messages, merged)) return
+      const hasIncoming = hasIncomingChange(current.messages, merged)
       if (current.screen === 'sidebar' && current.focus === 'messages') {
-        await this.setState({ ...current, messages: merged, cursor: oldestMessageId(merged), status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
-        this.markVisibleMessagesRead(current.chat, current.topic, merged)
+        await this.setStateWithVisibleRead({ ...current, messages: merged, cursor: oldestMessageId(merged), status: hasIncoming ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 }, current.chat, current.topic, merged, { forceAck: hasIncoming })
         this.maybePrefetchOlder()
         return
       }
-      await this.setState({ ...current, messages: merged, status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
-      this.markVisibleMessagesRead(current.chat, current.topic, merged)
+      await this.setStateWithVisibleRead({ ...current, messages: merged, status: hasIncoming ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 }, current.chat, current.topic, merged, { forceAck: hasIncoming })
     } finally {
       this.messageRefreshInFlight = false
     }
   }
 
-  private markVisibleMessagesRead(chat: Chat, topic: Topic | undefined, messages: Message[]) {
+  private async setStateWithVisibleRead(
+    state: AppState,
+    chat: Chat,
+    topic: Topic | undefined,
+    messages: Message[],
+    options: { forceAck?: boolean } = {},
+  ) {
     const maxId = newestMessageId(messages)
-    if (maxId === undefined) return
-    const previous = this.state
-    const next = clearUnreadForThread(previous, chat, topic)
-    if (next !== previous) void this.setState(next).catch(() => undefined)
+    if (maxId === undefined) {
+      await this.setState(state)
+      return
+    }
+    const hasUnread = hasUnreadForThread(state, chat, topic)
+    const next = hasUnread ? clearUnreadForThread(state, chat, topic) : state
+    const shouldAck = (hasUnread || options.forceAck === true) && this.shouldSendReadAck(chat, topic, maxId)
+    await this.setState(next)
+    if (shouldAck) this.sendReadAck(chat, topic, maxId)
+  }
+
+  private shouldSendReadAck(chat: Chat, topic: Topic | undefined, maxId: Id) {
+    const key = messageThreadKey({ chat, topic })
+    const previous = this.readAckMaxIds.get(key)
+    return previous === undefined || !idAtOrAfter(previous, maxId)
+  }
+
+  private sendReadAck(chat: Chat, topic: Topic | undefined, maxId: Id) {
+    const key = messageThreadKey({ chat, topic })
+    this.readAckMaxIds.set(key, maxId)
     void this.api.markRead(chat.id, { topicId: topicThreadId(topic), maxId }).catch(() => undefined)
   }
 }
@@ -1164,6 +1183,13 @@ function updateMatchesThread(update: TelegramUpdate, state: { chat: Chat; topic?
   if (String(update.topicId) === String(stateTopic)) return true
   if (state.topic?.topMessageId !== undefined && String(update.topicId) === String(state.topic.topMessageId)) return true
   return true
+}
+
+function idAtOrAfter(previous: Id, next: Id) {
+  const previousNumber = Number(previous)
+  const nextNumber = Number(next)
+  if (Number.isFinite(previousNumber) && Number.isFinite(nextNumber)) return previousNumber >= nextNumber
+  return String(previous) === String(next)
 }
 
 function chatFingerprint(chat: Chat) {
@@ -1362,6 +1388,68 @@ function clearUnreadForThread(state: AppState, chat: Chat, topic: Topic | undefi
       return state
   }
   return changed ? next : state
+}
+
+function hasUnreadForThread(state: AppState, chat: Chat, topic: Topic | undefined) {
+  if (topic) return unreadForTopic(state, topic) > 0
+  return unreadForChat(state, chat) > 0
+}
+
+function unreadForChat(state: AppState, chat: Chat) {
+  const values: number[] = []
+  const collect = (item: Chat | undefined) => {
+    if (item && String(item.id) === String(chat.id)) values.push(Number(item.unreadCount ?? 0) || 0)
+  }
+  switch (state.screen) {
+    case 'sidebar':
+      state.chats.forEach(collect)
+      if (state.focus === 'topics' || state.focus === 'messages') collect(state.chat)
+      break
+    case 'asleep':
+      state.chats.forEach(collect)
+      break
+    case 'newMessage':
+      state.chats.forEach(collect)
+      collect(state.chat)
+      break
+    case 'sidebarRecording':
+    case 'sidebarTranscribing':
+    case 'sidebarConfirm':
+    case 'sidebarSending':
+    case 'sidebarSent':
+      state.chats.forEach(collect)
+      collect(state.chat)
+      break
+    default:
+      break
+  }
+  return Math.max(0, ...values)
+}
+
+function unreadForTopic(state: AppState, topic: Topic) {
+  const values: number[] = []
+  const collect = (item: Topic | undefined) => {
+    if (item && String(item.id) === String(topic.id)) values.push(Number(item.unreadCount ?? 0) || 0)
+  }
+  if (state.screen === 'sidebar' && state.focus === 'topics') {
+    state.topics.forEach(collect)
+    collect(state.previewTopic)
+  }
+  if (state.screen === 'sidebar' && state.focus === 'messages') {
+    state.topics?.forEach(collect)
+    collect(state.topic)
+  }
+  if (
+    state.screen === 'newMessage' ||
+    state.screen === 'sidebarRecording' ||
+    state.screen === 'sidebarTranscribing' ||
+    state.screen === 'sidebarConfirm' ||
+    state.screen === 'sidebarSending' ||
+    state.screen === 'sidebarSent'
+  ) {
+    collect(state.topic)
+  }
+  return Math.max(0, ...values)
 }
 
 function remainingUnreadForOtherTopics(state: AppState, topic: Topic) {
