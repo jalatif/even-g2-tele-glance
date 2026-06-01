@@ -26,11 +26,13 @@ from app.models import (
 )
 from app.services.audio import pcm16le_to_wav
 from app.services.secure_auth import SecureAuthError, decrypt_payload, encrypt_payload
-from app.services.telegram import TelegramService, TelegramServiceError, TelegramServiceTimeoutError
+from app.services.telegram import TelegramService, TelegramServiceError, TelegramServiceTimeoutError, TelegramSessionExpiredError
 from app.services.transcription import TranscriptionServiceError, WhisperTranscriptionService
 
 
 def raise_telegram_http_error(exc: Exception) -> None:
+    if isinstance(exc, TelegramSessionExpiredError):
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     if isinstance(exc, (TelegramServiceTimeoutError, TimeoutError)):
         raise HTTPException(status_code=504, detail=str(exc) or "Telegram request timed out. Please retry.") from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc

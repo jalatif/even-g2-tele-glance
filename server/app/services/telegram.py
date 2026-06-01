@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional, Protocol
@@ -14,18 +15,36 @@ from app.models import (
     TopicSummary,
 )
 
+_telethon_logger = logging.getLogger("telethon")
+_telethon_logger.addFilter(lambda record: not _is_auth_key_msg(str(record.msg)))
+
+
+def _is_auth_key_msg(msg: str) -> bool:
+    return "AuthKeyUnregisteredError" in msg or "AuthKeyDuplicatedError" in msg or "account is not logged in" in msg
+
+
 
 class TelegramServiceError(RuntimeError):
     pass
 
 
+class TelegramSessionExpiredError(TelegramServiceError):
+    pass
 class TelegramServiceTimeoutError(TelegramServiceError):
     pass
+
+
+
+def _is_auth_key_error(exc: Exception) -> bool:
+    name = exc.__class__.__name__
+    return name in ("AuthKeyUnregisteredError", "AuthKeyDuplicatedError")
 
 
 def wrap_telegram_error(exc: Exception) -> TelegramServiceError:
     if isinstance(exc, TimeoutError):
         return TelegramServiceTimeoutError("Telegram request timed out. Please retry.")
+    if _is_auth_key_error(exc):
+        return TelegramSessionExpiredError("Telegram session has expired. Reconnect in TeleGlance Settings.")
     return TelegramServiceError(str(exc) or exc.__class__.__name__)
 
 
@@ -221,6 +240,7 @@ class TelethonTelegramService:
 
     def __post_init__(self) -> None:
         self._client = None
+        self._expired = False
         self._update_queues: set[asyncio.Queue[TelegramUpdate]] = set()
         self._updates_registered = False
         self._entity_cache: dict[int, Any] = {}
@@ -241,6 +261,8 @@ class TelethonTelegramService:
     async def _get_client(self):
         if not self.configured:
             raise TelegramServiceError("Telegram API credentials are not configured")
+        if self._expired:
+            raise TelegramSessionExpiredError("Telegram session has expired. Reconnect in TeleGlance Settings.")
         if self._client is None:
             try:
                 from telethon import TelegramClient
@@ -265,6 +287,14 @@ class TelethonTelegramService:
                     raise
                 await self._discard_client()
                 return await self._get_client()
+            if self.credentials and self.credentials.session_string:
+                try:
+                    await asyncio.wait_for(self._client.get_me(), timeout=10)
+                except Exception as exc:
+                    if _is_auth_key_error(exc):
+                        self._expired = True
+                        await self._discard_client()
+                        raise TelegramSessionExpiredError("Telegram session has expired. Reconnect in TeleGlance Settings.") from exc
         await self._ensure_update_handler()
         return self._client
 

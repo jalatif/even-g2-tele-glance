@@ -206,12 +206,18 @@ type MessageDisplayPage = {
 }
 
 function messageDisplayBlocks(messages: Message[]): MessageDisplayBlock[] {
-  return messages.flatMap(formatMessageBlocks)
+  const blocks: MessageDisplayBlock[] = []
+  for (let i = 0; i < messages.length; i++) {
+    if (i > 0) blocks.push({ text: '', gap: true })
+    blocks.push(...formatMessageBlocks(messages[i]))
+  }
+  return blocks
 }
 
 type MessageDisplayBlock = {
   text: string
   box?: BoxedText
+  gap?: true
 }
 
 function formatMessageBlocks(message: Message): MessageDisplayBlock[] {
@@ -287,18 +293,22 @@ function splitBoxRows(value: string) {
   return splitDisplayWordRows(value, MESSAGE_BOX_CONTENT_WIDTH, MESSAGE_ROW_BYTE_LIMIT).map(trimBoxText)
 }
 
+function lineCount(blocks: MessageDisplayBlock[]) {
+  return blocks.reduce((total, block) => total + (block.gap ? 0 : block.text.split('\n').length), 0)
+}
+
 function wordCount(value: string) {
   return value.trim().split(/\s+/).filter(Boolean).length
 }
 
-function lineCount(blocks: MessageDisplayBlock[]) {
-  return blocks.reduce((total, block) => total + block.text.split('\n').length, 0)
-}
-
 function formatPage(blocks: MessageDisplayBlock[]): MessageDisplayPage {
+  const content = blocks.filter((block, i) => {
+    if (!block.gap) return true
+    return i > 0 && i < blocks.length - 1
+  })
   return {
-    body: blocks.map((block) => block.text).join('\n'),
-    box: blocks.length === 1 ? blocks[0].box : undefined,
+    body: content.map((block) => block.text).join('\n'),
+    box: content.length === 1 ? content[0].box : undefined,
   }
 }
 

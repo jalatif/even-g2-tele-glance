@@ -2,7 +2,7 @@
   "package_id": "com.jalatif.telegram",
   "edition": "202601",
   "name": "TeleGlance",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.10",
   "entrypoint": "index.html",
@@ -12,7 +12,8 @@
       "desc": "Connects TeleGlance to a self-hosted backend for Telegram and transcription.",
       "whitelist": [
         "http://localhost:8787",
-        "http://127.0.0.1:8787"
+        "http://127.0.0.1:8787",
+        "http://100.75.187.27:8787"
       ]
     },
     {
