@@ -28,6 +28,8 @@ type EvenBridgeInstance = {
   callEvenApp?(method: string, payload: unknown): Promise<boolean>
   screenOff?(): Promise<boolean>
   turnScreenOff?(): Promise<boolean>
+  getLocalStorage?(key: string): Promise<string>
+  setLocalStorage?(key: string, value: string): Promise<boolean>
   onEvenHubEvent(listener: (event: unknown) => void): (() => void) | void
 }
 
@@ -81,6 +83,14 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       return
     }
     await this.sdk.callEvenApp?.('screenOff', {})
+  }
+
+  async getLocalStorage(key: string) {
+    return this.sdk.getLocalStorage?.(key) ?? ''
+  }
+
+  async setLocalStorage(key: string, value: string) {
+    return this.sdk.setLocalStorage?.(key, value) ?? false
   }
 }
 

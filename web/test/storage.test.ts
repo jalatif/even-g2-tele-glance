@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { saveFrontendConfig } from '../src/storage'
+import {
+  clearFrontendConfigFromAppStorage,
+  loadFrontendConfigFromAppStorage,
+  saveFrontendConfig,
+  saveFrontendConfigToAppStorage,
+  type FrontendConfig,
+} from '../src/storage'
 
 describe('frontend settings storage', () => {
   afterEach(() => {
@@ -39,7 +45,67 @@ describe('frontend settings storage', () => {
     expect(cookieText).not.toContain('string-session-secret')
     expect(cookieText).not.toContain('backend-secret')
   })
+
+  it('saves and restores the full config from Even app storage', async () => {
+    const storage = appStorage()
+    const config = testConfig({
+      telegramApiId: '12345',
+      telegramApiHash: 'hash-secret',
+      telegramSession: 'string-session-secret',
+      backendSharedSecret: 'backend-secret',
+    })
+
+    await saveFrontendConfigToAppStorage(storage, config)
+    const restored = await loadFrontendConfigFromAppStorage(storage, testConfig())
+
+    expect(restored).toMatchObject({
+      telegramApiId: '12345',
+      telegramApiHash: 'hash-secret',
+      telegramSession: 'string-session-secret',
+      backendSharedSecret: 'backend-secret',
+    })
+  })
+
+  it('clears the Even app storage config on reset', async () => {
+    const storage = appStorage()
+    await saveFrontendConfigToAppStorage(storage, testConfig({ telegramSession: 'string-session-secret' }))
+
+    await clearFrontendConfigFromAppStorage(storage)
+    const restored = await loadFrontendConfigFromAppStorage(storage, testConfig())
+
+    expect(restored.telegramSession).toBe('')
+  })
 })
+
+function testConfig(overrides: Partial<FrontendConfig> = {}): FrontendConfig {
+  return {
+    apiBaseUrl: 'http://100.64.0.1:8787',
+    telegramApiId: '',
+    telegramApiHash: '',
+    telegramSession: '',
+    backendSharedSecret: '',
+    sttBaseUrl: '',
+    debugEventsEnabled: false,
+    chatPollMs: 10000,
+    messagePollMs: 8000,
+    recordingMinDurationMs: 900,
+    ...overrides,
+  }
+}
+
+function appStorage() {
+  const values = new Map<string, string>()
+  return {
+    async getLocalStorage(key: string) {
+      return values.get(key) ?? ''
+    },
+    async setLocalStorage(key: string, value: string) {
+      if (value) values.set(key, value)
+      else values.delete(key)
+      return true
+    },
+  }
+}
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>()

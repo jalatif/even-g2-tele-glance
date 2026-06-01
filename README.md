@@ -29,13 +29,13 @@ A normal string of your choice also works, but longer random values are safer. P
 6. Open TeleGlance Settings and paste the API ID/hash, backend URL, and backend shared secret.
 7. Save settings, then enter your mobile number with international code to receive a Telegram verification code.
 
-After login, the frontend stores a Telegram StringSession on this phone only. The backend receives encrypted credentials/session per request, but does not persist them in the public setup path. The shared secret is stored locally and used for encryption; it is not sent as plaintext.
+After login, the frontend stores a Telegram StringSession on this phone only. On packaged phone builds, settings are mirrored into the Even App SDK storage so they survive app reopen/update; browser `localStorage` remains a simulator/development fallback. The backend receives encrypted credentials/session per request, but does not persist them in the public setup path. The shared secret is stored locally and used for encryption; it is not sent as plaintext.
 
 Phone-code login requires the backend shared secret and API ID/API hash to be configured first.
 
 ## Configuration
 
-Most settings live in the phone Settings page: Telegram API ID/hash, Telegram session, backend URL, backend shared secret, optional STT URL, recording minimum, and debug logging. Sensitive Telegram/shared-secret settings are stored in phone localStorage only, not cookies.
+Most settings live in the phone Settings page: Telegram API ID/hash, Telegram session, backend URL, backend shared secret, optional STT URL, recording minimum, and debug logging. Sensitive Telegram/shared-secret settings are stored in Even App SDK storage on phone builds and browser `localStorage` for simulator/development fallback, not cookies.
 
 The backend needs root `.env` for `TELEGLANCE_SHARED_SECRET`. Copy [.env.example](.env.example), uncomment `TELEGLANCE_SHARED_SECRET`, and set it to the same value used in TeleGlance Settings:
 
@@ -212,7 +212,7 @@ The `.ehpk` contains only the frontend and manifest. Users must still run their 
 
 ## Privacy Notes
 
-Telegram API hash, backend shared secret, and session strings are sensitive. Storing them in phone localStorage keeps them off backend disk, but anyone with access to that phone/app storage, device backup, injected JavaScript, or a malicious WebView context could read them.
+Telegram API hash, backend shared secret, and session strings are sensitive. Storing them in phone app storage keeps them off backend disk, but anyone with access to that phone/app storage, device backup, injected JavaScript, or a malicious WebView context could read them.
 
 TeleGlance requires `TELEGLANCE_SHARED_SECRET` in the backend root `.env` and the same value in TeleGlance Settings. The frontend uses WebCrypto AES-GCM with that secret to send Telegram API ID/hash/session in `X-TeleGlance-Auth`, encrypt JSON request bodies, decrypt JSON responses, and decrypt update-stream event payloads. The secret token itself is not sent as plaintext.
 

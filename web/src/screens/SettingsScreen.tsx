@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApp } from '../contexts/AppContext'
 import type { FrontendConfig } from '../storage'
 
@@ -8,6 +8,10 @@ export function SettingsScreen({ buildVersion }: { buildVersion: string }) {
   const [saved, setSaved] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDraft(settings)
+  }, [settings])
 
   function update<K extends keyof FrontendConfig>(key: K, value: FrontendConfig[K]) {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -132,7 +136,7 @@ scripts/start-backend.sh --reload`}</code></pre>
 
       <div className="settings-actions">
         <button type="button" onClick={() => {
-          saveSettings(draft)
+          void saveSettings(draft)
           setSaved(true)
         }}>
           {saved ? 'Saved' : 'Save Settings'}

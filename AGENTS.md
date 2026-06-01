@@ -149,6 +149,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Read acknowledgements are deduped per thread/newest visible message id and only sent for locally unread threads or newly arrived active-thread messages. Local unread clearing is folded into the same render that displays messages, avoiding an extra immediate glasses render.
 - Selection-only list events are armed after a short delay when chat/topic lists render. This preserves hardware selection-only click support while ignoring initial native list selection events that can otherwise auto-open the first startup chat.
 - Message history pagination now renders a `Loading older messages...` panel immediately when the user swipes beyond loaded history, then fetches and merges the older page in the background.
+- Packaged phone builds persist frontend settings through Even App SDK local storage, with browser `localStorage` kept as the simulator/development fallback. Telegram API credentials, backend shared secret, and MTProto StringSession are restored from SDK storage before backend auth/controller startup.
 
 ## Observed Issues and Learnings
 
@@ -174,6 +175,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Read acknowledgements are part of the UI hot path on glasses. Sending them for every selected preview, including already-read topics, can make topic scrolling feel slow because each swipe can add backend/Telegram work; gate and dedupe read calls aggressively.
 - Native list containers may emit a selection-only event for the already-selected row during initial render. Treating that immediately as a press can make startup appear frozen by auto-opening a forum chat and launching topic/message fetches before the user clicks.
 - Swipe handlers should not await Telegram page loads before rendering feedback. If older/newer history is not already loaded, update the glasses UI first with a loading state and complete network pagination asynchronously.
+- Phone packaged WebView `localStorage` is not reliable across reopen/update even when simulator browser storage works. Use the Even Hub SDK app-side local storage for durable phone settings, and update the React settings draft after asynchronous restore so the phone UI does not show stale empty fields.
 - For device testing, the backend is not packaged into `.ehpk`. The `.ehpk` contains the frontend and manifest; the FastAPI backend must stay running and reachable from the phone/glasses path.
 - Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and the frontend's configured backend URL.
 - Simulator microphone input can produce silent/all-zero audio. Guarding that path avoids unnecessary Whisper calls and confusing transcription errors during simulator validation.

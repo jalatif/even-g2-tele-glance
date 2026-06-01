@@ -7,6 +7,8 @@ import { messageScrollUnitCount, screenModel } from './model'
 export interface GlassesBridge {
   render(model: ScreenModel): Promise<void>
   setAudioEnabled(enabled: boolean): Promise<void>
+  getLocalStorage?(key: string): Promise<string>
+  setLocalStorage?(key: string, value: string): Promise<boolean>
   showExitConfirmation?(): Promise<void>
   turnScreenOff?(): Promise<void>
 }

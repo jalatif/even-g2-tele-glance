@@ -3,7 +3,16 @@ import { HttpTelegramApi } from '../api'
 import { EvenHubGlassesBridge } from '../bridge/evenBridge'
 import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge } from '../controller/appController'
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
-import { loadFrontendConfig, resetFrontendConfig, saveFrontendConfig, type FrontendConfig } from '../storage'
+import {
+  clearFrontendConfigFromAppStorage,
+  loadFrontendConfig,
+  loadFrontendConfigFromAppStorage,
+  resetFrontendConfig,
+  saveFrontendConfig,
+  saveFrontendConfigToAppStorage,
+  type AppStorageBridge,
+  type FrontendConfig,
+} from '../storage'
 
 type AppContextValue = {
   state: AppState
@@ -13,8 +22,8 @@ type AppContextValue = {
   sendText: (text: string) => Promise<void>
   startPhoneLogin: (phone: string) => Promise<void>
   verifyPhoneLogin: (phone: string, code: string) => Promise<void>
-  saveSettings: (settings: FrontendConfig) => void
-  resetSettings: () => void
+  saveSettings: (settings: FrontendConfig) => Promise<void>
+  resetSettings: () => Promise<void>
   logoutTelegram: () => Promise<void>
 }
 
@@ -32,6 +41,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const settingsRef = useRef(settings)
   const controllerRef = useRef<TelegramAppController | null>(null)
   const apiRef = useRef<HttpTelegramApi | null>(null)
+  const appStorageRef = useRef<AppStorageBridge | undefined>(undefined)
 
   settingsRef.current = settings
 
@@ -42,8 +52,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     async function start() {
       try {
-        const api = new HttpTelegramApi(settingsRef.current.apiBaseUrl, () => settingsRef.current)
-        apiRef.current = api
         const glasses = await EvenHubGlassesBridge.create(
           (input) => {
             void controllerRef.current?.dispatch(input)
@@ -54,6 +62,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           },
         ).catch(() => fallbackBridge)
         if (!active) return
+        appStorageRef.current = glasses
+        const restoredSettings = await loadFrontendConfigFromAppStorage(appStorageRef.current, settingsRef.current)
+        if (!active) return
+        settingsRef.current = restoredSettings
+        setSettings(restoredSettings)
+        saveFrontendConfig(restoredSettings)
+        await saveFrontendConfigToAppStorage(appStorageRef.current, restoredSettings)
+        const api = new HttpTelegramApi(restoredSettings.apiBaseUrl, () => settingsRef.current)
+        apiRef.current = api
         const controller = new TelegramAppController(
           api,
           glasses,
@@ -61,6 +78,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           (session) => {
             const next = { ...settingsRef.current, telegramSession: session }
             saveFrontendConfig(next)
+            void saveFrontendConfigToAppStorage(appStorageRef.current, next)
             settingsRef.current = next
             if (active) setSettings(next)
           },
@@ -103,9 +121,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await controllerRef.current?.verifyPhoneLogin(phone, code)
   }, [])
 
-  const handleSaveSettings = useCallback((next: FrontendConfig) => {
+  const handleSaveSettings = useCallback(async (next: FrontendConfig) => {
     const previous = settingsRef.current
+    settingsRef.current = next
     saveFrontendConfig(next)
+    await saveFrontendConfigToAppStorage(appStorageRef.current, next)
     setSettings(next)
     controllerRef.current?.updateRuntimeConfig(runtimeConfig(next))
     if (
@@ -120,8 +140,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const handleResetSettings = useCallback(() => {
+  const handleResetSettings = useCallback(async () => {
     resetFrontendConfig()
+    await clearFrontendConfigFromAppStorage(appStorageRef.current)
     window.location.reload()
   }, [])
 
@@ -129,6 +150,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await apiRef.current?.logout()
     const next = { ...settingsRef.current, telegramSession: '' }
     saveFrontendConfig(next)
+    await saveFrontendConfigToAppStorage(appStorageRef.current, next)
     window.location.reload()
   }, [])
 

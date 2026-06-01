@@ -22,6 +22,7 @@ const LEGACY_DEBUG_EVENTS_STORAGE_KEY = 'evenTelegram.debugEventsEnabled'
 const LEGACY_CHAT_POLL_STORAGE_KEY = 'evenTelegram.chatPollMs'
 const LEGACY_MESSAGE_POLL_STORAGE_KEY = 'evenTelegram.messagePollMs'
 const LEGACY_RECORDING_MIN_STORAGE_KEY = 'evenTelegram.recordingMinDurationMs'
+const EVEN_APP_CONFIG_STORAGE_KEY = 'teleGlance.frontendConfig.v1'
 
 const COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60
 
@@ -36,6 +37,11 @@ export type FrontendConfig = {
   recordingMinDurationMs: number
   sttBaseUrl: string
   backendSharedSecret: string
+}
+
+export type AppStorageBridge = {
+  getLocalStorage?(key: string): Promise<string>
+  setLocalStorage?(key: string, value: string): Promise<boolean>
 }
 
 export const DEFAULT_FRONTEND_CONFIG: Omit<FrontendConfig, 'apiBaseUrl'> = {
@@ -65,20 +71,53 @@ export function loadFrontendConfig(): FrontendConfig {
   }
 }
 
+export async function loadFrontendConfigFromAppStorage(
+  storage: AppStorageBridge | undefined,
+  fallback: FrontendConfig,
+): Promise<FrontendConfig> {
+  if (!storage?.getLocalStorage) return fallback
+  try {
+    const raw = await storage.getLocalStorage(EVEN_APP_CONFIG_STORAGE_KEY)
+    if (!raw) return fallback
+    const stored = JSON.parse(raw) as Partial<FrontendConfig>
+    return normalizeConfig({ ...fallback, ...stored })
+  } catch {
+    return fallback
+  }
+}
+
 export function saveFrontendConfig(config: FrontendConfig) {
-  const apiBaseUrl = config.apiBaseUrl.trim()
+  const normalized = normalizeConfig(config)
+  const apiBaseUrl = normalized.apiBaseUrl
   writeString(API_BASE_URL_STORAGE_KEY, apiBaseUrl)
   safeLsRemoveItem(G2_TELE_API_BASE_URL_STORAGE_KEY)
   safeLsRemoveItem(LEGACY_API_BASE_URL_STORAGE_KEY)
-  writeSensitiveString(TELEGRAM_API_ID_STORAGE_KEY, config.telegramApiId)
-  writeSensitiveString(TELEGRAM_API_HASH_STORAGE_KEY, config.telegramApiHash)
-  writeSensitiveString(TELEGRAM_SESSION_STORAGE_KEY, config.telegramSession)
-  safeLsSetItem(DEBUG_EVENTS_STORAGE_KEY, String(config.debugEventsEnabled))
-  safeLsSetItem(CHAT_POLL_STORAGE_KEY, String(clamp(config.chatPollMs, 1000, 60000)))
-  safeLsSetItem(MESSAGE_POLL_STORAGE_KEY, String(clamp(config.messagePollMs, 1000, 60000)))
-  safeLsSetItem(RECORDING_MIN_STORAGE_KEY, String(clamp(config.recordingMinDurationMs, 0, 5000)))
-  writeString(STT_BASE_URL_STORAGE_KEY, config.sttBaseUrl)
-  writeSensitiveString(BACKEND_SHARED_SECRET_STORAGE_KEY, config.backendSharedSecret)
+  writeSensitiveString(TELEGRAM_API_ID_STORAGE_KEY, normalized.telegramApiId)
+  writeSensitiveString(TELEGRAM_API_HASH_STORAGE_KEY, normalized.telegramApiHash)
+  writeSensitiveString(TELEGRAM_SESSION_STORAGE_KEY, normalized.telegramSession)
+  safeLsSetItem(DEBUG_EVENTS_STORAGE_KEY, String(normalized.debugEventsEnabled))
+  safeLsSetItem(CHAT_POLL_STORAGE_KEY, String(normalized.chatPollMs))
+  safeLsSetItem(MESSAGE_POLL_STORAGE_KEY, String(normalized.messagePollMs))
+  safeLsSetItem(RECORDING_MIN_STORAGE_KEY, String(normalized.recordingMinDurationMs))
+  writeString(STT_BASE_URL_STORAGE_KEY, normalized.sttBaseUrl)
+  writeSensitiveString(BACKEND_SHARED_SECRET_STORAGE_KEY, normalized.backendSharedSecret)
+}
+
+export async function saveFrontendConfigToAppStorage(
+  storage: AppStorageBridge | undefined,
+  config: FrontendConfig,
+) {
+  if (!storage?.setLocalStorage) return
+  try {
+    await storage.setLocalStorage(EVEN_APP_CONFIG_STORAGE_KEY, JSON.stringify(normalizeConfig(config)))
+  } catch { /* app storage unavailable */ }
+}
+
+export async function clearFrontendConfigFromAppStorage(storage: AppStorageBridge | undefined) {
+  if (!storage?.setLocalStorage) return
+  try {
+    await storage.setLocalStorage(EVEN_APP_CONFIG_STORAGE_KEY, '')
+  } catch { /* app storage unavailable */ }
 }
 
 export function resetFrontendConfig() {
@@ -219,6 +258,29 @@ function readRaw(key: string, legacyKeys: string[]) {
     if (value !== null) return value
   }
   return null
+}
+
+function normalizeConfig(config: FrontendConfig): FrontendConfig {
+  return {
+    apiBaseUrl: stringValue(config.apiBaseUrl),
+    telegramApiId: stringValue(config.telegramApiId),
+    telegramApiHash: stringValue(config.telegramApiHash),
+    telegramSession: stringValue(config.telegramSession),
+    debugEventsEnabled: Boolean(config.debugEventsEnabled),
+    chatPollMs: clamp(numberValue(config.chatPollMs), 1000, 60000),
+    messagePollMs: clamp(numberValue(config.messagePollMs), 1000, 60000),
+    recordingMinDurationMs: clamp(numberValue(config.recordingMinDurationMs), 0, 5000),
+    sttBaseUrl: stringValue(config.sttBaseUrl),
+    backendSharedSecret: stringValue(config.backendSharedSecret),
+  }
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function numberValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 function clamp(value: number, min: number, max: number) {
