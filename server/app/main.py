@@ -14,6 +14,8 @@ from app.models import (
     ChatSummary,
     DebugEvent,
     MessageSummary,
+    MarkReadRequest,
+    MarkReadResponse,
     PhoneLoginStart,
     PhoneLoginStartRequest,
     PhoneLoginStatus,
@@ -230,6 +232,18 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     ) -> SendMessageResponse:
         try:
             return await telegram.send_message(chat_id, text=payload.text, topic_id=payload.topic_id)
+        except (TelegramServiceError, TimeoutError) as exc:
+            raise_telegram_http_error(exc)
+
+    @api.post("/api/chats/{chat_id}/read", response_model=MarkReadResponse)
+    async def mark_read(
+        chat_id: int,
+        payload: MarkReadRequest,
+        telegram: TelegramService = Depends(get_telegram_service),
+    ) -> MarkReadResponse:
+        try:
+            await telegram.mark_read(chat_id, topic_id=payload.topic_id, max_id=payload.max_id)
+            return MarkReadResponse()
         except (TelegramServiceError, TimeoutError) as exc:
             raise_telegram_http_error(exc)
 

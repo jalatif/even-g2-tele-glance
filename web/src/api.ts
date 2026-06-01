@@ -2,6 +2,7 @@ import type {
   AuthStatus,
   Chat,
   Id,
+  MarkReadRequest,
   Message,
   PhoneAuthStart,
   PhoneAuthStatus,
@@ -22,6 +23,7 @@ export interface TelegramApi {
   listTopics(chatId: Id): Promise<Topic[]>
   listMessages(chatId: Id, options?: { topicId?: Id; beforeId?: Id; limit?: number }): Promise<Message[]>
   sendMessage(chatId: Id, request: SendMessageRequest): Promise<Message>
+  markRead(chatId: Id, request: MarkReadRequest): Promise<void>
   transcribe(wav: Blob): Promise<TranscriptionResult>
   subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event | Error) => void): () => void
 }
@@ -114,6 +116,13 @@ export class HttpTelegramApi implements TelegramApi {
       text: request.text,
       outgoing: true,
     }
+  }
+
+  async markRead(chatId: Id, request: MarkReadRequest): Promise<void> {
+    await this.post(`/api/chats/${encodeURIComponent(String(chatId))}/read`, {
+      topicId: request.topicId,
+      maxId: request.maxId,
+    })
   }
 
   async transcribe(wav: Blob): Promise<TranscriptionResult> {

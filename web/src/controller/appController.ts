@@ -462,6 +462,7 @@ export class TelegramAppController {
         previewScrollOffset: 0,
         previewIsNewestPage: true,
       })
+      this.markVisibleMessagesRead(chat, topic, cached.messages)
       return
     }
 
@@ -485,6 +486,7 @@ export class TelegramAppController {
         previewScrollOffset: 0,
         previewIsNewestPage: true,
       })
+      this.markVisibleMessagesRead(chat, topic, normalized)
     } finally {
       this.topicPreviewInFlight.delete(cacheKey)
     }
@@ -797,6 +799,7 @@ export class TelegramAppController {
         topics,
         selectedTopicIndex,
       })
+      this.markVisibleMessagesRead(chat, topic, normalized)
       this.maybePrefetchOlder()
     }, previous)
   }
@@ -1101,13 +1104,24 @@ export class TelegramAppController {
       if (!hasMessageChanges(current.messages, merged)) return
       if (current.screen === 'sidebar' && current.focus === 'messages') {
         await this.setState({ ...current, messages: merged, cursor: oldestMessageId(merged), status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
+        this.markVisibleMessagesRead(current.chat, current.topic, merged)
         this.maybePrefetchOlder()
         return
       }
       await this.setState({ ...current, messages: merged, status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
+      this.markVisibleMessagesRead(current.chat, current.topic, merged)
     } finally {
       this.messageRefreshInFlight = false
     }
+  }
+
+  private markVisibleMessagesRead(chat: Chat, topic: Topic | undefined, messages: Message[]) {
+    const maxId = newestMessageId(messages)
+    if (maxId === undefined) return
+    const previous = this.state
+    const next = clearUnreadForThread(previous, chat, topic)
+    if (next !== previous) void this.setState(next).catch(() => undefined)
+    void this.api.markRead(chat.id, { topicId: topicThreadId(topic), maxId }).catch(() => undefined)
   }
 }
 
@@ -1229,6 +1243,13 @@ function oldestMessageId(messages: { id: string | number }[]) {
   return messages[messages.length - 1]?.id
 }
 
+function newestMessageId(messages: { id: string | number }[]) {
+  if (messages.length === 0) return undefined
+  const numericIds = messages.map((message) => Number(message.id)).filter(Number.isFinite)
+  if (numericIds.length === messages.length) return Math.max(...numericIds)
+  return messages[messages.length - 1]?.id
+}
+
 function messageBackTarget(previous: RecoverableState): RecoverableState | undefined {
   if (previous.screen === 'sidebar' && previous.focus === 'messages') return previous.back
   return previous
@@ -1258,6 +1279,99 @@ function emptyTopicPreview() {
 
 function topicMatchesSelection(state: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }>, topic: Topic) {
   return String(state.topics[state.selectedTopicIndex]?.id ?? '') === String(topic.id)
+}
+
+function clearUnreadForThread(state: AppState, chat: Chat, topic: Topic | undefined): AppState {
+  const remainingTopicUnread = topic ? remainingUnreadForOtherTopics(state, topic) : undefined
+  let changed = false
+  const updateBack = (back: RecoverableState | undefined) => {
+    if (!back) return back
+    const nextBack = clearUnreadForThread(back, chat, topic) as RecoverableState
+    if (nextBack !== back) changed = true
+    return nextBack
+  }
+  const updateChat = (item: Chat) => {
+    if (String(item.id) !== String(chat.id)) return item
+    if (!item.unreadCount) return item
+    if (!topic) {
+      changed = true
+      return { ...item, unreadCount: 0 }
+    }
+    const nextUnread = remainingTopicUnread ?? 0
+    if (item.unreadCount === nextUnread) return item
+    changed = true
+    return { ...item, unreadCount: nextUnread }
+  }
+  const updateTopic = (item: Topic) => {
+    if (String(item.id) !== String(topic?.id) || !item.unreadCount) return item
+    changed = true
+    return { ...item, unreadCount: 0 }
+  }
+  const maybePreviewTopic = (item: Topic | undefined) => {
+    if (!item || String(item.id) !== String(topic?.id) || !item.unreadCount) return item
+    changed = true
+    return { ...item, unreadCount: 0 }
+  }
+
+  let next: AppState
+  switch (state.screen) {
+    case 'sidebar':
+      if (state.focus === 'topics') {
+        next = {
+          ...state,
+          chats: state.chats.map(updateChat),
+          chat: updateChat(state.chat),
+          topics: state.topics.map(updateTopic),
+          previewTopic: maybePreviewTopic(state.previewTopic),
+        }
+        break
+      }
+      if (state.focus === 'messages') {
+        next = {
+          ...state,
+          chats: state.chats.map(updateChat),
+          chat: updateChat(state.chat),
+          topic: maybePreviewTopic(state.topic),
+          topics: state.topics?.map(updateTopic),
+          back: updateBack(state.back),
+        }
+        break
+      }
+      next = { ...state, chats: state.chats.map(updateChat) }
+      break
+    case 'asleep':
+      next = { ...state, chats: state.chats.map(updateChat) }
+      break
+    case 'newMessage':
+      next = { ...state, chats: state.chats.map(updateChat), chat: updateChat(state.chat), topic: maybePreviewTopic(state.topic) }
+      break
+    case 'sidebarRecording':
+    case 'sidebarTranscribing':
+    case 'sidebarConfirm':
+    case 'sidebarSending':
+    case 'sidebarSent':
+      next = {
+        ...state,
+        chats: state.chats.map(updateChat),
+        chat: updateChat(state.chat),
+        topic: maybePreviewTopic(state.topic),
+        back: updateBack(state.back),
+      }
+      break
+    default:
+      return state
+  }
+  return changed ? next : state
+}
+
+function remainingUnreadForOtherTopics(state: AppState, topic: Topic) {
+  const topics = state.screen === 'sidebar' && (state.focus === 'topics' || state.focus === 'messages')
+    ? state.topics
+    : undefined
+  if (!topics) return undefined
+  return topics
+    .filter((item) => String(item.id) !== String(topic.id))
+    .reduce((total, item) => total + Math.max(0, Number(item.unreadCount ?? 0) || 0), 0)
 }
 
 function hasRecordableAudio(chunks: Uint8Array[]) {

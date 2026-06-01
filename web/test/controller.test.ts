@@ -231,6 +231,89 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
   })
 
+  it('marks normal chat messages read and clears the local unread badge when viewed', async () => {
+    const unreadChats = [{ ...chats[0], unreadCount: 2 }, chats[1]]
+    const api = fakeApi({ authorized: true, chats: unreadChats })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' })
+    await flushAsync()
+
+    expect(api.markRead).toHaveBeenCalledWith('1', { topicId: undefined, maxId: 100 })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'messages',
+      chat: expect.objectContaining({ unreadCount: 0 }),
+      chats: [expect.objectContaining({ unreadCount: 0 }), expect.anything()],
+    })
+  })
+
+  it('marks topic preview messages read and clears the topic and parent chat badge when viewed', async () => {
+    const unreadTopics = [{ ...topics[0], unreadCount: 1 }, { ...topics[1], unreadCount: 0 }]
+    const api = fakeApi({ authorized: true, chats: [chats[0], { ...chats[1], unreadCount: 5 }], topics: unreadTopics })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    await flushAsync()
+
+    expect(api.markRead).toHaveBeenCalledWith('2', { topicId: '10', maxId: 100 })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'topics',
+      chat: expect.objectContaining({ unreadCount: 0 }),
+      topics: [expect.objectContaining({ unreadCount: 0 }), expect.anything()],
+    })
+  })
+
+  it('keeps the parent forum badge when other loaded topics remain unread', async () => {
+    const unreadTopics = [{ ...topics[0], unreadCount: 2 }, { ...topics[1], unreadCount: 3 }]
+    const api = fakeApi({ authorized: true, chats: [chats[0], { ...chats[1], unreadCount: 10 }], topics: unreadTopics })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    await flushAsync()
+
+    expect(api.markRead).toHaveBeenCalledWith('2', { topicId: '10', maxId: 100 })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'topics',
+      chat: expect.objectContaining({ unreadCount: 3 }),
+      chats: [expect.anything(), expect.objectContaining({ unreadCount: 3 })],
+      topics: [expect.objectContaining({ unreadCount: 0 }), expect.objectContaining({ unreadCount: 3 })],
+    })
+  })
+
+  it('updates the saved topic-list back target after marking a topic read', async () => {
+    const api = fakeApi({ authorized: true })
+    const controller = new TelegramAppController(api, fakeBridge())
+    const previous = {
+      screen: 'sidebar' as const,
+      focus: 'topics' as const,
+      chats: [chats[0], { ...chats[1], unreadCount: 10 }],
+      selectedChatIndex: 1,
+      chat: { ...chats[1], unreadCount: 10 },
+      topics: [{ ...topics[0], unreadCount: 2 }, { ...topics[1], unreadCount: 3 }],
+      selectedTopicIndex: 0,
+    }
+
+    await openMessages(controller, previous.chat, previous.topics[0], previous)
+    await flushAsync()
+    await controller.dispatch({ type: 'doublePress' })
+
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'topics',
+      chat: expect.objectContaining({ unreadCount: 3 }),
+      chats: [expect.anything(), expect.objectContaining({ unreadCount: 3 })],
+      topics: [expect.objectContaining({ unreadCount: 0 }), expect.objectContaining({ unreadCount: 3 })],
+    })
+  })
+
   it('normalizes newest-first API messages into chronological display order', async () => {
     const api = fakeApi({ authorized: true, latestMessages: reversedMessages })
     const controller = new TelegramAppController(api, fakeBridge())
@@ -549,6 +632,7 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
       sentAt: '2026-05-29T10:01:00Z',
       outgoing: true,
     })),
+    markRead: vi.fn(async () => undefined),
     transcribe: vi.fn(async () => options.transcription ?? { text: '' }),
     subscribeUpdates: vi.fn(() => () => undefined),
   }
@@ -583,6 +667,14 @@ function fetchTopicPreview(controller: TelegramAppController, chat: Chat, topic:
   return (controller as unknown as { fetchTopicPreview: (chat: Chat, topic: Topic) => Promise<void> }).fetchTopicPreview(chat, topic)
 }
 
+function openMessages(controller: TelegramAppController, chat: Chat, topic: Topic | undefined, previous: unknown) {
+  return (controller as unknown as { openMessages: (chat: Chat, topic: Topic | undefined, previous: unknown) => Promise<void> }).openMessages(chat, topic, previous)
+}
+
 function latestMessageCallCount(api: TelegramApi) {
   return vi.mocked(api.listMessages).mock.calls.filter(([, request]) => request?.beforeId === undefined).length
+}
+
+function flushAsync() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
 }

@@ -25,6 +25,7 @@ class FakeTelegramService:
     def __init__(self):
         self.sent = []
         self.message_calls = []
+        self.read = []
 
     async def auth_status(self):
         return {"configured": False, "authorized": False}
@@ -64,6 +65,9 @@ class FakeTelegramService:
     async def send_message(self, chat_id, *, text, topic_id=None):
         self.sent.append({"chat_id": chat_id, "text": text, "topic_id": topic_id})
         return SendMessageResponse(id=55)
+
+    async def mark_read(self, chat_id, *, topic_id=None, max_id=None):
+        self.read.append({"chat_id": chat_id, "topic_id": topic_id, "max_id": max_id})
 
     async def update_events(self):
         yield TelegramUpdate(
@@ -233,6 +237,22 @@ async def test_send_payload_generation_for_normal_and_topic_chats(app, fake_serv
     assert telegram.sent == [
         {"chat_id": 1, "text": "hi", "topic_id": None},
         {"chat_id": 2, "text": "ship it", "topic_id": 101},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mark_read_payload_generation_for_normal_and_topic_chats(app, fake_services):
+    telegram, _ = fake_services
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        normal = await client.post("/api/chats/1/read", json={"maxId": 8})
+        topic = await client.post("/api/chats/2/read", json={"topicId": 11, "maxId": 9})
+
+    assert normal.json() == {"status": "ok"}
+    assert topic.json() == {"status": "ok"}
+    assert telegram.read == [
+        {"chat_id": 1, "topic_id": None, "max_id": 8},
+        {"chat_id": 2, "topic_id": 11, "max_id": 9},
     ]
 
 

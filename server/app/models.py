@@ -81,6 +81,15 @@ class SendMessageResponse(ApiModel):
     status: Literal["sent"] = "sent"
 
 
+class MarkReadRequest(ApiModel):
+    topic_id: Optional[int] = None
+    max_id: Optional[int] = None
+
+
+class MarkReadResponse(ApiModel):
+    status: Literal["ok"] = "ok"
+
+
 class TranscriptionResponse(ApiModel):
     text: str
     language: Optional[str] = None

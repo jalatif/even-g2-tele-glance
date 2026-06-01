@@ -54,6 +54,11 @@ export type SendMessageRequest = {
   topicId?: Id
 }
 
+export type MarkReadRequest = {
+  topicId?: Id
+  maxId?: Id
+}
+
 export type SendMessageResponse = {
   id: Id
   status: 'sent'

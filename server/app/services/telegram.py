@@ -86,6 +86,15 @@ class TelegramService(Protocol):
     ) -> SendMessageResponse:
         ...
 
+    async def mark_read(
+        self,
+        chat_id: int,
+        *,
+        topic_id: Optional[int] = None,
+        max_id: Optional[int] = None,
+    ) -> None:
+        ...
+
     def update_events(self) -> AsyncIterator[TelegramUpdate]:
         ...
 
@@ -523,5 +532,31 @@ class TelethonTelegramService:
                 kwargs["reply_to"] = topic_id
             sent = await asyncio.wait_for(client.send_message(entity, text, **kwargs), timeout=20)
             return SendMessageResponse(id=int(getattr(sent, "id")))
+        except Exception as exc:
+            raise wrap_telegram_error(exc) from exc
+
+    async def mark_read(
+        self,
+        chat_id: int,
+        *,
+        topic_id: Optional[int] = None,
+        max_id: Optional[int] = None,
+    ) -> None:
+        client = await self._get_client()
+        try:
+            entity = await self._get_entity(chat_id)
+            read_max_id = int(max_id or 0)
+            if topic_id is not None:
+                try:
+                    from telethon.tl.functions.messages import ReadDiscussionRequest
+                except ImportError as exc:
+                    raise TelegramServiceError("Telethon discussion read API is unavailable") from exc
+
+                await asyncio.wait_for(
+                    client(ReadDiscussionRequest(peer=entity, msg_id=int(topic_id), read_max_id=read_max_id)),
+                    timeout=20,
+                )
+                return
+            await asyncio.wait_for(client.send_read_acknowledge(entity, max_id=read_max_id), timeout=20)
         except Exception as exc:
             raise wrap_telegram_error(exc) from exc
