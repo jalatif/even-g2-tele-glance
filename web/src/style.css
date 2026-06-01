@@ -149,6 +149,49 @@ textarea {
   line-height: 1.45;
 }
 
+.settings-group a {
+  color: #baf2bd;
+}
+
+.setup-list {
+  margin: 0;
+  padding-left: 22px;
+  color: #c9e7cc;
+  line-height: 1.45;
+}
+
+.settings-details {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-details summary {
+  cursor: pointer;
+  color: #baf2bd;
+  font-weight: 700;
+}
+
+.settings-details[open] {
+  padding: 10px;
+  border: 1px solid #25492f;
+  border-radius: 6px;
+  background: #09120c;
+}
+
+.settings-details[open] summary {
+  margin-bottom: 12px;
+}
+
+.command-block {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #25492f;
+  border-radius: 6px;
+  overflow-x: auto;
+  color: #baf2bd;
+  background: #071008;
+}
+
 .stack code {
   padding: 8px;
   border: 1px solid #25492f;
@@ -223,6 +266,35 @@ textarea {
 .select-list {
   display: grid;
   gap: 8px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 6px;
+  color: #c9e7cc;
+}
+
+.auth-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #89ad8d;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.auth-separator::before,
+.auth-separator::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #25492f;
 }
 
 .select-list button {

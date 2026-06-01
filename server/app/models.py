@@ -16,19 +16,27 @@ class ApiModel(BaseModel):
 class AuthStatus(ApiModel):
     configured: bool
     authorized: bool
-    qr_login_available: bool = True
 
 
-class QrLoginStart(ApiModel):
-    token: str
-    url: str
-    expires_at: Optional[datetime] = None
+class PhoneLoginStartRequest(ApiModel):
+    phone: str = Field(min_length=5)
 
 
-class QrLoginStatus(ApiModel):
-    authorized: bool
-    expired: bool = False
+class PhoneLoginStart(ApiModel):
+    phone: str
+    sent: bool = True
     message: Optional[str] = None
+
+
+class PhoneLoginVerifyRequest(ApiModel):
+    phone: str = Field(min_length=5)
+    code: str = Field(min_length=2)
+
+
+class PhoneLoginStatus(ApiModel):
+    authorized: bool
+    message: Optional[str] = None
+    session_string: Optional[str] = None
 
 
 class ChatSummary(ApiModel):

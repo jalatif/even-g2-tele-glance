@@ -10,7 +10,9 @@
 
 ## Backend Scenarios
 
-- Auth status returns unauthenticated without a saved session.
+- Encrypted `GET /api/session/status` returns unauthenticated without a saved session.
+- Encrypted phone-code login request bodies decrypt before FastAPI validation and encrypted responses decrypt on the frontend.
+- Mismatched shared secrets fail closed without exposing Telegram credentials/session.
 - Telegram dialog entities normalize into stable chat DTOs.
 - Forum topics normalize into stable topic DTOs.
 - History pagination preserves `before_id`, `limit`, and topic filters.
@@ -21,6 +23,7 @@
 ## Frontend Scenarios
 
 - Startup renders auth/loading state before chats are available.
+- Phone-code login is the only login path; QR login UI/API must not reappear.
 - Chat list loads last five threads and handles empty/error states.
 - Selecting a chat with topics opens topic selection.
 - Selecting a chat without topics opens messages directly.
@@ -50,9 +53,10 @@
 ## Hardware Validation
 
 - Use `npm run configure:tailscale --prefix web` before opening the app from phone/glasses.
-- Confirm `web/.env.local` has `VITE_API_BASE_URL=http://<tailscale-ip>:8787`.
+- Confirm TeleGlance Settings has `Backend URL=http://<tailscale-ip>:8787`.
+- Confirm TeleGlance Settings has `Backend shared secret` matching root `.env` `TELEGLANCE_SHARED_SECRET`.
 - Confirm `app.json` network whitelist includes `http://<tailscale-ip>:8787`.
-- QR/sideload the local frontend through Even Hub.
+- Sideload the local frontend through Even Hub.
 - Confirm the phone can reach the local backend over LAN.
 - Verify microphone permission prompt and `g2-microphone` permission behavior.
 - Validate recording, transcription, send confirmation, and cancellation on real G2 hardware.

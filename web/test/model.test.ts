@@ -208,6 +208,43 @@ describe('screenModel', () => {
     }
   })
 
+  it('wraps compact messages on word boundaries when words fit the row', () => {
+    const state: AppState = {
+      screen: 'messages',
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [
+        { id: '1', sender: 'Ada', text: 'there are two hundred thirty commits behind available want update soon' },
+      ],
+    }
+
+    const model = screenModel(state)
+
+    expect(model.kind).toBe('text')
+    if (model.kind === 'text') {
+      expect(model.body).not.toMatch(/commi\s*\n\s*ts/)
+      expect(model.body).toContain('commits')
+    }
+  })
+
+  it('replaces colored circle emoji that LVGL cannot render on glasses', () => {
+    const model = screenModel({
+      screen: 'messages',
+      chat: { id: '1', title: '🔴 Project', kind: 'group' },
+      messages: [
+        { id: '1', sender: 'Ada', text: 'status 🔴 🟡 🟢' },
+      ],
+    })
+
+    expect(model.kind).toBe('text')
+    if (model.kind === 'text') {
+      expect(model.title).toContain('[red]')
+      expect(model.body).toContain('[red] [yellow] [green]')
+      expect(model.body).not.toContain('🔴')
+      expect(model.body).not.toContain('🟡')
+      expect(model.body).not.toContain('🟢')
+    }
+  })
+
   it('renders every long-message scroll stop as a complete box', () => {
     const state: AppState = {
       screen: 'messages',

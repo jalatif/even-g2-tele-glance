@@ -11,8 +11,11 @@ type AppContextValue = {
   startupError: string | null
   dispatch: (input: AppInput) => Promise<void>
   sendText: (text: string) => Promise<void>
+  startPhoneLogin: (phone: string) => Promise<void>
+  verifyPhoneLogin: (phone: string, code: string) => Promise<void>
   saveSettings: (settings: FrontendConfig) => void
   resetSettings: () => void
+  logoutTelegram: () => Promise<void>
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -28,6 +31,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [startupError, setStartupError] = useState<string | null>(null)
   const settingsRef = useRef(settings)
   const controllerRef = useRef<TelegramAppController | null>(null)
+  const apiRef = useRef<HttpTelegramApi | null>(null)
 
   settingsRef.current = settings
 
@@ -38,7 +42,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     async function start() {
       try {
-        const api = new HttpTelegramApi(settingsRef.current.apiBaseUrl)
+        const api = new HttpTelegramApi(settingsRef.current.apiBaseUrl, () => settingsRef.current)
+        apiRef.current = api
         const glasses = await EvenHubGlassesBridge.create(
           (input) => {
             void controllerRef.current?.dispatch(input)
@@ -46,7 +51,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           { debugEventsEnabled: () => settingsRef.current.debugEventsEnabled },
         ).catch(() => fallbackBridge)
         if (!active) return
-        const controller = new TelegramAppController(api, glasses, runtimeConfig(settingsRef.current))
+        const controller = new TelegramAppController(
+          api,
+          glasses,
+          runtimeConfig(settingsRef.current),
+          (session) => {
+            const next = { ...settingsRef.current, telegramSession: session }
+            saveFrontendConfig(next)
+            settingsRef.current = next
+            if (active) setSettings(next)
+          },
+          () => Boolean(settingsRef.current.backendSharedSecret.trim() && settingsRef.current.telegramApiId.trim() && settingsRef.current.telegramApiHash.trim()),
+        )
         controllerRef.current = controller
         unsubscribe = controller.subscribe((next) => {
           if (active) setState(next)
@@ -76,16 +92,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await controllerRef.current?.sendTextFromPhone(text)
   }, [])
 
+  const startPhoneLogin = useCallback(async (phone: string) => {
+    await controllerRef.current?.startPhoneLogin(phone)
+  }, [])
+
+  const verifyPhoneLogin = useCallback(async (phone: string, code: string) => {
+    await controllerRef.current?.verifyPhoneLogin(phone, code)
+  }, [])
+
   const handleSaveSettings = useCallback((next: FrontendConfig) => {
-    const previousApiBaseUrl = settingsRef.current.apiBaseUrl
+    const previous = settingsRef.current
     saveFrontendConfig(next)
     setSettings(next)
     controllerRef.current?.updateRuntimeConfig(runtimeConfig(next))
-    if (next.apiBaseUrl.trim() !== previousApiBaseUrl.trim()) window.location.reload()
+    if (
+      next.apiBaseUrl.trim() !== previous.apiBaseUrl.trim()
+      || next.telegramApiId.trim() !== previous.telegramApiId.trim()
+      || next.telegramApiHash.trim() !== previous.telegramApiHash.trim()
+      || next.telegramSession.trim() !== previous.telegramSession.trim()
+      || next.backendSharedSecret.trim() !== previous.backendSharedSecret.trim()
+      || next.sttBaseUrl.trim() !== previous.sttBaseUrl.trim()
+    ) {
+      window.location.reload()
+    }
   }, [])
 
   const handleResetSettings = useCallback(() => {
     resetFrontendConfig()
+    window.location.reload()
+  }, [])
+
+  const logoutTelegram = useCallback(async () => {
+    await apiRef.current?.logout()
+    const next = { ...settingsRef.current, telegramSession: '' }
+    saveFrontendConfig(next)
     window.location.reload()
   }, [])
 
@@ -95,9 +135,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     startupError,
     dispatch,
     sendText,
+    startPhoneLogin,
+    verifyPhoneLogin,
     saveSettings: handleSaveSettings,
     resetSettings: handleResetSettings,
-  }), [dispatch, handleResetSettings, handleSaveSettings, sendText, settings, startupError, state])
+    logoutTelegram,
+  }), [dispatch, handleResetSettings, handleSaveSettings, logoutTelegram, sendText, settings, startPhoneLogin, startupError, state, verifyPhoneLogin])
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }

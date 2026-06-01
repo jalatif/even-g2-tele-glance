@@ -1,1 +1,1 @@
-"""Backend package for the G2 Tele app."""
+"""Backend package for the TeleGlance app."""

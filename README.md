@@ -1,20 +1,64 @@
-# G2 Tele
+# TeleGlance
 
-G2 Tele is an Even G2 glasses app for browsing recent Telegram chats/topics, reading message history, and sending short text replies from voice transcription.
+TeleGlance is an Even G2 glasses app for reading Telegram chats/topics and sending short replies with local voice transcription.
 
-The implementation follows the project plan in [AGENTS.md](AGENTS.md).
+The app is designed for self-hosted use. The phone/glasses frontend stores the user's Telegram API credentials and MTProto session locally, while the backend stays a local relay for Telegram requests and Whisper transcription.
 
-## Architecture
+## What You Need
 
-- `web/`: Even Hub frontend for the 576x288 glasses UI.
-- `server/`: Local FastAPI backend for Telegram MTProto access and local Whisper transcription.
-- `tests/`: Focused unit tests for backend normalization and frontend state transitions.
+- Even G2 glasses and the Even Realities app.
+- A local Mac/Linux machine for the backend.
+- Telegram API credentials from `https://my.telegram.org`.
+- A backend shared secret that you set both in backend `.env` and TeleGlance Settings. The same value must match exactly.
+- Node.js for the frontend and Python 3.9+ for the backend.
 
-## Local Development
+## First-Time App Setup
 
-Backend:
+1. Open `https://my.telegram.org`.
+2. Sign in with your Telegram phone number.
+3. Open API development tools and create an app.
+4. Copy the API ID and API hash.
+5. Create a backend shared secret. A strong random value is recommended:
 
 ```sh
+openssl rand -base64 32
+```
+
+A normal string of your choice also works, but longer random values are safer. Put the same exact value in the backend root `.env` as `TELEGLANCE_SHARED_SECRET` and in TeleGlance Settings as `Backend shared secret`.
+
+6. Open TeleGlance Settings and paste the API ID/hash, backend URL, and backend shared secret.
+7. Save settings, then enter your mobile number with international code to receive a Telegram verification code.
+
+After login, the frontend stores a Telegram StringSession on this phone only. The backend receives encrypted credentials/session per request, but does not persist them in the public setup path. The shared secret itself is never sent over the wire.
+
+Phone-code login requires the backend shared secret and API ID/API hash to be configured first.
+
+## Configuration
+
+Most settings live in the phone Settings page: Telegram API ID/hash, Telegram session, backend URL, backend shared secret, optional STT URL, recording minimum, and debug logging.
+
+The backend needs root `.env` for `TELEGLANCE_SHARED_SECRET`. Copy [.env.example](.env.example), uncomment `TELEGLANCE_SHARED_SECRET`, and set it to the same value used in TeleGlance Settings:
+
+```sh
+cp .env.example .env
+```
+
+Relevant public settings:
+
+- `BACKEND_CORS_ORIGINS`: optional comma-separated frontend origins for custom local development.
+- `TAILSCALE_ENABLED`: defaults to `true`; keep enabled for local Tailscale testing. Set `TAILSCALE_ENABLED=false` only if you are not using Tailscale and want to rely on a LAN IP.
+- `TELEGLANCE_SHARED_SECRET`: required shared secret for encrypted backend API payloads over HTTP. Generate with `openssl rand -base64 32` or choose your own strong string, then enter the same value in TeleGlance Settings.
+- `WHISPER_MODEL`, `WHISPER_DEVICE`, `WHISPER_COMPUTE_TYPE`: optional local Whisper STT tuning. Defaults already run with `base`, `auto`, and `int8`.
+
+Backend URL, STT URL, Telegram API ID/hash, Telegram session, and backend shared secret are configured in the frontend Settings page. `TELEGLANCE_SHARED_SECRET` must be configured on both sides. Telegram auth is sent in an encrypted header, JSON request bodies are encrypted, and JSON responses are encrypted before they are sent back to the app.
+
+## Run The Backend
+
+Repo link: `https://github.com/jalatif/even-g2-tele-glance.git`
+
+```sh
+git clone https://github.com/jalatif/even-g2-tele-glance.git
+cd even-g2-tele-glance
 cd server
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
@@ -22,11 +66,93 @@ cd ..
 scripts/start-backend.sh --reload
 ```
 
-Use the repo-local launcher rather than plain `uvicorn`. Plain `uvicorn` can
-silently use another active virtualenv, which will fail at runtime with missing
-backend dependencies such as Telethon.
+The backend listens on `0.0.0.0:8787`, so it can be reached from another device if your network allows it. Do not use `localhost` in TeleGlance Settings on the phone/glasses; use a Tailscale IP or LAN IP.
 
-Frontend:
+Tailscale is enabled by default for CORS. If Tailscale is installed and logged in, get the backend URL with:
+
+```sh
+tailscale ip -4
+```
+
+Then set Backend URL in TeleGlance Settings to `http://<tailscale-ip>:8787`.
+
+If Tailscale is not installed or not working, either install/login to Tailscale or use LAN mode:
+
+```sh
+cp .env.example .env
+echo "TAILSCALE_ENABLED=false" >> .env
+```
+
+Find your LAN IP:
+
+```sh
+# macOS, usually Wi-Fi:
+ipconfig getifaddr en0
+
+# Linux:
+hostname -I
+```
+
+Then set Backend URL in TeleGlance Settings to `http://<lan-ip>:8787`.
+
+## Quick Backend Setup For Installed App
+
+Use this path if TeleGlance is already installed on your phone/glasses and you only need a backend:
+
+```sh
+git clone https://github.com/jalatif/even-g2-tele-glance.git
+cd even-g2-tele-glance
+cd server
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+cd ..
+scripts/start-backend.sh --reload
+```
+
+Then open TeleGlance Settings on the phone and set:
+
+- `Backend URL`: `http://<your-computer-tailscale-or-lan-ip>:8787`
+- `Backend shared secret`: required; must exactly match `TELEGLANCE_SHARED_SECRET` in root `.env`
+- `STT Server Url (Optional)`: leave blank unless you run a separate transcription service
+
+If you do not have an STT server, do nothing else: the backend includes local `faster-whisper` STT at `/api/transcribe` and uses the default `WHISPER_MODEL=base`. The first transcription can be slower because the model may need to download/load.
+
+## Speech-To-Text
+
+By default, voice replies are sent to the configured backend at `POST /api/transcribe`, where local Whisper runs through `faster-whisper`.
+
+Whisper settings are optional and live in the root `.env` if you want to tune transcription. Leave them unset for the default local STT setup:
+
+```sh
+# Defaults:
+# WHISPER_MODEL=base
+# WHISPER_DEVICE=auto
+# WHISPER_COMPUTE_TYPE=int8
+#
+# Faster/lighter CPU option:
+# WHISPER_MODEL=tiny
+# WHISPER_COMPUTE_TYPE=int8
+#
+# More accurate but slower option:
+# WHISPER_MODEL=small
+# WHISPER_COMPUTE_TYPE=int8
+#
+# Advanced optional settings:
+# WHISPER_BEAM_SIZE=1
+# WHISPER_BEST_OF=1
+# WHISPER_TEMPERATURE=0
+# WHISPER_CONDITION_ON_PREVIOUS_TEXT=false
+```
+
+The phone Settings page also has `STT Server Url (Optional)`. Leave it blank to use the main backend. If set, that custom server must expose the same `POST /api/transcribe` API and return:
+
+```json
+{ "text": "transcribed message" }
+```
+
+Audio for transcription is sent to whichever STT/backend URL is configured. Leave STT URL blank to use your own backend. Only enter a custom STT URL if you trust that server with voice audio and transcript content.
+
+## Run The Frontend Locally
 
 ```sh
 cd web
@@ -34,7 +160,9 @@ npm install
 npm run dev
 ```
 
-For real phone/glasses testing, the frontend must call the Mac over a reachable IP, not `localhost` on the phone/glasses. Tailscale is enabled by default for local device testing:
+Open the printed Vite URL in a browser. The same settings page is used for backend URL, Telegram credentials, STT URL, recording minimum, and debug logging.
+
+## Tailscale Device Testing
 
 ```sh
 cd web
@@ -42,39 +170,53 @@ npm run configure:tailscale
 npm run dev:tailscale
 ```
 
-`configure:tailscale` detects `tailscale ip -4`, writes `web/.env.local`, and adds the backend origin to `app.json` network whitelist. The backend accepts Tailscale dev origins by default when `TAILSCALE_ENABLED=true`.
+`configure:tailscale` detects the machine's Tailscale IP and updates `app.json` network permissions for local device testing. It prints the Backend URL to enter in TeleGlance Settings.
 
-Even Hub simulator validation:
+If backend requests fail with CORS errors while using a custom URL, prefer Tailscale first. If you must use another private network range, add a regex override in root `.env`, for example:
+
+```sh
+# Example only: allow local LAN origins from common private ranges.
+BACKEND_CORS_ORIGIN_REGEX=^https?://(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$
+```
+
+## Simulator
+
+Start the backend and frontend, then run:
 
 ```sh
 npx @evenrealities/evenhub-simulator@0.7.2 http://localhost:5173
 ```
 
-Hardware package build:
+Use the simulator to verify startup rendering, list navigation, message scrolling, phone-code login screens, and frontend settings before packaging.
+
+## Package For G2
 
 ```sh
 npm run build:tailscale --prefix web
-npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o g2-tele-<version>.ehpk
+npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o tele-glance-<version>.ehpk
 ```
 
-Hardware-specific implementation notes are maintained in [EVEN_REALITIES_HW.md](EVEN_REALITIES_HW.md). In particular, the G2 glasses display does not render text as a true monospace grid, so long-message blocks use native `TextContainerProperty` borders instead of text-drawn rectangles.
+The `.ehpk` contains only the frontend and manifest. Users must still run their own backend and configure its reachable URL in Settings.
 
-Current glasses message rendering uses full visible-page scrolling for compact
-messages and native bordered text boxes for messages over twenty-five words.
-Telegram timeout responses from the backend are retryable `504` errors.
+## Debugging
 
-## Required Environment
+- Backend health: `curl http://localhost:8787/health`
+- Backend logs: watch the terminal running `scripts/start-backend.sh`.
+- Frontend checks: `npm run typecheck --prefix web` and `npm test --prefix web`.
+- Backend checks: `PYTHONPYCACHEPREFIX=.pycache server/.venv/bin/python -m pytest tests/backend`.
+- Hardware notes: [EVEN_REALITIES_HW.md](EVEN_REALITIES_HW.md).
+- Frontend architecture notes: [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md).
 
-Create `server/.env` from `server/.env.example` and set:
+## Privacy Notes
 
-- `TELEGRAM_API_ID`
-- `TELEGRAM_API_HASH`
-- `WHISPER_MODEL`
-- `WHISPER_DEVICE`
-- `WHISPER_COMPUTE_TYPE`
-- `WHISPER_BEAM_SIZE`
-- `WHISPER_BEST_OF`
-- `WHISPER_TEMPERATURE`
-- `WHISPER_CONDITION_ON_PREVIOUS_TEXT`
+Telegram API hash, backend shared secret, and session strings are sensitive. Storing them in phone localStorage keeps them off backend disk, but anyone with access to that phone/app storage, device backup, injected JavaScript, or a malicious WebView context could read them.
 
-Telegram session files are stored under `server/data/` and ignored by Git.
+TeleGlance requires `TELEGLANCE_SHARED_SECRET` in the backend root `.env` and the same value in TeleGlance Settings. The frontend uses WebCrypto AES-GCM with that secret to send Telegram API ID/hash/session in `X-TeleGlance-Auth`, encrypt JSON request bodies, decrypt JSON responses, and decrypt update-stream event payloads. The secret token itself is never sent over the wire.
+
+This protects app-level payloads from passive HTTP sniffing, but it is not a full HTTPS replacement. A malicious network can still block or tamper with traffic, endpoint URLs and timing are still visible, and audio sent to STT is only as private as the configured STT server. Prefer Tailscale or HTTPS for public use.
+
+Custom STT servers never receive Telegram auth headers from the frontend. They still receive voice audio and transcript-relevant content, so only configure STT URLs you trust.
+
+Run your own backend. Do not point this app at a shared public backend unless that backend has real user authentication, encrypted session handling, rate limiting, and a clear privacy policy.
+
+Audio for transcription is sent to the configured STT/backend URL. Use a backend or STT server you control if message and audio privacy matter.

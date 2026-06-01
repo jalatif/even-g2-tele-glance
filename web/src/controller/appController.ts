@@ -53,6 +53,8 @@ export class TelegramAppController {
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
     options: Partial<ControllerRuntimeConfig> | number = {},
+    private readonly onTelegramSession?: (session: string) => void,
+    private readonly hasTelegramCredentials: () => boolean = () => true,
   ) {
     this.runtimeConfig = typeof options === 'number'
       ? { ...DEFAULT_RUNTIME_CONFIG, messagePressDelayMs: options }
@@ -131,10 +133,13 @@ export class TelegramAppController {
     await this.run(async () => {
       const status = await this.api.authStatus()
       if (!status.authorized) {
+        const hasFrontendCredentials = this.hasTelegramCredentials()
         await this.setState({
           screen: 'auth',
-          mode: 'signedOut',
-          message: 'Open Telegram login on the phone. Press to create QR login.',
+          mode: hasFrontendCredentials ? 'signedOut' : 'needsSetup',
+          message: !hasFrontendCredentials || status.configured === false
+            ? 'Telegram not connected. Please connect using the instructions in Settings on the phone.'
+            : 'Telegram not connected. Enter your phone number in the phone UI to receive a Telegram login code.',
         })
         return
       }
@@ -206,36 +211,65 @@ export class TelegramAppController {
   private async handleAuth(state: Extract<AppState, { screen: 'auth' }>, input: AppInput) {
     if (input.type !== 'press') return
     await this.run(async () => {
-      if (state.mode === 'signedOut') {
-        const qr = await this.api.startQrAuth()
+      if (state.mode === 'needsSetup') {
         await this.setState({
-          screen: 'auth',
-          mode: 'qrPending',
-          qrToken: qr.token,
-          qrUrl: qr.url,
-          message: qr.url
-            ? `Scan QR in Telegram mobile.\n${qr.url}\n\nPress after login.`
-            : 'QR login started. Scan in Telegram mobile, then press again.',
+          ...state,
+          message: 'Telegram not connected. Add Backend shared secret and Telegram API ID/hash in Settings on the phone first.',
+        })
+        return
+      }
+      if (state.mode === 'signedOut') {
+        await this.setState({
+          ...state,
+          message: 'Enter your phone number in the phone UI to receive a Telegram login code.',
         })
         return
       }
 
-      const status = await this.api.qrAuthStatus()
-      if (status.authorized) {
-        await this.loadChats()
-      } else if (status.expired) {
+      if (state.mode === 'phonePending') return
+    }, state)
+  }
+
+  async startPhoneLogin(phone: string) {
+    const trimmed = phone.trim()
+    if (!trimmed) return
+    await this.run(async () => {
+      if (!this.hasTelegramCredentials()) {
         await this.setState({
           screen: 'auth',
-          mode: 'signedOut',
-          message: `${status.message ?? 'QR login expired.'} Press to create a new QR login.`,
+          mode: 'needsSetup',
+          message: 'Telegram not connected. Add Telegram API ID/hash in Settings on the phone first.',
         })
-      } else {
-        await this.setState({
-          ...state,
-          message: `${status.message ?? 'Still waiting for Telegram login.'} Press after scanning to check again.`,
-        })
+        return
       }
-    }, state)
+      const result = await this.api.startPhoneAuth(trimmed)
+      await this.setState({
+        screen: 'auth',
+        mode: 'phonePending',
+        phone: result.phone || trimmed,
+        message: result.message ?? `Verification code sent to ${result.phone || trimmed}. Enter it on the phone.`,
+      })
+    }, this.state.screen === 'auth' ? this.state : undefined)
+  }
+
+  async verifyPhoneLogin(phone: string, code: string) {
+    const trimmedPhone = phone.trim()
+    const trimmedCode = code.trim()
+    if (!trimmedPhone || !trimmedCode) return
+    await this.run(async () => {
+      const status = await this.api.verifyPhoneAuth(trimmedPhone, trimmedCode)
+      if (status.authorized) {
+        if (status.sessionString) this.onTelegramSession?.(status.sessionString)
+        await this.loadChats()
+        return
+      }
+      await this.setState({
+        screen: 'auth',
+        mode: 'phonePending',
+        phone: trimmedPhone,
+        message: status.message ?? 'Code was not accepted. Check the Telegram code and try again.',
+      })
+    }, this.state.screen === 'auth' ? this.state : undefined)
   }
 
   private async handleChats(state: Extract<AppState, { screen: 'chats' }>, input: AppInput) {

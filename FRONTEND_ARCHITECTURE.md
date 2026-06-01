@@ -40,15 +40,22 @@ Settings are frontend-specific and persisted in localStorage.
 
 Practical V1 settings:
 
+- First-use Telegram API ID/API hash setup with `my.telegram.org` instructions.
+- Required backend shared secret setup. The same `TELEGLANCE_SHARED_SECRET` value must be configured in backend `.env` and phone Settings.
+- Frontend-local Telegram StringSession status and clear-session action. The UI describes this as stored on the phone only.
+- Login action after credentials are configured: phone-code login with an international-format mobile number. QR login has been removed from the app and backend API surface.
+- Backend setup instructions with `https://github.com/jalatif/even-g2-tele-glance.git`.
 - Backend URL save/reset.
+- Optional STT Server Url override; blank uses the backend URL and backend-local `faster-whisper`.
 - Debug event logging toggle.
-- Chat polling interval in milliseconds.
-- Message polling interval in milliseconds.
 - Recording minimum duration in milliseconds.
-- Read-only current API URL.
+- Advanced fallback refresh intervals for chat/message polling, hidden behind details because SSE is the primary update path.
+- Read-only current API URL and session status.
 - Read-only app/build version.
 
-Changing the backend URL requires a reload so the API client and controller restart from a consistent base URL. Polling and recording settings are applied live to the controller.
+Changing backend URL, STT URL, backend shared secret, Telegram credentials, or the Telegram session requires a reload so the API client and controller restart from a consistent identity. Recording and fallback refresh settings are applied live to the controller.
+
+Telegram API hash, shared secret, and session string are sensitive. They are kept out of backend disk storage in the public setup path, but localStorage is still only appropriate for a self-hosted/user-owned deployment.
 
 ## Controller Contract
 
@@ -60,6 +67,8 @@ The controller exposes phone-facing APIs in addition to glasses input dispatch:
 - `updateRuntimeConfig(config)`: update polling and recording timing.
 
 `sendTextFromPhone(text)` only works while the controller is in a state with an active message thread. It sends to the current chat/topic, refreshes newest messages, normalizes ordering, resets the visible pointer to latest, and re-renders glasses.
+
+Phone-code login returns `sessionString`; the React context persists it to localStorage and all later Telegram API requests include it inside encrypted `X-TeleGlance-Auth`.
 
 ## Glasses Message Projection
 
@@ -76,6 +85,8 @@ Avoid parsing ASCII/debug text to infer native glasses layout. That caused dupli
 ## Realtime Updates
 
 The backend exposes `/api/updates` as an SSE stream for Telegram message updates. The React context subscribes once, forwards matching updates to the shared controller, and the controller refreshes the active thread or root chats as needed.
+
+The frontend intentionally uses `fetch` streaming instead of browser `EventSource` because `EventSource` cannot attach encrypted app auth headers. Credentials/session must not be put in query parameters.
 
 ## Hardware Notes
 

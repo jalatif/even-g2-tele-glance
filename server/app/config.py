@@ -6,13 +6,10 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 class Settings(BaseSettings):
-    telegram_api_id: Optional[int] = Field(default=None, validation_alias="TELEGRAM_API_ID")
-    telegram_api_hash: Optional[str] = Field(default=None, validation_alias="TELEGRAM_API_HASH")
-    telegram_session_path: Path = Field(
-        default=Path("server/data/telegram.session"),
-        validation_alias="TELEGRAM_SESSION_PATH",
-    )
     backend_cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"],
         validation_alias="BACKEND_CORS_ORIGINS",
@@ -29,8 +26,9 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="WHISPER_CONDITION_ON_PREVIOUS_TEXT",
     )
+    teleglance_shared_secret: Optional[str] = Field(default=None, validation_alias="TELEGLANCE_SHARED_SECRET")
 
-    model_config = SettingsConfigDict(env_file=("server/.env", ".env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
@@ -41,9 +39,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def resolve_paths(self) -> "Settings":
-        if not self.telegram_session_path.is_absolute():
-            repo_root = Path(__file__).resolve().parents[2]
-            self.telegram_session_path = (repo_root / self.telegram_session_path).resolve()
         if self.tailscale_enabled and self.backend_cors_origin_regex is None:
             self.backend_cors_origin_regex = r"^https?://(localhost|127\.0\.0\.1|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.\d{1,3}\.\d{1,3})(:\d+)?$"
         return self

@@ -4,7 +4,15 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional, Protocol
 
 from app.config import Settings
-from app.models import ChatSummary, MessageSummary, QrLoginStart, QrLoginStatus, SendMessageResponse, TelegramUpdate, TopicSummary
+from app.models import (
+    ChatSummary,
+    MessageSummary,
+    PhoneLoginStart,
+    PhoneLoginStatus,
+    SendMessageResponse,
+    TelegramUpdate,
+    TopicSummary,
+)
 
 
 class TelegramServiceError(RuntimeError):
@@ -25,13 +33,13 @@ class TelegramService(Protocol):
     async def auth_status(self) -> dict[str, bool]:
         ...
 
-    async def start_qr_login(self) -> QrLoginStart:
+    async def start_phone_login(self, phone: str) -> PhoneLoginStart:
         ...
 
-    async def qr_login_status(self) -> QrLoginStatus:
+    async def complete_phone_login(self, phone: str, code: str) -> PhoneLoginStatus:
         ...
 
-    async def current_qr_login_url(self) -> str:
+    async def logout(self) -> None:
         ...
 
     async def list_chats(self, limit: int) -> list[ChatSummary]:
@@ -181,20 +189,6 @@ def _message_topic_id(message: Any) -> Optional[int]:
     return None
 
 
-def qr_login_start_from_telethon(qr_login: Any) -> QrLoginStart:
-    expires = normalize_expiry(getattr(qr_login, "expires", None))
-    token = getattr(qr_login, "token", b"")
-    if isinstance(token, bytes):
-        token_value = token.hex()
-    else:
-        token_value = str(token)
-    return QrLoginStart(
-        token=token_value,
-        url=str(getattr(qr_login, "url", "")),
-        expires_at=expires,
-    )
-
-
 def normalize_expiry(expires: Any) -> Optional[datetime]:
     if isinstance(expires, datetime):
         return expires
@@ -213,21 +207,36 @@ def is_expired(expires: Any) -> bool:
     return expires_at <= now
 
 
+@dataclass(frozen=True)
+class TelegramClientCredentials:
+    api_id: Optional[int]
+    api_hash: Optional[str]
+    session_string: Optional[str] = None
+
+
 @dataclass
 class TelethonTelegramService:
     settings: Settings
+    credentials: Optional[TelegramClientCredentials] = None
 
     def __post_init__(self) -> None:
         self._client = None
-        self._qr_login = None
-        self._qr_login_task: Optional[asyncio.Task] = None
         self._update_queues: set[asyncio.Queue[TelegramUpdate]] = set()
         self._updates_registered = False
         self._entity_cache: dict[int, Any] = {}
+        self._phone_code_hashes: dict[str, str] = {}
 
     @property
     def configured(self) -> bool:
-        return bool(self.settings.telegram_api_id and self.settings.telegram_api_hash)
+        return bool(self.api_id and self.api_hash)
+
+    @property
+    def api_id(self) -> Optional[int]:
+        return self.credentials.api_id if self.credentials is not None else None
+
+    @property
+    def api_hash(self) -> Optional[str]:
+        return self.credentials.api_hash if self.credentials is not None else None
 
     async def _get_client(self):
         if not self.configured:
@@ -238,14 +247,24 @@ class TelethonTelegramService:
             except ImportError as exc:
                 raise TelegramServiceError("Telethon is not installed. Install server requirements.") from exc
 
-            self.settings.telegram_session_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                from telethon.sessions import StringSession
+            except ImportError as exc:
+                raise TelegramServiceError("Telethon StringSession support is unavailable") from exc
+
             self._client = TelegramClient(
-                str(self.settings.telegram_session_path),
-                self.settings.telegram_api_id,
-                self.settings.telegram_api_hash,
+                StringSession((self.credentials.session_string if self.credentials else None) or ""),
+                int(self.api_id or 0),
+                self.api_hash or "",
             )
         if not self._client.is_connected():
-            await self._client.connect()
+            try:
+                await self._client.connect()
+            except ValueError as exc:
+                if "cannot be reused after logging out" not in str(exc):
+                    raise
+                await self._discard_client()
+                return await self._get_client()
         await self._ensure_update_handler()
         return self._client
 
@@ -296,89 +315,87 @@ class TelethonTelegramService:
 
     async def auth_status(self) -> dict[str, bool]:
         if not self.configured:
-            return {"configured": False, "authorized": False, "qr_login_available": True}
+            return {"configured": False, "authorized": False}
         client = await self._get_client()
         return {
             "configured": True,
             "authorized": bool(await client.is_user_authorized()),
-            "qr_login_available": True,
         }
 
-    async def start_qr_login(self) -> QrLoginStart:
-        client = await self._get_client()
-        if await client.is_user_authorized():
-            return QrLoginStart(token="", url="", expires_at=None)
-        qr_login = await client.qr_login()
-        self._qr_login = qr_login
-        if self._qr_login_task and not self._qr_login_task.done():
-            self._qr_login_task.cancel()
-        self._qr_login_task = asyncio.create_task(self._wait_for_qr_login(qr_login))
-        self._qr_login_task.add_done_callback(self._observe_qr_login_task)
-        return qr_login_start_from_telethon(qr_login)
-
-    async def qr_login_status(self) -> QrLoginStatus:
+    async def start_phone_login(self, phone: str) -> PhoneLoginStart:
         if not self.configured:
             raise TelegramServiceError("Telegram API credentials are not configured")
-
+        normalized_phone = phone.strip()
         client = await self._get_client()
         if await client.is_user_authorized():
-            self._clear_qr_login()
-            return QrLoginStatus(authorized=True)
-
-        if self._qr_login is None:
-            return QrLoginStatus(
-                authorized=False,
-                expired=True,
-                message="QR login has not been started.",
-            )
-
-        expires = getattr(self._qr_login, "expires", None)
-        if is_expired(expires):
-            self._clear_qr_login()
-            return QrLoginStatus(authorized=False, expired=True, message="QR login expired.")
-
-        if self._qr_login_task is None or not self._qr_login_task.done():
-            return QrLoginStatus(authorized=False, expired=False)
-
+            return PhoneLoginStart(phone=normalized_phone, sent=True, message="Telegram is already connected.")
         try:
-            self._qr_login_task.result()
-        except asyncio.CancelledError:
-            return QrLoginStatus(authorized=False, expired=True, message="QR login was cancelled.")
+            sent = await client.send_code_request(normalized_phone)
+        except Exception as exc:
+            raise wrap_telegram_error(exc) from exc
+        phone_code_hash = getattr(sent, "phone_code_hash", None)
+        if phone_code_hash:
+            self._phone_code_hashes[normalized_phone] = str(phone_code_hash)
+        return PhoneLoginStart(phone=normalized_phone, sent=True, message="Verification code sent.")
+
+    async def complete_phone_login(self, phone: str, code: str) -> PhoneLoginStatus:
+        if not self.configured:
+            raise TelegramServiceError("Telegram API credentials are not configured")
+        normalized_phone = phone.strip()
+        client = await self._get_client()
+        if await client.is_user_authorized():
+            return PhoneLoginStatus(authorized=True, session_string=self.current_session_string())
+        kwargs: dict[str, Any] = {
+            "phone": normalized_phone,
+            "code": code.strip(),
+        }
+        phone_code_hash = self._phone_code_hashes.get(normalized_phone)
+        if phone_code_hash:
+            kwargs["phone_code_hash"] = phone_code_hash
+        try:
+            await client.sign_in(**kwargs)
         except Exception as exc:
             error_name = exc.__class__.__name__
             if error_name == "SessionPasswordNeededError":
-                self._clear_qr_login()
                 raise TelegramServiceError("Telegram account has two-step verification enabled; password login is not implemented yet.") from exc
-            raise TelegramServiceError(str(exc)) from exc
+            raise wrap_telegram_error(exc) from exc
+        self._phone_code_hashes.pop(normalized_phone, None)
+        return PhoneLoginStatus(
+            authorized=bool(await client.is_user_authorized()),
+            session_string=self.current_session_string(),
+        )
 
-        self._clear_qr_login()
-        return QrLoginStatus(authorized=bool(await client.is_user_authorized()))
+    def current_session_string(self) -> Optional[str]:
+        if self._client is None:
+            return None
+        session = getattr(self._client, "session", None)
+        save = getattr(session, "save", None)
+        if not callable(save):
+            return None
+        value = save()
+        return str(value) if value else None
 
-    async def current_qr_login_url(self) -> str:
-        if self._qr_login is None:
-            raise TelegramServiceError("QR login has not been started.")
-        expires = getattr(self._qr_login, "expires", None)
-        if is_expired(expires):
-            self._clear_qr_login()
-            raise TelegramServiceError("QR login expired.")
-        return str(getattr(self._qr_login, "url", ""))
-
-    async def _wait_for_qr_login(self, qr_login: Any) -> None:
-        await qr_login.wait()
-
-    def _observe_qr_login_task(self, task: asyncio.Task) -> None:
-        if task.cancelled():
+    async def _discard_client(self) -> None:
+        client = self._client
+        self._client = None
+        self._updates_registered = False
+        self._entity_cache.clear()
+        self._phone_code_hashes.clear()
+        if client is None:
             return
         try:
-            task.exception()
-        except asyncio.CancelledError:
-            return
+            if client.is_connected():
+                await client.disconnect()
+        except Exception:
+            pass
 
-    def _clear_qr_login(self) -> None:
-        if self._qr_login_task and not self._qr_login_task.done():
-            self._qr_login_task.cancel()
-        self._qr_login_task = None
-        self._qr_login = None
+    async def logout(self) -> None:
+        client = await self._get_client()
+        try:
+            if await client.is_user_authorized():
+                await client.log_out()
+        finally:
+            await self._discard_client()
 
     async def list_chats(self, limit: int) -> list[ChatSummary]:
         client = await self._get_client()

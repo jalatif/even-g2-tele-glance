@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useApp } from '../contexts/AppContext'
 import type { Message } from '../types'
 
@@ -73,16 +73,69 @@ export function ChatScreen() {
 }
 
 function PhoneStateView() {
-  const { state, dispatch } = useApp()
+  const { state, dispatch, startPhoneLogin, verifyPhoneLogin } = useApp()
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [phoneError, setPhoneError] = useState<string | null>(null)
+  const [isPhoneAuthBusy, setIsPhoneAuthBusy] = useState(false)
+
+  async function submitPhoneLogin(event: FormEvent) {
+    event.preventDefault()
+    setIsPhoneAuthBusy(true)
+    setPhoneError(null)
+    try {
+      await startPhoneLogin(phone)
+    } catch (error) {
+      setPhoneError(error instanceof Error ? error.message : 'Could not send code')
+    } finally {
+      setIsPhoneAuthBusy(false)
+    }
+  }
+
+  async function submitCode(event: FormEvent) {
+    event.preventDefault()
+    const targetPhone = state.screen === 'auth' && state.phone ? state.phone : phone
+    setIsPhoneAuthBusy(true)
+    setPhoneError(null)
+    try {
+      await verifyPhoneLogin(targetPhone, code)
+    } catch (error) {
+      setPhoneError(error instanceof Error ? error.message : 'Could not verify code')
+    } finally {
+      setIsPhoneAuthBusy(false)
+    }
+  }
+
   if (state.screen === 'auth') {
+    const isPhonePending = state.mode === 'phonePending'
     return (
       <div className="stack">
-        <h2>{state.mode === 'qrPending' ? 'Telegram Login' : 'Telegram Session'}</h2>
+        <h2>{isPhonePending ? 'Telegram Login' : 'Telegram Session'}</h2>
         <p>{state.message}</p>
-        {state.qrUrl && <code>{state.qrUrl}</code>}
-        <button type="button" onClick={() => void dispatch({ type: 'press' })}>
-          {state.mode === 'qrPending' ? 'Check Login' : 'Start QR Login'}
-        </button>
+        {phoneError && <p className="field-error">{phoneError}</p>}
+        <form className="auth-form" onSubmit={isPhonePending ? submitCode : submitPhoneLogin}>
+          {isPhonePending ? (
+            <>
+              <label>
+                <span>Verification code</span>
+                <input value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="12345" />
+              </label>
+              <button type="submit" disabled={isPhoneAuthBusy || !code.trim()}>
+                {isPhoneAuthBusy ? 'Verifying...' : 'Verify Code'}
+              </button>
+            </>
+          ) : (
+            <>
+              <label>
+                <span>Mobile number with country code</span>
+                <input value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" autoComplete="tel" placeholder="+14155552671" />
+              </label>
+              <button type="submit" disabled={isPhoneAuthBusy || state.mode === 'needsSetup' || !phone.trim()}>
+                {isPhoneAuthBusy ? 'Sending...' : 'Send Login Code'}
+              </button>
+            </>
+          )}
+        </form>
       </div>
     )
   }

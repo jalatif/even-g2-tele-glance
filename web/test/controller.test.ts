@@ -19,17 +19,24 @@ const reversedMessages: Message[] = [
 ]
 
 describe('TelegramAppController', () => {
-  it('shows auth when no Telegram session exists and starts QR auth on press', async () => {
+  it('shows phone login prompt when no Telegram session exists', async () => {
     const api = fakeApi({ authorized: false })
     const bridge = fakeBridge()
     const controller = new TelegramAppController(api, bridge)
 
     await controller.init()
-    expect(controller.snapshot.screen).toBe('auth')
+    expect(controller.snapshot).toMatchObject({
+      screen: 'auth',
+      mode: 'signedOut',
+      message: expect.stringContaining('phone number'),
+    })
 
     await controller.dispatch({ type: 'press' })
-    expect(api.startQrAuth).toHaveBeenCalledOnce()
-    expect(controller.snapshot).toMatchObject({ screen: 'auth', mode: 'qrPending' })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'auth',
+      mode: 'signedOut',
+      message: expect.stringContaining('phone number'),
+    })
     expect(bridge.render).toHaveBeenCalled()
   })
 
@@ -474,8 +481,9 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
 
   return {
     authStatus: vi.fn(async () => ({ authorized: options.authorized })),
-    startQrAuth: vi.fn(async () => ({ token: 'token', url: 'tg://login?token=token' })),
-    qrAuthStatus: vi.fn(async () => ({ authorized: options.authorized, expired: false })),
+    startPhoneAuth: vi.fn(async (phone: string) => ({ phone, sent: true })),
+    verifyPhoneAuth: vi.fn(async () => ({ authorized: options.authorized })),
+    logout: vi.fn(async () => undefined),
     listChats: vi.fn(async () => typeof options.chats === 'function' ? options.chats() : options.chats ?? chats),
     listTopics: vi.fn(async () => options.topics ?? topics),
     listMessages,

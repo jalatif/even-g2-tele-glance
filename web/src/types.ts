@@ -3,19 +3,18 @@ export type Id = string | number
 export type AuthStatus = {
   configured?: boolean
   authorized: boolean
-  qrLoginAvailable?: boolean
 }
 
-export type QrAuthStart = {
-  token: string
-  url?: string
-  expiresAt?: string
-}
-
-export type QrAuthStatus = {
-  authorized: boolean
-  expired?: boolean
+export type PhoneAuthStart = {
+  phone: string
+  sent: boolean
   message?: string | null
+}
+
+export type PhoneAuthStatus = {
+  authorized: boolean
+  message?: string | null
+  sessionString?: string | null
 }
 
 export type Chat = {

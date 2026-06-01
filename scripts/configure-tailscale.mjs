@@ -11,15 +11,6 @@ const ip = process.env.TAILSCALE_IP ?? detectTailscaleIp()
 const backendOrigin = `http://${ip}:${backendPort}`
 const frontendOrigin = `http://${ip}:${vitePort}`
 
-writeFileSync(
-  join(repoRoot, 'web/.env.local'),
-  [
-    'VITE_USE_TAILSCALE=true',
-    `VITE_API_BASE_URL=${backendOrigin}`,
-    '',
-  ].join('\n'),
-)
-
 const appJsonPath = join(repoRoot, 'app.json')
 const appJson = JSON.parse(readFileSync(appJsonPath, 'utf8'))
 const networkPermission = appJson.permissions?.find((permission) => permission.name === 'network')
@@ -34,7 +25,9 @@ writeFileSync(appJsonPath, `${JSON.stringify(appJson, null, 2)}\n`)
 
 console.log(`Tailscale backend URL: ${backendOrigin}`)
 console.log(`Tailscale frontend URL: ${frontendOrigin}`)
-console.log('Updated web/.env.local and app.json.')
+console.log('Updated app.json network whitelist.')
+console.log('Set this Backend URL in TeleGlance Settings if needed:')
+console.log(backendOrigin)
 
 function detectTailscaleIp() {
   try {

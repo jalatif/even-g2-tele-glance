@@ -21,7 +21,7 @@ export type AppInput =
   | { type: 'foreground' }
 
 export type ScreenModel =
-  | { kind: 'text'; title: string; body: string; footer?: string; qrImageUrl?: string; box?: BoxedText }
+  | { kind: 'text'; title: string; body: string; footer?: string; box?: BoxedText }
   | { kind: 'list'; title: string; items: string[]; selectedIndex: number }
 
 export type BoxedText = {
@@ -31,7 +31,7 @@ export type BoxedText = {
 
 export type AppState =
   | { screen: 'loading'; message: string }
-  | { screen: 'auth'; mode: 'signedOut' | 'qrPending'; message: string; qrToken?: string; qrUrl?: string }
+  | { screen: 'auth'; mode: 'needsSetup' | 'signedOut' | 'phonePending'; message: string; phone?: string }
   | { screen: 'chats'; chats: Chat[]; selectedIndex: number }
   | { screen: 'asleep'; chats: Chat[]; selectedIndex: number }
   | { screen: 'newMessage'; chat: Chat; topic?: Topic; message: string; chats: Chat[]; selectedIndex: number }
@@ -56,9 +56,8 @@ export function screenModel(state: AppState): ScreenModel {
     case 'auth':
       return {
         kind: 'text',
-        title: state.mode === 'qrPending' ? 'Telegram Login' : 'Telegram',
+        title: state.mode === 'phonePending' ? 'Telegram Login' : 'Telegram',
         body: state.message,
-        qrImageUrl: state.mode === 'qrPending' ? `/api/auth/qr/image?t=${encodeURIComponent(state.qrToken ?? state.qrUrl ?? '')}` : undefined,
       }
     case 'chats':
       return {
@@ -77,20 +76,20 @@ export function screenModel(state: AppState): ScreenModel {
       return {
         kind: 'text',
         title: 'New Telegram',
-        body: `${state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title}\n\n${state.message || 'New message'}\n\nClick to open.`,
+        body: sanitizeGlassesText(`${state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title}\n\n${state.message || 'New message'}\n\nClick to open.`),
         footer: 'Double click dismiss',
       }
     case 'topics':
       return {
         kind: 'list',
-        title: `Topics: ${state.chat.title}`,
+        title: sanitizeGlassesText(`Topics: ${state.chat.title}`),
         items: state.topics.map(topicLabel),
         selectedIndex: state.selectedIndex,
       }
     case 'messages':
       return {
         kind: 'text',
-        title: state.topic ? `Messages: ${state.topic.title}` : `Messages: ${state.chat.title}`,
+        title: sanitizeGlassesText(state.topic ? `Messages: ${state.topic.title}` : `Messages: ${state.chat.title}`),
         ...formatMessages(state.messages, state.scrollOffset ?? 0),
         footer: footerText(state.status, 'Click record | Double click back'),
       }
@@ -110,7 +109,7 @@ export function screenModel(state: AppState): ScreenModel {
     case 'confirm':
       return {
         kind: 'list',
-        title: `Reply: ${state.transcript}`,
+        title: sanitizeGlassesText(`Reply: ${state.transcript}`),
         items: ['Send', 'Cancel'],
         selectedIndex: state.selectedIndex,
       }
@@ -138,16 +137,16 @@ export function screenModel(state: AppState): ScreenModel {
 
 function chatLabel(chat: Chat) {
   const unread = chat.unreadCount ? ` (${chat.unreadCount})` : ''
-  return `${chat.title}${unread}`
+  return sanitizeGlassesText(`${chat.title}${unread}`)
 }
 
 function topicLabel(topic: Topic) {
   const unread = topic.unreadCount ? ` (${topic.unreadCount})` : ''
-  return `${topic.title}${unread}`
+  return sanitizeGlassesText(`${topic.title}${unread}`)
 }
 
 function footerText(status: string | undefined, controls: string) {
-  return status ? `${status} | ${controls}` : controls
+  return sanitizeGlassesText(status ? `${status} | ${controls}` : controls)
 }
 
 function formatMessages(messages: Message[], scrollOffset = 0) {
@@ -216,12 +215,26 @@ type MessageDisplayBlock = {
 }
 
 function formatMessageBlocks(message: Message): MessageDisplayBlock[] {
-  const sender = message.outgoing ? 'Me' : message.sender || 'Unknown'
-  const text = message.text || ''
+  const sender = sanitizeGlassesText(message.outgoing ? 'Me' : message.sender || 'Unknown')
+  const text = sanitizeGlassesText(message.text || '')
   if (wordCount(text) > MESSAGE_BOX_WORD_THRESHOLD) return formatMessageBox(sender, text)
 
-  const rows = splitDisplayRows(`${sender}: ${text}`, '')
-  return [{ text: rows.map((row, index) => index === 0 ? row : `  ${row}`).join('\n') }]
+  return [{ text: formatCompactMessageRows(sender, text).join('\n') }]
+}
+
+function formatCompactMessageRows(sender: string, text: string) {
+  const firstPrefix = `${sender}: `
+  const firstRows = splitDisplayWordRows(
+    text,
+    Math.max(1, MESSAGE_ROW_CHAR_LIMIT - firstPrefix.length),
+    Math.max(1, MESSAGE_ROW_BYTE_LIMIT - utf8ByteLength(firstPrefix)),
+  )
+  const [firstRow = '', ...rest] = firstRows
+  const rows = [`${firstPrefix}${firstRow}`]
+  for (const row of rest) {
+    rows.push(...splitDisplayWordRows(row, MESSAGE_ROW_CHAR_LIMIT - 2, MESSAGE_ROW_BYTE_LIMIT - 2).map((part) => `  ${part}`))
+  }
+  return rows
 }
 
 function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
@@ -250,6 +263,14 @@ function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
     })
   }
   return pages
+}
+
+function sanitizeGlassesText(value: string) {
+  return value
+    .replace(/\u{1f534}/gu, '[red]')
+    .replace(/\u{1f7e1}/gu, '[yellow]')
+    .replace(/\u{1f7e2}/gu, '[green]')
+    .replace(/\ufe0f/g, '')
 }
 
 function boxLine(value: string) {

@@ -1,7 +1,7 @@
 {
   "package_id": "com.jalatif.telegram",
   "edition": "202601",
-  "name": "G2 Tele",
+  "name": "TeleGlance",
   "version": "0.1.30",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.10",
@@ -9,11 +9,10 @@
   "permissions": [
     {
       "name": "network",
-      "desc": "Connects to the local G2 Tele backend during owner development.",
+      "desc": "Connects TeleGlance to a self-hosted backend for Telegram and transcription.",
       "whitelist": [
         "http://localhost:8787",
-        "http://127.0.0.1:8787",
-        "http://100.75.187.27:8787"
+        "http://127.0.0.1:8787"
       ]
     },
     {

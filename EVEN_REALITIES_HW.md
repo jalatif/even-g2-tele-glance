@@ -1,6 +1,6 @@
 # Even Realities Hardware Notes
 
-These notes capture hardware-specific implementation details and quirks observed while building and testing G2 Tele. They are intentionally focused on real device behavior, not simulator-only behavior.
+These notes capture hardware-specific implementation details and quirks observed while building and testing TeleGlance. They are intentionally focused on real device behavior, not simulator-only behavior.
 
 ## Packaging And Runtime
 
@@ -13,7 +13,7 @@ These notes capture hardware-specific implementation details and quirks observed
   - package with `evenhub-cli pack`
 - `TAILSCALE_ENABLED=true` allows backend CORS for Tailscale `100.64.0.0/10` origins.
 - The phone running the Even Realities app must be able to reach the backend URL in both:
-  - `web/.env.local`
+  - TeleGlance phone Settings `Backend URL`
   - `app.json` network whitelist
 - Before repacking, bump `app.json` `version` and delete stale `.ehpk` outputs so the package metadata and filename match.
 - The app now also supports a phone/debug-side `Backend URL` field stored in `localStorage`, so the backend route can be changed without rebuilding.
@@ -116,8 +116,10 @@ These notes capture hardware-specific implementation details and quirks observed
 
 ## Backend And Debugging
 
-- Keep Telegram credentials and session server-side only.
-- `TELEGRAM_SESSION_PATH` should resolve from the repository root so login persists whether the backend starts from repo root or `server/`.
+- Public builds keep Telegram API credentials, the required backend shared secret, and the MTProto StringSession in phone localStorage. Telegram/session requests use encrypted `X-TeleGlance-Auth`; do not put session strings or shared secrets in URLs, `.env` beyond `TELEGLANCE_SHARED_SECRET`, or debug logs.
+- The backend no longer exposes QR login or compatibility auth endpoints. Phone-code login is the only supported Telegram login path.
+- JSON Telegram request/response bodies are encrypted with the shared secret. CORS must expose `X-TeleGlance-Encrypted` or the frontend cannot detect/decrypt encrypted responses.
+- The backend `/api/transcribe` endpoint runs local `faster-whisper`; the phone setting `STT Server Url (Optional)` should be blank unless the user runs a trusted compatible STT server. Custom STT requests intentionally do not receive Telegram auth headers.
 - Hardware debug logging is useful because WebView console access is limited.
 - The backend has temporary in-memory debug endpoints:
   - `POST /api/debug/events`
@@ -136,7 +138,7 @@ These notes capture hardware-specific implementation details and quirks observed
 
 ## Telegram-Specific Hardware Validation
 
-- The real Telegram login flow has succeeded and `server/data/telegram.session` exists locally.
+- The real Telegram phone-code login flow has succeeded with encrypted frontend-supplied credentials/session.
 - Real chat loading, forum topic listing, and forum topic message loading were validated against the Akira Agents group.
 - For Telethon `1.43`, forum message history uses `topic.id`, not `topMessageId`; `topMessageId` remains useful DTO/debug context.
 - Telethon forum/reply history can return messages without `message.sender` populated while the result contains separate `users`/`chats` entity lists. Normalize sender names from those bundled entities using `from_id`/peer ids before returning API DTOs, otherwise incoming replies render as `Unknown`.
@@ -145,6 +147,8 @@ These notes capture hardware-specific implementation details and quirks observed
 - The glasses text renderer has a narrower practical line width than the browser/debug pane. A 44-character Unicode box can look correct in the browser but wrap badly on the glasses display; use ASCII borders and keep boxed message lines around 30 characters total so the right border stays on the same rendered row. Normal trailing spaces can be collapsed or ignored before a right border, so boxed rows use non-breaking space padding.
 - Text-drawn rectangles still do not visually align on G2 because the glasses renderer is not a true monospace grid; hyphens and letters have different pixel widths. For long-message pages, prefer native `TextContainerProperty` borders and put the message text inside the bordered container instead of drawing borders with text.
 - The browser/debug pane and glasses display are not interchangeable for final layout QA. The browser can make text-drawn boxes look correct while the glasses pane exposes proportional glyph widths, collapsed spacing, or firmware wrapping. Treat the glasses pane or real G2 as the source of truth.
+- LVGL can warn on unsupported Telegram glyphs, especially colored-circle emoji such as red/yellow/green circles. Sanitize those before rendering to glasses text containers to avoid repeated `glyph dsc. not found` warnings.
+- Compact message rows should wrap on word boundaries just like boxed long-message rows. Character-based wrapping makes ordinary messages split words mid-letter on the G2 display.
 
 ## Current Known Good Input Pattern
 

@@ -1,12 +1,11 @@
 from collections import deque
 from datetime import datetime, timezone
-from io import BytesIO
 import json
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.config import Settings, get_settings
 from app.dependencies import get_telegram_service, get_transcription_service
@@ -15,8 +14,10 @@ from app.models import (
     ChatSummary,
     DebugEvent,
     MessageSummary,
-    QrLoginStart,
-    QrLoginStatus,
+    PhoneLoginStart,
+    PhoneLoginStartRequest,
+    PhoneLoginStatus,
+    PhoneLoginVerifyRequest,
     SendMessageRequest,
     SendMessageResponse,
     TopicSummary,
@@ -24,6 +25,7 @@ from app.models import (
     TranscriptionResponse,
 )
 from app.services.audio import pcm16le_to_wav
+from app.services.secure_auth import SecureAuthError, decrypt_payload, encrypt_payload
 from app.services.telegram import TelegramService, TelegramServiceError, TelegramServiceTimeoutError
 from app.services.transcription import TranscriptionServiceError, WhisperTranscriptionService
 
@@ -36,7 +38,7 @@ def raise_telegram_http_error(exc: Exception) -> None:
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app_settings = settings or get_settings()
-    api = FastAPI(title="G2 Tele Backend")
+    api = FastAPI(title="TeleGlance Backend")
     debug_events: deque[dict] = deque(maxlen=100)
     api.add_middleware(
         CORSMiddleware,
@@ -45,7 +47,44 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-TeleGlance-Encrypted"],
     )
+
+    @api.middleware("http")
+    async def encrypted_json_payloads(request: Request, call_next):
+        shared_secret = app_settings.teleglance_shared_secret
+        encrypted_auth = request.headers.get("X-TeleGlance-Auth")
+        should_encrypt = bool(shared_secret and encrypted_auth and request.url.path.startswith("/api/"))
+
+        if should_encrypt and _is_json_request(request):
+            try:
+                raw_body = await request.body()
+                if raw_body:
+                    envelope = json.loads(raw_body.decode("utf-8"))
+                    encrypted_body = envelope.get("encryptedPayload") if isinstance(envelope, dict) else None
+                    if not isinstance(encrypted_body, str):
+                        return JSONResponse({"detail": "Encrypted JSON request body is required"}, status_code=400)
+                    decrypted = decrypt_payload(encrypted_body, shared_secret)
+                    request = _replace_request_body(request, decrypted)
+            except (json.JSONDecodeError, UnicodeDecodeError, SecureAuthError) as exc:
+                return JSONResponse({"detail": str(exc)}, status_code=400)
+
+        response = await call_next(request)
+        if not should_encrypt or not _is_json_response(response):
+            return response
+
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+        encrypted = encrypt_payload(body, shared_secret)
+        headers = dict(response.headers)
+        headers.pop("content-length", None)
+        headers["X-TeleGlance-Encrypted"] = "1"
+        return JSONResponse(
+            {"encryptedPayload": encrypted},
+            status_code=response.status_code,
+            headers=headers,
+        )
 
     @api.get("/health")
     async def health() -> dict[str, str]:
@@ -70,8 +109,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         debug_events.clear()
         return {"count": 0}
 
-    @api.get("/api/auth/status", response_model=AuthStatus)
-    async def auth_status(
+    @api.get("/api/session/status", response_model=AuthStatus)
+    async def session_status(
         telegram: TelegramService = Depends(get_telegram_service),
     ) -> AuthStatus:
         try:
@@ -79,41 +118,33 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         except (TelegramServiceError, TimeoutError) as exc:
             raise_telegram_http_error(exc)
 
-    @api.post("/api/auth/qr/start", response_model=QrLoginStart)
-    async def start_qr_login(
+    @api.post("/api/session/phone/start", response_model=PhoneLoginStart)
+    async def start_phone_login(
+        payload: PhoneLoginStartRequest,
         telegram: TelegramService = Depends(get_telegram_service),
-    ) -> QrLoginStart:
+    ) -> PhoneLoginStart:
         try:
-            return await telegram.start_qr_login()
+            return await telegram.start_phone_login(payload.phone)
         except (TelegramServiceError, TimeoutError) as exc:
             raise_telegram_http_error(exc)
 
-    @api.get("/api/auth/qr/status", response_model=QrLoginStatus)
-    async def qr_login_status(
+    @api.post("/api/session/phone/verify", response_model=PhoneLoginStatus)
+    async def verify_phone_login(
+        payload: PhoneLoginVerifyRequest,
         telegram: TelegramService = Depends(get_telegram_service),
-    ) -> QrLoginStatus:
+    ) -> PhoneLoginStatus:
         try:
-            return await telegram.qr_login_status()
+            return await telegram.complete_phone_login(payload.phone, payload.code)
         except (TelegramServiceError, TimeoutError) as exc:
             raise_telegram_http_error(exc)
 
-    @api.get("/api/auth/qr/image")
-    async def qr_login_image(
+    @api.post("/api/session/logout")
+    async def logout_session(
         telegram: TelegramService = Depends(get_telegram_service),
-    ) -> StreamingResponse:
+    ) -> dict[str, str]:
         try:
-            url = await telegram.current_qr_login_url()
-            import qrcode
-
-            image = qrcode.make(url)
-            output = BytesIO()
-            image.save(output, format="PNG")
-            output.seek(0)
-            return StreamingResponse(
-                output,
-                media_type="image/png",
-                headers={"Cache-Control": "no-store, max-age=0"},
-            )
+            await telegram.logout()
+            return {"status": "ok"}
         except (TelegramServiceError, TimeoutError) as exc:
             raise_telegram_http_error(exc)
 
@@ -157,16 +188,25 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     @api.get("/api/updates")
     async def stream_updates(
+        request: Request,
         telegram: TelegramService = Depends(get_telegram_service),
     ) -> StreamingResponse:
+        encrypt_events = bool(app_settings.teleglance_shared_secret and request.headers.get("X-TeleGlance-Auth"))
+
+        def event_data(payload: str) -> str:
+            if not encrypt_events:
+                return payload
+            encrypted = encrypt_payload(payload.encode("utf-8"), app_settings.teleglance_shared_secret or "")
+            return json.dumps({"encryptedPayload": encrypted})
+
         async def events():
             try:
                 async for update in telegram.update_events():
                     payload = update.model_dump_json(by_alias=True)
-                    yield f"event: message\ndata: {payload}\n\n"
+                    yield f"event: message\ndata: {event_data(payload)}\n\n"
             except TelegramServiceError as exc:
                 payload = json.dumps({"detail": str(exc)})
-                yield f"event: error\ndata: {payload}\n\n"
+                yield f"event: error\ndata: {event_data(payload)}\n\n"
 
         return StreamingResponse(
             events(),
@@ -205,3 +245,29 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
 
 app = create_app()
+
+
+def _is_json_request(request: Request) -> bool:
+    content_type = request.headers.get("content-type", "")
+    return request.method in {"POST", "PUT", "PATCH"} and content_type.startswith("application/json")
+
+
+def _is_json_response(response: Response) -> bool:
+    content_type = response.headers.get("content-type", "")
+    return content_type.startswith("application/json")
+
+
+def _replace_request_body(request: Request, body: bytes) -> Request:
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request._receive = receive  # type: ignore[attr-defined]
+    request._body = body  # type: ignore[attr-defined]
+    headers = [
+        (name, value)
+        for name, value in request.scope.get("headers", [])
+        if name.lower() != b"content-length"
+    ]
+    headers.append((b"content-length", str(len(body)).encode("ascii")))
+    request.scope["headers"] = headers
+    return request

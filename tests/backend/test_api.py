@@ -8,7 +8,7 @@ from app.main import create_app
 from app.models import (
     ChatSummary,
     MessageSummary,
-    QrLoginStart,
+    PhoneLoginStart,
     SendMessageResponse,
     TelegramUpdate,
     TopicSummary,
@@ -23,16 +23,16 @@ class FakeTelegramService:
         self.message_calls = []
 
     async def auth_status(self):
-        return {"configured": False, "authorized": False, "qr_login_available": True}
+        return {"configured": False, "authorized": False}
 
-    async def start_qr_login(self):
-        return QrLoginStart(token="abcd", url="tg://login?token=abcd", expires_at=None)
+    async def start_phone_login(self, phone):
+        return PhoneLoginStart(phone=phone, sent=True, message="Verification code sent.")
 
-    async def qr_login_status(self):
-        return {"authorized": False, "expired": False, "message": None}
+    async def complete_phone_login(self, phone, code):
+        return {"authorized": False, "message": None, "sessionString": None}
 
-    async def current_qr_login_url(self):
-        return "tg://login?token=abcd"
+    async def logout(self):
+        return None
 
     async def list_chats(self, limit):
         return [
@@ -108,13 +108,12 @@ def app(fake_services):
 async def test_auth_status_without_session(app):
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/auth/status")
+        response = await client.get("/api/session/status")
 
     assert response.status_code == 200
     assert response.json() == {
         "configured": False,
         "authorized": False,
-        "qrLoginAvailable": True,
     }
 
 
@@ -126,7 +125,7 @@ async def test_telegram_timeout_returns_gateway_timeout(fake_services):
     app.dependency_overrides[get_transcription_service] = lambda: transcription
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        auth = await client.get("/api/auth/status")
+        auth = await client.get("/api/session/status")
         chats = await client.get("/api/chats?limit=5")
 
     assert auth.status_code == 504
@@ -151,27 +150,6 @@ async def test_chat_topic_and_message_endpoints(app, fake_services):
     assert telegram.message_calls == [
         {"chat_id": 2, "topic_id": 101, "before_id": 99, "limit": 3}
     ]
-
-
-@pytest.mark.asyncio
-async def test_qr_login_status_endpoint(app):
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/auth/qr/status")
-
-    assert response.status_code == 200
-    assert response.json() == {"authorized": False, "expired": False, "message": None}
-
-
-@pytest.mark.asyncio
-async def test_qr_login_image_endpoint(app):
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/auth/qr/image")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "image/png"
-    assert response.content.startswith(b"\x89PNG")
 
 
 @pytest.mark.asyncio

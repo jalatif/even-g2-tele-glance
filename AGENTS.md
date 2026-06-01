@@ -1,11 +1,11 @@
-# G2 Tele Glasses App Plan
+# TeleGlance Glasses App Plan
 
 ## Summary
 
 Build a fresh Even Hub app in this workspace with:
 
 - A Vite/TypeScript glasses frontend using `@evenrealities/even_hub_sdk`.
-- A local FastAPI backend using Telethon/MTProto for the owner's real Telegram account.
+- A local FastAPI backend using Telethon/MTProto for the user's real Telegram account.
 - Local Whisper transcription using `faster-whisper`.
 - Local-first development with the Even Hub simulator and QR sideloading before any cloud deployment.
 
@@ -20,18 +20,18 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
   - `network` permission for the backend origin.
   - `g2-microphone` permission for voice commands.
   - `min_sdk_version` set to the current SDK baseline.
-- Store secrets and sessions only server-side:
-  - `TELEGRAM_API_ID`
-  - `TELEGRAM_API_HASH`
-  - `server/data/telegram.session`
-  - Whisper config such as `WHISPER_MODEL=small`, `WHISPER_DEVICE=auto`, `WHISPER_COMPUTE_TYPE=int8`.
+- Public self-hosted setup stores Telegram API credentials, the required backend shared secret, and the MTProto StringSession in phone localStorage, then sends credentials/session to the backend inside encrypted `X-TeleGlance-Auth`.
+- Telegram credentials/session are not supported as backend environment settings.
+- Root `.env` must include `TELEGLANCE_SHARED_SECRET`; other root `.env` config is limited to backend overrides such as CORS, Tailscale, and Whisper STT tuning.
 
 ## Telegram Backend
 
-- Implement Telegram login with QR-code auth first, with phone-code fallback if QR auth is unavailable.
+- Implement Telegram login with phone-code auth only. QR login has been removed from the app and backend API surface.
 - Normalize backend API responses so the glasses frontend never handles raw Telegram entities:
-  - `GET /api/auth/status`
-  - `POST /api/auth/qr/start`
+  - `GET /api/session/status`
+  - `POST /api/session/phone/start`
+  - `POST /api/session/phone/verify`
+  - `POST /api/session/logout`
   - `GET /api/chats?limit=5`
   - `GET /api/chats/{chat_id}/topics`
   - `GET /api/chats/{chat_id}/messages?topic_id=&before_id=&limit=8`
@@ -90,27 +90,24 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 ## Assumptions
 
 - The repo is intentionally empty, so implementation starts from a new scaffold.
-- v1 is for the owner's Telegram account, not a multi-user hosted service.
+- v1 is for a self-hosted user's Telegram account, not a shared multi-user hosted service.
 - Local Whisper is preferred over cloud STT.
-- Local-first backend runs on the same LAN as the phone during QR sideload testing.
-- The frontend calls only the backend, not Telegram directly, to avoid exposing MTProto credentials/session data and to avoid WebView/CORS issues.
-- References used while preparing this plan: Even Hub overview, display, input, device APIs, networking, simulator, packaging docs; Telegram MTProto auth, QR login, dialogs, history, replies, forum topics, and sendMessage docs.
+- Local-first backend runs on the same LAN or Tailscale network as the phone during sideload testing.
+- The frontend calls only the backend, not Telegram directly, to avoid WebView/CORS issues. In public mode it supplies Telegram credentials/session inside encrypted `X-TeleGlance-Auth` from frontend storage.
+- References used while preparing this plan: Even Hub overview, display, input, device APIs, networking, simulator, packaging docs; Telegram MTProto auth, phone-code login, dialogs, history, replies, forum topics, and sendMessage docs.
 
 ## Current Implementation Status
 
 - Repository scaffold is initialized with a Vite/TypeScript frontend, FastAPI backend, app manifest, tests, and simulator validation notes.
-- Backend service boundaries are implemented for Telegram MTProto, normalized DTOs, QR-login start, message/topic/history APIs, and local Whisper transcription.
+- Backend service boundaries are implemented for Telegram MTProto, encrypted phone-code session APIs, normalized DTOs, message/topic/history APIs, and local Whisper transcription.
 - Frontend controller is implemented for auth, chats, topics, messages, recording, transcription, send/cancel confirmation, and Even Hub input/audio event mapping.
 - Current validation passes:
   - `PYTHONPYCACHEPREFIX=.pycache server/.venv/bin/python -m pytest tests/backend`
   - `npm run typecheck --prefix web`
   - `npm test --prefix web`
   - `npm run build:tailscale --prefix web`
-- `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o g2-tele-0.1.2.ehpk`
-- Even Hub simulator smoke validation passes for startup rendering, automation health, screenshot capture, and click input. With no Telegram credentials configured, the expected QR-login error screen renders cleanly.
-- Telegram app credentials have been configured locally in ignored `server/.env`.
-- QR login now uses a backend pending-login state, background Telethon wait task, status endpoint, and local PNG QR endpoint. Simulator validation confirms the browser/debug view shows a scannable QR code.
-- Telegram session persistence resolves `TELEGRAM_SESSION_PATH` from the repository root so the same local Telethon session is reused whether the backend starts from the repo root or `server/`.
+- `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o tele-glance-0.1.2.ehpk`
+- Even Hub simulator smoke validation passes for startup rendering, automation health, screenshot capture, and click input. With no Telegram credentials configured, the expected phone-code setup screen renders cleanly.
 - Forum topic message history/sending uses the forum `topic.id` for Telethon 1.43; `topMessageId` remains in the DTO for display/debug context.
 - Even Hub page rebuilds now use stable title/body/list container IDs so stale topic-list containers do not remain visible after transitioning to message history in the simulator.
 - Even Hub container output is capped for SDK constraints: text content <=999 UTF-8 bytes and list item count 1-20.
@@ -124,13 +121,20 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Open message threads show `Checking replies...` in the footer while polling for new messages; after sending, the app returns to the message screen instead of staying on a separate sent page.
 - Message pages normalize API results into oldest-to-newest order before display, keep the latest page anchored as the bottom page, and prevent swipe-down from cycling/reloading when already at the newest page.
 - Sending a message refreshes the newest page before display; incoming replies detected while reading older pages automatically jump the message view back to the newest/bottom page, while unchanged polls leave older pages in place.
-- Tailscale is the default device-test backend route. `TAILSCALE_ENABLED=true` enables CORS for Tailscale 100.64.0.0/10 origins, and `npm run configure:tailscale --prefix web` writes `web/.env.local` plus updates `app.json` with the detected backend origin.
+- Tailscale is the default device-test backend route. `TAILSCALE_ENABLED=true` enables CORS for Tailscale 100.64.0.0/10 origins, and `npm run configure:tailscale --prefix web` updates `app.json` with the detected backend origin and prints the URL to enter in Settings.
 - Device input mapping now runs raw Even Hub events through the SDK parser and a fallback mapper that accepts proto-style keys, snake_case keys, numeric strings, and press/tap aliases. This is intended to handle real G2 payloads where list scrolling works but single-click selection is not shaped like the simulator event.
 - The app manifest version has been bumped to `0.1.2` so the packaged `.ehpk` metadata now matches the file name.
-- A hardware-test package has been built at `g2-tele-0.1.2.ehpk` after the device click-mapping fix.
+- A hardware-test package has been built at `tele-glance-0.1.2.ehpk` after the device click-mapping fix.
 - Real Telegram login has succeeded and `server/data/telegram.session` is present locally.
 - Real chat loading, forum topic listing, and forum topic message loading have been validated against the Akira Agents group. For Telethon 1.43, forum message history uses the forum `topic.id`, not `topMessageId`; `topMessageId` remains part of the DTO for display/debug context.
 - Frontend now ignores too-short/all-zero simulator audio recordings instead of invoking Whisper on silent audio.
+- Public setup now collects Telegram API ID/hash on the frontend Settings page with `my.telegram.org` instructions.
+- Phone-code login in frontend-credential mode uses Telethon `StringSession` and returns `sessionString` to the frontend; the backend does not persist that session to `server/data`.
+- Phone login is gated by backend shared secret plus frontend API ID/API hash configuration. Disconnected public setup must happen from the phone Settings page.
+- Frontend API calls send encrypted `X-TeleGlance-Auth`; plaintext `X-Telegram-*` headers and old `/api/auth/*` paths are not supported. The update stream uses `fetch` streaming instead of `EventSource` so encrypted auth is attached without query strings.
+- JSON request bodies and JSON responses for Telegram/session APIs are encrypted with `TELEGLANCE_SHARED_SECRET`; CORS must expose `X-TeleGlance-Encrypted` so the frontend knows to decrypt responses.
+- `STT Server Url (Optional)` is a frontend override. Blank uses the backend `/api/transcribe` endpoint with local `faster-whisper`; custom STT endpoints never receive Telegram auth headers.
+- Settings includes backend setup instructions with `https://github.com/jalatif/even-g2-tele-glance.git` and centralizes backend URL, Telegram credentials, polling, recording, and debug configuration.
 
 ## Observed Issues and Learnings
 
@@ -146,16 +150,18 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - The newest message page should be treated as the bottom boundary. Scrolling down at the bottom should stay there, not cycle pages or reload history in a way that changes order.
 - After send or incoming reply detection, the message view should jump to the newest/bottom page because that matches Telegram user expectations.
 - Real Telegram forum topics in Telethon 1.43 use `topic.id` for message history in this implementation. `topMessageId` is still useful DTO/debug context but should not be assumed to be the fetch key.
-- Telegram session path resolution must be stable across working directories. Resolve `TELEGRAM_SESSION_PATH` from the repository root so login persists whether the backend is launched from `server/` or the repo root.
 - For device testing, the backend is not packaged into `.ehpk`. The `.ehpk` contains the frontend and manifest; the FastAPI backend must stay running and reachable from the phone/glasses path.
-- Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and `web/.env.local`.
+- Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and the frontend's configured backend URL.
 - Simulator microphone input can produce silent/all-zero audio. Guarding that path avoids unnecessary Whisper calls and confusing transcription errors during simulator validation.
+- Frontend-local Telegram sessions and the backend shared secret improve backend disk privacy but are still sensitive. LocalStorage can be read by anyone with device/browser access, malicious extensions, or injected JavaScript.
 
 ## Pending Checklist
 
-- Validate `g2-tele-0.1.2.ehpk` on real G2 hardware to confirm the broader click-event mapper fixes chat/topic selection.
+- Validate `tele-glance-0.1.2.ehpk` on real G2 hardware to confirm the broader click-event mapper fixes chat/topic selection.
 - If hardware clicks still fail, add a temporary debug screen or backend log endpoint that displays the raw last Even Hub event payload on the glasses/browser.
-- Add real Telegram update subscriptions or a server-sent events/WebSocket stream for incoming messages and typing indicators. Current behavior is polling/checking status, not true live typing presence.
+- Public setup docs now use `https://github.com/jalatif/even-g2-tele-glance.git`.
+- Decide whether public distribution should keep frontend-local StringSession storage or move to encrypted per-user backend storage with real user authentication.
+- Add real Telegram typing indicators. Message updates currently use server-sent events plus polling fallback.
 - Add production-grade backend process management for device testing, such as a launch script, `uvicorn` service wrapper, health check, and clearer restart instructions.
 - Decide whether production should use Tailscale HTTP, Tailscale Serve HTTPS, a LAN URL, or a hosted HTTPS backend. Update `app.json` whitelist and frontend config accordingly.
 - Add a package/version script that builds Tailscale output and writes a versioned `.ehpk` in one command.

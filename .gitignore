@@ -6,7 +6,6 @@
 !.env.example
 server/.env
 server/.env.*
-!server/.env.example
 
 # Python
 __pycache__/
@@ -31,6 +30,7 @@ pnpm-debug.log*
 # Builds and simulator output
 *.ehpk
 *.png
+SECURITY_PRIVACY_FUTURE.md
 dist/
 build/
 .vite/
