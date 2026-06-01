@@ -18,7 +18,7 @@ The backend reads the root `.env` for `TELEGLANCE_SHARED_SECRET`. The same value
 
 ## Speech-To-Text
 
-The backend exposes `POST /api/transcribe` for voice replies. The endpoint accepts WAV audio, or raw 16 kHz signed PCM as `audio/pcm`/`application/octet-stream`, and returns JSON like:
+The backend exposes `POST /api/transcribe` for voice replies. The main backend endpoint requires encrypted shared-secret auth, accepts WAV audio or raw 16 kHz signed PCM as `audio/pcm`/`application/octet-stream`, and returns JSON like:
 
 ```json
 { "text": "message to send" }
@@ -31,11 +31,11 @@ Optional Whisper tuning lives in the root `.env`; defaults are `base`, `auto`, a
 - `WHISPER_COMPUTE_TYPE`
 - advanced optional: `WHISPER_BEAM_SIZE`, `WHISPER_BEST_OF`, `WHISPER_TEMPERATURE`, `WHISPER_CONDITION_ON_PREVIOUS_TEXT`
 
-The frontend can optionally point STT at another server, but that server must implement the same `/api/transcribe` contract.
+The frontend can optionally point STT at another server, but that server must implement the same `/api/transcribe` contract. Custom STT requests intentionally do not include Telegram auth headers, so custom STT servers need their own access control if exposed beyond a trusted network.
 
 ## Required Encrypted App Payloads
 
-Set `TELEGLANCE_SHARED_SECRET` in the root `.env` and enter the same value in TeleGlance Settings. The frontend encrypts Telegram API ID/hash/session into `X-TeleGlance-Auth`, encrypts JSON request bodies, and decrypts encrypted JSON responses and update events. The secret itself is never sent over the wire.
+Set `TELEGLANCE_SHARED_SECRET` in the root `.env` and enter the same value in TeleGlance Settings. The frontend encrypts Telegram API ID/hash/session into `X-TeleGlance-Auth`, encrypts JSON request bodies, and decrypts encrypted JSON responses and update events. The secret itself is not sent as plaintext.
 
 This reduces passive credential/message sniffing risk over HTTP, but it is not a full HTTPS replacement. A malicious network can still block or tamper with traffic. Use Tailscale or HTTPS when possible.
 

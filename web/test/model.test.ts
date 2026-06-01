@@ -259,4 +259,25 @@ describe('screenModel', () => {
       }
     }
   })
+
+  it('marks only the selected confirmation action', () => {
+    const baseState: AppState = {
+      screen: 'sidebarConfirm', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: 'hello' }],
+      transcript: 'reply',
+      selectedIndex: 0,
+    }
+
+    const sendSelected = screenModel(baseState)
+    const cancelSelected = screenModel({ ...baseState, selectedIndex: 1 })
+
+    expect(sendSelected.kind).toBe('sidebar')
+    expect(cancelSelected.kind).toBe('sidebar')
+    if (sendSelected.kind === 'sidebar' && cancelSelected.kind === 'sidebar') {
+      expect(sendSelected.panelBody).toBe('> Send\n  Cancel')
+      expect(cancelSelected.panelBody).toBe('  Send\n> Cancel')
+    }
+  })
 })

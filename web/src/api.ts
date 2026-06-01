@@ -119,7 +119,8 @@ export class HttpTelegramApi implements TelegramApi {
   async transcribe(wav: Blob): Promise<TranscriptionResult> {
     const form = new FormData()
     form.append('audio', wav, 'reply.wav')
-    return this.request('/api/transcribe', { method: 'POST', body: form }, this.sttBaseUrl(), false)
+    const sttBaseUrl = this.sttBaseUrl()
+    return this.request('/api/transcribe', { method: 'POST', body: form }, sttBaseUrl, sttBaseUrl === this.baseUrl)
   }
 
   subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event | Error) => void) {

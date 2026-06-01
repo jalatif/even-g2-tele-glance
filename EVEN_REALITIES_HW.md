@@ -27,6 +27,7 @@ These notes capture hardware-specific implementation details and quirks observed
 - Text content must be byte-bounded, not character-bounded. Content over roughly `999` UTF-8 bytes can fail rendering or leave the glasses on a stale screen.
 - List item count should stay within `1-20`.
 - Stable container IDs matter. Rebuilding from one screen type to another with different or stale IDs can make the browser/debug view look correct while the glasses display remains on the previous page.
+- Optional containers need stable IDs too. When a message page switches from a native boxed long message back to normal body text, keep the `panel-box` container in the rebuild and hide it when unused; omitting the container can leave stale boxed content on device.
 - Hidden containers should be kept stable when switching page layouts.
 - Message history is safest as one chronological buffer with a bottom-relative scroll pointer:
   - Swipe up moves the pointer one display chunk older when loaded history is available.
@@ -116,16 +117,16 @@ These notes capture hardware-specific implementation details and quirks observed
 
 ## Backend And Debugging
 
-- Public builds keep Telegram API credentials, the required backend shared secret, and the MTProto StringSession in phone localStorage. Telegram/session requests use encrypted `X-TeleGlance-Auth`; do not put session strings or shared secrets in URLs, `.env` beyond `TELEGLANCE_SHARED_SECRET`, or debug logs.
+- Public builds keep Telegram API credentials, the required backend shared secret, and the MTProto StringSession in phone localStorage. Telegram/session requests use encrypted `X-TeleGlance-Auth`; do not put session strings or shared secrets in URLs, cookies, `.env` beyond `TELEGLANCE_SHARED_SECRET`, or debug logs.
 - The backend no longer exposes QR login or compatibility auth endpoints. Phone-code login is the only supported Telegram login path.
 - JSON Telegram request/response bodies are encrypted with the shared secret. CORS must expose `X-TeleGlance-Encrypted` or the frontend cannot detect/decrypt encrypted responses.
-- The backend `/api/transcribe` endpoint runs local `faster-whisper`; the phone setting `STT Server Url (Optional)` should be blank unless the user runs a trusted compatible STT server. Custom STT requests intentionally do not receive Telegram auth headers.
+- The backend `/api/transcribe` endpoint runs local `faster-whisper` and requires encrypted shared-secret auth when using the main backend. The phone setting `STT Server Url (Optional)` should be blank unless the user runs a trusted compatible STT server. Custom STT requests intentionally do not receive Telegram auth headers.
 - Hardware debug logging is useful because WebView console access is limited.
 - The backend has temporary in-memory debug endpoints:
   - `POST /api/debug/events`
   - `GET /api/debug/events`
   - `DELETE /api/debug/events`
-- The frontend logs each raw Even Hub event plus its mapped app input to `/api/debug/events`.
+- The debug endpoints require encrypted shared-secret auth. The frontend logs each raw Even Hub event plus its mapped app input to `/api/debug/events` only when debug logging is enabled and auth settings are configured.
 - Debug logs should include the frontend `buildVersion` during hardware validation. This is the fastest way to distinguish a real mapping bug from stale device code.
 - If hardware input fails again:
   - Clear events with `DELETE /api/debug/events`.
@@ -141,6 +142,9 @@ These notes capture hardware-specific implementation details and quirks observed
 - The real Telegram phone-code login flow has succeeded with encrypted frontend-supplied credentials/session.
 - Real chat loading, forum topic listing, and forum topic message loading were validated against the Akira Agents group.
 - For Telethon `1.43`, forum message history uses `topic.id`, not `topMessageId`; `topMessageId` remains useful DTO/debug context.
+- Incoming forum update payloads can identify the topic differently from the history API. Treat matching chat id with `topic.id`, `topMessageId`, or a missing topic id as a reason to refresh the active forum thread; the follow-up history fetch is the source of truth.
+- Topic preview fetches must remain selected-topic scoped. Clear cached preview fields when selection changes and only reuse preview messages when the cached `previewTopic.id` equals the selected topic id, or a fast swipe/press can display one topic's messages while opening another.
+- Avoid backend topic-list preview fanout. Fetching one latest message per topic serially can stall `/topics` on large forum groups; return forum topic metadata quickly and let the frontend preview/open path fetch messages for the selected topic.
 - Telethon forum/reply history can return messages without `message.sender` populated while the result contains separate `users`/`chats` entity lists. Normalize sender names from those bundled entities using `from_id`/peer ids before returning API DTOs, otherwise incoming replies render as `Unknown`.
 - After sending, the frontend refreshes the newest messages, briefly polls so quick replies appear on glasses, and resets the visible pointer to the latest message.
 - Incoming replies detected while reading older content should jump back to the newest/latest pointer.

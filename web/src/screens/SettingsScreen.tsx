@@ -88,7 +88,7 @@ scripts/start-backend.sh --reload`}</code></pre>
           <span>Backend shared secret</span>
           <input type="password" value={draft.backendSharedSecret} onChange={(event) => update('backendSharedSecret', event.target.value)} placeholder="Required" />
         </label>
-        <p className="hint">Required. Set the exact same value in backend root <code>.env</code> as <code>TELEGLANCE_SHARED_SECRET</code>. The secret is never sent over the wire; it is used on both sides to encrypt backend API payloads.</p>
+        <p className="hint">Required. Set the exact same value in backend root <code>.env</code> as <code>TELEGLANCE_SHARED_SECRET</code>. The secret is stored locally and used on both sides to encrypt backend API payloads; it is not sent as plaintext.</p>
         <p className="hint">Use a LAN or Tailscale URL that the phone running Even Realities can reach. Saving backend or Telegram changes reloads the app.</p>
       </section>
 

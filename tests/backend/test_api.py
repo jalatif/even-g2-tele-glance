@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+import json
+import time
 
 import httpx
 import pytest
 
+from app.config import Settings
 from app.dependencies import get_telegram_service, get_transcription_service
 from app.main import create_app
 from app.models import (
@@ -15,6 +18,7 @@ from app.models import (
     TranscriptionResponse,
 )
 from app.services.telegram import TelegramServiceTimeoutError
+from app.services.secure_auth import decrypt_payload, encrypt_payload
 
 
 class FakeTelegramService:
@@ -153,33 +157,54 @@ async def test_chat_topic_and_message_endpoints(app, fake_services):
 
 
 @pytest.mark.asyncio
-async def test_debug_events_accept_null_mapped_input(app):
+async def test_debug_events_require_encrypted_auth(app):
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/debug/events",
             json={"source": "even-hub", "buildVersion": "test", "raw": {"eventType": 0}, "mapped": None},
         )
-        events = await client.get("/api/debug/events")
 
-    assert response.status_code == 200
-    assert response.json() == {"count": 1}
-    assert events.json()[0]["mapped"] is None
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_debug_events_skip_audio_chunks(app):
+async def test_debug_events_accept_null_mapped_input(fake_services):
+    app = secure_test_app(fake_services)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/debug/events",
-            json={"source": "even-hub", "buildVersion": "test", "raw": {}, "mapped": {"type": "audioChunk"}},
+            headers=auth_headers(json_body=True),
+            json=encrypted_json_body({"source": "even-hub", "buildVersion": "test", "raw": {"eventType": 0}, "mapped": None}),
         )
         events = await client.get("/api/debug/events")
 
     assert response.status_code == 200
-    assert response.json() == {"count": 0}
-    assert events.json() == []
+    assert decrypted_json(response) == {"count": 1}
+    assert events.status_code == 400
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        events = await client.get("/api/debug/events", headers=auth_headers())
+
+    assert decrypted_json(events)[0]["mapped"] is None
+
+
+@pytest.mark.asyncio
+async def test_debug_events_skip_audio_chunks(fake_services):
+    app = secure_test_app(fake_services)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/debug/events",
+            headers=auth_headers(json_body=True),
+            json=encrypted_json_body({"source": "even-hub", "buildVersion": "test", "raw": {}, "mapped": {"type": "audioChunk"}}),
+        )
+        events = await client.get("/api/debug/events", headers=auth_headers())
+
+    assert response.status_code == 200
+    assert decrypted_json(response) == {"count": 0}
+    assert decrypted_json(events) == []
 
 
 @pytest.mark.asyncio
@@ -212,7 +237,7 @@ async def test_send_payload_generation_for_normal_and_topic_chats(app, fake_serv
 
 
 @pytest.mark.asyncio
-async def test_transcribe_wraps_pcm_upload_as_wav(app, fake_services):
+async def test_transcribe_requires_encrypted_auth(app, fake_services):
     _, transcription = fake_services
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -221,6 +246,53 @@ async def test_transcribe_wraps_pcm_upload_as_wav(app, fake_services):
             files={"audio": ("sample.pcm", b"\x00\x00\xff\x7f", "audio/pcm")},
         )
 
+    assert response.status_code == 400
+    assert transcription.payloads == []
+
+
+@pytest.mark.asyncio
+async def test_transcribe_wraps_pcm_upload_as_wav(fake_services):
+    _, transcription = fake_services
+    app = secure_test_app(fake_services)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/transcribe",
+            headers=auth_headers(),
+            files={"audio": ("sample.pcm", b"\x00\x00\xff\x7f", "audio/pcm")},
+        )
+
     assert response.status_code == 200
-    assert response.json()["text"] == "send the update"
+    assert decrypted_json(response)["text"] == "send the update"
     assert transcription.payloads[0].startswith(b"RIFF")
+
+
+def secure_test_app(fake_services):
+    telegram, transcription = fake_services
+    app = create_app(Settings(TELEGLANCE_SHARED_SECRET="shared-secret", BACKEND_CORS_ORIGINS=[]))
+    app.dependency_overrides[get_telegram_service] = lambda: telegram
+    app.dependency_overrides[get_transcription_service] = lambda: transcription
+    return app
+
+
+def auth_headers(json_body: bool = False):
+    headers = {
+        "X-TeleGlance-Auth": encrypt_payload(json.dumps({
+            "apiId": "12345",
+            "apiHash": "abc",
+            "session": "session-string",
+            "ts": int(time.time()),
+        }).encode("utf-8"), "shared-secret"),
+    }
+    if json_body:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
+def encrypted_json_body(payload):
+    return {"encryptedPayload": encrypt_payload(json.dumps(payload).encode("utf-8"), "shared-secret")}
+
+
+def decrypted_json(response):
+    encrypted = response.json()["encryptedPayload"]
+    return json.loads(decrypt_payload(encrypted, "shared-secret"))

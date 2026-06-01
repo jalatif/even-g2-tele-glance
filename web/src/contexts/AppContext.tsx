@@ -48,7 +48,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           (input) => {
             void controllerRef.current?.dispatch(input)
           },
-          { debugEventsEnabled: () => settingsRef.current.debugEventsEnabled },
+          {
+            debugEventsEnabled: () => settingsRef.current.debugEventsEnabled,
+            authConfig: () => settingsRef.current,
+          },
         ).catch(() => fallbackBridge)
         if (!active) return
         const controller = new TelegramAppController(

@@ -183,6 +183,21 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[1] })
   })
 
+  it('does not reuse stale topic preview after the selected topic changes', async () => {
+    const api = fakeApi({ authorized: true })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    await fetchTopicPreview(controller, chats[1], topics[0])
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+
+    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '20', limit: 50 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[1] })
+  })
+
   it('opens the currently selected chat when the glasses emit a selection-only click event', async () => {
     const api = fakeApi({ authorized: true })
     const controller = new TelegramAppController(api, fakeBridge())
@@ -335,6 +350,28 @@ describe('TelegramAppController', () => {
       focus: 'messages',
       status: 'New reply',
       messages: [...reversedMessages, newReply].sort((left, right) => Number(left.id) - Number(right.id)),
+    })
+  })
+
+  it('refreshes an active forum topic when an update carries the topic top-message id', async () => {
+    const forumTopics: Topic[] = [{ id: '10', title: 'Launch', topMessageId: '101' }]
+    let latestMessages = messages
+    const newReply: Message = { id: '104', sender: 'Bob', text: 'forum streamed', sentAt: '2026-05-29T10:04:00Z' }
+    const api = fakeApi({ authorized: true, topics: forumTopics, latestMessages: () => latestMessages })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'press' })
+    latestMessages = [newReply, ...messages]
+    await controller.handleTelegramUpdate({ type: 'message', chatId: '2', topicId: '101', message: newReply })
+
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'messages',
+      status: 'New reply',
+      messages: [...messages, newReply].sort((left, right) => Number(left.id) - Number(right.id)),
     })
   })
 
@@ -529,6 +566,10 @@ function refreshVisibleMessages(controller: TelegramAppController) {
 
 function refreshRootChats(controller: TelegramAppController) {
   return (controller as unknown as { refreshRootChats: () => Promise<void> }).refreshRootChats()
+}
+
+function fetchTopicPreview(controller: TelegramAppController, chat: Chat, topic: Topic) {
+  return (controller as unknown as { fetchTopicPreview: (chat: Chat, topic: Topic) => Promise<void> }).fetchTopicPreview(chat, topic)
 }
 
 function latestMessageCallCount(api: TelegramApi) {

@@ -58,6 +58,24 @@ def telegram_credentials_from_encrypted_header(
     )
 
 
+def require_backend_auth(
+    x_teleglance_auth: Annotated[Optional[str], Header(alias="X-TeleGlance-Auth")] = None,
+) -> None:
+    settings = get_settings()
+    validate_backend_auth(x_teleglance_auth, settings.teleglance_shared_secret)
+
+
+def validate_backend_auth(encrypted_auth: Optional[str], shared_secret: Optional[str]) -> None:
+    if not shared_secret:
+        raise HTTPException(status_code=400, detail="Backend shared secret is required. Set TELEGLANCE_SHARED_SECRET in backend .env and the same value in TeleGlance Settings.")
+    if not encrypted_auth or not encrypted_auth.strip():
+        raise HTTPException(status_code=400, detail="Encrypted auth is required.")
+    try:
+        decrypt_auth_header(encrypted_auth.strip(), shared_secret)
+    except SecureAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
 def telegram_service_cache_key(credentials: Optional[TelegramClientCredentials]) -> str:
     if credentials is None:
         return "env"

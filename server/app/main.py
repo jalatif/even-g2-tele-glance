@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.config import Settings, get_settings
-from app.dependencies import get_telegram_service, get_transcription_service
+from app.dependencies import get_telegram_service, get_transcription_service, validate_backend_auth
 from app.models import (
     AuthStatus,
     ChatSummary,
@@ -52,6 +52,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         expose_headers=["X-TeleGlance-Encrypted"],
     )
 
+    async def require_app_backend_auth(request: Request) -> None:
+        validate_backend_auth(request.headers.get("X-TeleGlance-Auth"), app_settings.teleglance_shared_secret)
+
     @api.middleware("http")
     async def encrypted_json_payloads(request: Request, call_next):
         shared_secret = app_settings.teleglance_shared_secret
@@ -92,7 +95,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @api.post("/api/debug/events")
+    @api.post("/api/debug/events", dependencies=[Depends(require_app_backend_auth)])
     async def append_debug_event(payload: DebugEvent) -> dict[str, int]:
         event = payload.model_dump(mode="json")
         mapped = event.get("mapped") or {}
@@ -102,11 +105,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         debug_events.append(event)
         return {"count": len(debug_events)}
 
-    @api.get("/api/debug/events")
+    @api.get("/api/debug/events", dependencies=[Depends(require_app_backend_auth)])
     async def list_debug_events() -> list[dict]:
         return list(debug_events)
 
-    @api.delete("/api/debug/events")
+    @api.delete("/api/debug/events", dependencies=[Depends(require_app_backend_auth)])
     async def clear_debug_events() -> dict[str, int]:
         debug_events.clear()
         return {"count": 0}
@@ -230,7 +233,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         except (TelegramServiceError, TimeoutError) as exc:
             raise_telegram_http_error(exc)
 
-    @api.post("/api/transcribe", response_model=TranscriptionResponse)
+    @api.post("/api/transcribe", response_model=TranscriptionResponse, dependencies=[Depends(require_app_backend_auth)])
     async def transcribe(
         audio: UploadFile = File(...),
         transcription: WhisperTranscriptionService = Depends(get_transcription_service),

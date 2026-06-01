@@ -46,4 +46,51 @@ describe('EvenHubGlassesBridge', () => {
     expect(output).not.toContain('+----------------------------------------+')
     expect(output).not.toContain('| Ada')
   })
+
+  it('keeps the sidebar panel-box container stable when hiding boxed content', async () => {
+    let rebuilt: unknown
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer() {
+        return 0
+      },
+      async rebuildPageContainer(container: unknown) {
+        rebuilt = container
+        return true
+      },
+      async audioControl() {
+        return undefined
+      },
+      onEvenHubEvent() {
+        return undefined
+      },
+    })
+
+    await bridge.render({
+      kind: 'sidebar',
+      title: 'Topic',
+      sidebarTitle: 'Topics',
+      sidebarItems: ['Launch'],
+      sidebarSelected: 0,
+      panelTitle: '',
+      panelBody: '',
+      panelFooter: 'Click record',
+      panelBox: { heading: 'Ada', content: 'Long message' },
+      focus: 'panel',
+    })
+    await bridge.render({
+      kind: 'sidebar',
+      title: 'Topic',
+      sidebarTitle: 'Topics',
+      sidebarItems: ['Launch'],
+      sidebarSelected: 0,
+      panelTitle: '',
+      panelBody: 'Short message',
+      panelFooter: 'Click record',
+      focus: 'panel',
+    })
+
+    const output = JSON.stringify(rebuilt)
+    expect(output).toContain('"containerID":7')
+    expect(output).toContain('"containerName":"panel-box"')
+  })
 })

@@ -29,13 +29,13 @@ A normal string of your choice also works, but longer random values are safer. P
 6. Open TeleGlance Settings and paste the API ID/hash, backend URL, and backend shared secret.
 7. Save settings, then enter your mobile number with international code to receive a Telegram verification code.
 
-After login, the frontend stores a Telegram StringSession on this phone only. The backend receives encrypted credentials/session per request, but does not persist them in the public setup path. The shared secret itself is never sent over the wire.
+After login, the frontend stores a Telegram StringSession on this phone only. The backend receives encrypted credentials/session per request, but does not persist them in the public setup path. The shared secret is stored locally and used for encryption; it is not sent as plaintext.
 
 Phone-code login requires the backend shared secret and API ID/API hash to be configured first.
 
 ## Configuration
 
-Most settings live in the phone Settings page: Telegram API ID/hash, Telegram session, backend URL, backend shared secret, optional STT URL, recording minimum, and debug logging.
+Most settings live in the phone Settings page: Telegram API ID/hash, Telegram session, backend URL, backend shared secret, optional STT URL, recording minimum, and debug logging. Sensitive Telegram/shared-secret settings are stored in phone localStorage only, not cookies.
 
 The backend needs root `.env` for `TELEGLANCE_SHARED_SECRET`. Copy [.env.example](.env.example), uncomment `TELEGLANCE_SHARED_SECRET`, and set it to the same value used in TeleGlance Settings:
 
@@ -119,7 +119,7 @@ If you do not have an STT server, do nothing else: the backend includes local `f
 
 ## Speech-To-Text
 
-By default, voice replies are sent to the configured backend at `POST /api/transcribe`, where local Whisper runs through `faster-whisper`.
+By default, voice replies are sent to the configured backend at `POST /api/transcribe`, where local Whisper runs through `faster-whisper`. The main backend transcription endpoint requires encrypted shared-secret auth.
 
 Whisper settings are optional and live in the root `.env` if you want to tune transcription. Leave them unset for the default local STT setup:
 
@@ -151,6 +151,8 @@ The phone Settings page also has `STT Server Url (Optional)`. Leave it blank to 
 ```
 
 Audio for transcription is sent to whichever STT/backend URL is configured. Leave STT URL blank to use your own backend. Only enter a custom STT URL if you trust that server with voice audio and transcript content.
+
+Custom STT requests intentionally do not include Telegram auth headers. If you set a separate STT URL, that server must provide its own access control if it is reachable by anyone else.
 
 ## Run The Frontend Locally
 
@@ -204,6 +206,7 @@ The `.ehpk` contains only the frontend and manifest. Users must still run their 
 - Backend logs: watch the terminal running `scripts/start-backend.sh`.
 - Frontend checks: `npm run typecheck --prefix web` and `npm test --prefix web`.
 - Backend checks: `PYTHONPYCACHEPREFIX=.pycache server/.venv/bin/python -m pytest tests/backend`.
+- Hardware debug endpoints (`/api/debug/events`) require the same encrypted shared-secret auth as other sensitive backend calls. Use the in-app debug logging toggle instead of unauthenticated curl calls for normal hardware validation.
 - Hardware notes: [EVEN_REALITIES_HW.md](EVEN_REALITIES_HW.md).
 - Frontend architecture notes: [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md).
 
@@ -211,7 +214,7 @@ The `.ehpk` contains only the frontend and manifest. Users must still run their 
 
 Telegram API hash, backend shared secret, and session strings are sensitive. Storing them in phone localStorage keeps them off backend disk, but anyone with access to that phone/app storage, device backup, injected JavaScript, or a malicious WebView context could read them.
 
-TeleGlance requires `TELEGLANCE_SHARED_SECRET` in the backend root `.env` and the same value in TeleGlance Settings. The frontend uses WebCrypto AES-GCM with that secret to send Telegram API ID/hash/session in `X-TeleGlance-Auth`, encrypt JSON request bodies, decrypt JSON responses, and decrypt update-stream event payloads. The secret token itself is never sent over the wire.
+TeleGlance requires `TELEGLANCE_SHARED_SECRET` in the backend root `.env` and the same value in TeleGlance Settings. The frontend uses WebCrypto AES-GCM with that secret to send Telegram API ID/hash/session in `X-TeleGlance-Auth`, encrypt JSON request bodies, decrypt JSON responses, and decrypt update-stream event payloads. The secret token itself is not sent as plaintext.
 
 This protects app-level payloads from passive HTTP sniffing, but it is not a full HTTPS replacement. A malicious network can still block or tamper with traffic, endpoint URLs and timing are still visible, and audio sent to STT is only as private as the configured STT server. Prefer Tailscale or HTTPS for public use.
 

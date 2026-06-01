@@ -8,7 +8,8 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import type { GlassesBridge } from '../controller/appController'
 import type { AppInput, ScreenModel } from '../controller/model'
-import { defaultApiBaseUrl } from '../api'
+import { defaultApiBaseUrl, type TelegramAuthConfig } from '../api'
+import { encryptedTelegramAuthHeader, encryptJsonPayload } from '../secureAuth'
 import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
@@ -16,6 +17,7 @@ export const APP_BUILD_VERSION: string = (typeof __APP_VERSION__ !== 'undefined'
 
 type EvenBridgeOptions = {
   debugEventsEnabled?: () => boolean
+  authConfig?: () => TelegramAuthConfig
 }
 
 type EvenBridgeInstance = {
@@ -40,7 +42,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     const dispatchInput = createInputCoalescer(onInput)
     sdk.onEvenHubEvent((event) => {
       const input = mapEvenHubEvent(event as Parameters<typeof mapEvenHubEvent>[0])
-      if ((options.debugEventsEnabled?.() ?? true) && input?.type !== 'audioChunk') void logHardwareEvent(event, input)
+      if ((options.debugEventsEnabled?.() ?? true) && input?.type !== 'audioChunk') void logHardwareEvent(event, input, options.authConfig)
       if (input) dispatchInput(input)
     })
     return adapter
@@ -212,9 +214,7 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     isEventCapture: 0,
   })
   const list = hiddenListContainer()
-  const textObjects = hasPanelBox
-    ? [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, panelBox, footer]
-    : [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, footer]
+  const textObjects = [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, panelBox, footer]
   return new Container({
     containerTotalNum: textObjects.length + 1,
     textObject: textObjects,
@@ -458,17 +458,22 @@ function visibleListWindow(items: string[], selectedIndex: number, maxVisible: n
   return Object.assign(items.slice(start, start + maxVisible), { start })
 }
 
-async function logHardwareEvent(raw: unknown, mapped: AppInput | undefined) {
+async function logHardwareEvent(raw: unknown, mapped: AppInput | undefined, authConfig?: () => TelegramAuthConfig) {
   try {
+    const config = authConfig?.()
+    const encryptedAuth = config ? await encryptedTelegramAuthHeader(config) : null
+    if (!encryptedAuth || !config?.backendSharedSecret?.trim()) return
+    const body = JSON.stringify({
+      source: 'even-hub',
+      buildVersion: APP_BUILD_VERSION,
+      raw: summarizeForDebug(raw),
+      mapped: mapped ?? null,
+    })
+    const encryptedPayload = await encryptJsonPayload(body, config.backendSharedSecret)
     await fetch(`${defaultApiBaseUrl()}/api/debug/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source: 'even-hub',
-        buildVersion: APP_BUILD_VERSION,
-        raw: summarizeForDebug(raw),
-        mapped: mapped ?? null,
-      }),
+      headers: { 'Content-Type': 'application/json', 'X-TeleGlance-Auth': encryptedAuth },
+      body: JSON.stringify({ encryptedPayload }),
     })
   } catch {
     // Debug logging must never affect glasses input handling.

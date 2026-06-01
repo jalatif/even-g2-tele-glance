@@ -50,7 +50,7 @@ export class TelegramAppController {
   private messageRefreshInFlight = false
   private topicPreviewDebounce: ReturnType<typeof setTimeout> | undefined
   private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
-  private topicPreviewInFlight = false
+  private topicPreviewInFlight = new Set<string>()
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -368,13 +368,13 @@ export class TelegramAppController {
     if (input.type === 'swipeUp' || input.type === 'swipeDown') {
       const delta = input.type === 'swipeUp' ? -1 : 1
       const newIndex = moveSelection(state.selectedTopicIndex, state.topics.length, delta)
-      await this.setState({ ...state, selectedTopicIndex: newIndex })
+      await this.setState({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
       this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
     if (input.type === 'selectIndex') {
       const newIndex = clamp(input.index, 0, state.topics.length - 1)
-      await this.setState({ ...state, selectedTopicIndex: newIndex })
+      await this.setState({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
       this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
@@ -386,7 +386,7 @@ export class TelegramAppController {
     if (!topic) return
     const selectedState: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }> = { ...state, selectedTopicIndex: selectedIndex }
 
-    if (selectedState.previewMessages?.length) {
+    if (selectedState.previewMessages?.length && selectedState.previewTopic && String(selectedState.previewTopic.id) === String(topic.id)) {
       await this.setState({
         screen: 'sidebar', focus: 'messages',
         chats: selectedState.chats, selectedChatIndex: selectedState.selectedChatIndex,
@@ -453,6 +453,7 @@ export class TelegramAppController {
     if (cached) {
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'topics') return
+      if (!topicMatchesSelection(state, topic)) return
       await this.setState({
         ...state,
         previewTopic: topic,
@@ -464,8 +465,8 @@ export class TelegramAppController {
       return
     }
 
-    if (this.topicPreviewInFlight) return
-    this.topicPreviewInFlight = true
+    if (this.topicPreviewInFlight.has(cacheKey)) return
+    this.topicPreviewInFlight.add(cacheKey)
     try {
       const messages = await this.api.listMessages(chat.id, {
         topicId: topic.id,
@@ -475,6 +476,7 @@ export class TelegramAppController {
       this.topicPreviewCache.set(cacheKey, { messages: normalized, cursor: oldestMessageId(normalized) })
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'topics') return
+      if (!topicMatchesSelection(state, topic)) return
       await this.setState({
         ...state,
         previewTopic: topic,
@@ -484,7 +486,7 @@ export class TelegramAppController {
         previewIsNewestPage: true,
       })
     } finally {
-      this.topicPreviewInFlight = false
+      this.topicPreviewInFlight.delete(cacheKey)
     }
   }
 
@@ -1143,7 +1145,10 @@ function updateMatchesThread(update: TelegramUpdate, state: { chat: Chat; topic?
   if (String(update.chatId) !== String(state.chat.id)) return false
   const stateTopic = topicThreadId(state.topic)
   if (stateTopic === undefined) return update.topicId === undefined || update.topicId === null
-  return String(update.topicId ?? '') === String(stateTopic)
+  if (update.topicId === undefined || update.topicId === null) return true
+  if (String(update.topicId) === String(stateTopic)) return true
+  if (state.topic?.topMessageId !== undefined && String(update.topicId) === String(state.topic.topMessageId)) return true
+  return true
 }
 
 function chatFingerprint(chat: Chat) {
@@ -1237,6 +1242,21 @@ function sidebarContext(state: AppState): { chats: Chat[]; selectedChatIndex: nu
     return { chats: state.chats, selectedChatIndex: state.selectedChatIndex }
   }
   return { chats: [], selectedChatIndex: 0 }
+}
+
+function emptyTopicPreview() {
+  return {
+    previewTopic: undefined,
+    previewMessages: undefined,
+    previewCursor: undefined,
+    previewScrollOffset: undefined,
+    previewNewerPages: undefined,
+    previewIsNewestPage: undefined,
+  }
+}
+
+function topicMatchesSelection(state: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }>, topic: Topic) {
+  return String(state.topics[state.selectedTopicIndex]?.id ?? '') === String(topic.id)
 }
 
 function hasRecordableAudio(chunks: Uint8Array[]) {

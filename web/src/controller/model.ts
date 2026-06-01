@@ -211,7 +211,7 @@ export function screenModel(state: AppState): ScreenModel {
         sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
         sidebarSelected: state.selectedChatIndex,
         panelTitle: '',
-        panelBody: `> ${state.selectedIndex === 0 ? 'Send' : '  Send'}\n> ${state.selectedIndex === 1 ? 'Cancel' : '  Cancel'}`,
+        panelBody: `${state.selectedIndex === 0 ? '> ' : '  '}Send\n${state.selectedIndex === 1 ? '> ' : '  '}Cancel`,
         panelFooter: 'Swipe select | Press confirm',
         panelBox: msg.box,
         focus: 'panel',

@@ -53,15 +53,15 @@ export const DEFAULT_FRONTEND_CONFIG: Omit<FrontendConfig, 'apiBaseUrl'> = {
 export function loadFrontendConfig(): FrontendConfig {
   return {
     apiBaseUrl: defaultApiBaseUrl(),
-    telegramApiId: readString(TELEGRAM_API_ID_STORAGE_KEY, G2_TELE_TELEGRAM_API_ID_STORAGE_KEY),
-    telegramApiHash: readString(TELEGRAM_API_HASH_STORAGE_KEY, G2_TELE_TELEGRAM_API_HASH_STORAGE_KEY),
-    telegramSession: readString(TELEGRAM_SESSION_STORAGE_KEY, G2_TELE_TELEGRAM_SESSION_STORAGE_KEY),
+    telegramApiId: readSensitiveString(TELEGRAM_API_ID_STORAGE_KEY, G2_TELE_TELEGRAM_API_ID_STORAGE_KEY),
+    telegramApiHash: readSensitiveString(TELEGRAM_API_HASH_STORAGE_KEY, G2_TELE_TELEGRAM_API_HASH_STORAGE_KEY),
+    telegramSession: readSensitiveString(TELEGRAM_SESSION_STORAGE_KEY, G2_TELE_TELEGRAM_SESSION_STORAGE_KEY),
     debugEventsEnabled: readBoolean(DEBUG_EVENTS_STORAGE_KEY, DEFAULT_FRONTEND_CONFIG.debugEventsEnabled, G2_TELE_DEBUG_EVENTS_STORAGE_KEY, LEGACY_DEBUG_EVENTS_STORAGE_KEY),
     chatPollMs: readNumber(CHAT_POLL_STORAGE_KEY, DEFAULT_FRONTEND_CONFIG.chatPollMs, 1000, 60000, G2_TELE_CHAT_POLL_STORAGE_KEY, LEGACY_CHAT_POLL_STORAGE_KEY),
     messagePollMs: readNumber(MESSAGE_POLL_STORAGE_KEY, DEFAULT_FRONTEND_CONFIG.messagePollMs, 1000, 60000, G2_TELE_MESSAGE_POLL_STORAGE_KEY, LEGACY_MESSAGE_POLL_STORAGE_KEY),
     recordingMinDurationMs: readNumber(RECORDING_MIN_STORAGE_KEY, DEFAULT_FRONTEND_CONFIG.recordingMinDurationMs, 0, 5000, G2_TELE_RECORDING_MIN_STORAGE_KEY, LEGACY_RECORDING_MIN_STORAGE_KEY),
     sttBaseUrl: readString(STT_BASE_URL_STORAGE_KEY, G2_TELE_STT_BASE_URL_STORAGE_KEY),
-    backendSharedSecret: readString(BACKEND_SHARED_SECRET_STORAGE_KEY, G2_TELE_BACKEND_SHARED_SECRET_STORAGE_KEY),
+    backendSharedSecret: readSensitiveString(BACKEND_SHARED_SECRET_STORAGE_KEY, G2_TELE_BACKEND_SHARED_SECRET_STORAGE_KEY),
   }
 }
 
@@ -70,15 +70,15 @@ export function saveFrontendConfig(config: FrontendConfig) {
   writeString(API_BASE_URL_STORAGE_KEY, apiBaseUrl)
   safeLsRemoveItem(G2_TELE_API_BASE_URL_STORAGE_KEY)
   safeLsRemoveItem(LEGACY_API_BASE_URL_STORAGE_KEY)
-  writeString(TELEGRAM_API_ID_STORAGE_KEY, config.telegramApiId)
-  writeString(TELEGRAM_API_HASH_STORAGE_KEY, config.telegramApiHash)
-  writeString(TELEGRAM_SESSION_STORAGE_KEY, config.telegramSession)
+  writeSensitiveString(TELEGRAM_API_ID_STORAGE_KEY, config.telegramApiId)
+  writeSensitiveString(TELEGRAM_API_HASH_STORAGE_KEY, config.telegramApiHash)
+  writeSensitiveString(TELEGRAM_SESSION_STORAGE_KEY, config.telegramSession)
   safeLsSetItem(DEBUG_EVENTS_STORAGE_KEY, String(config.debugEventsEnabled))
   safeLsSetItem(CHAT_POLL_STORAGE_KEY, String(clamp(config.chatPollMs, 1000, 60000)))
   safeLsSetItem(MESSAGE_POLL_STORAGE_KEY, String(clamp(config.messagePollMs, 1000, 60000)))
   safeLsSetItem(RECORDING_MIN_STORAGE_KEY, String(clamp(config.recordingMinDurationMs, 0, 5000)))
   writeString(STT_BASE_URL_STORAGE_KEY, config.sttBaseUrl)
-  writeString(BACKEND_SHARED_SECRET_STORAGE_KEY, config.backendSharedSecret)
+  writeSensitiveString(BACKEND_SHARED_SECRET_STORAGE_KEY, config.backendSharedSecret)
 }
 
 export function resetFrontendConfig() {
@@ -179,11 +179,25 @@ function readString(key: string, ...legacyKeys: string[]) {
   return ''
 }
 
+function readSensitiveString(key: string, ...legacyKeys: string[]) {
+  for (const candidate of [key, ...legacyKeys]) {
+    const value = safeLsGetItem(candidate)?.trim()
+    if (value) return value
+  }
+  return ''
+}
+
 function writeString(key: string, value: string) {
   const trimmed = value.trim()
   safeLsSetItem(key, trimmed)
   writeCookie(key, trimmed)
 }
+
+function writeSensitiveString(key: string, value: string) {
+  safeLsSetItem(key, value.trim())
+  removeCookie(key)
+}
+
 function readBoolean(key: string, fallback: boolean, ...legacyKeys: string[]) {
   const value = readRaw(key, legacyKeys)
   if (value === 'true') return true
