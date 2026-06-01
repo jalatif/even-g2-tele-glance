@@ -138,7 +138,9 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Backend `/api/transcribe` and `/api/debug/events` now require encrypted shared-secret auth when using the main backend. Custom STT endpoints still do not receive Telegram auth headers.
 - Sensitive frontend settings remain in localStorage only; Telegram API credentials, MTProto StringSession, and backend shared secret are no longer mirrored to cookies. Older sensitive cookies are removed on save/reset.
 - Topic preview state is cleared on topic selection changes and preview reuse is gated by matching topic id, preventing a fast swipe/press from opening one topic with another topic's cached preview.
+- Topic screens now show selected-topic loading copy instead of mirroring the full topic list in the right panel before preview messages load, and the first selected topic preview starts immediately when a forum chat opens.
 - Topic listing no longer fetches one preview message per topic serially. The backend returns topic metadata quickly; the frontend fetches recent messages only for the selected preview/opened topic.
+- Boxed message previews are rendered only through the native `panelBox`; topic preview, recording, and sent states suppress `panelBody` when `panelBox` exists so ASCII box text cannot overlap with the native container.
 - Sidebar rebuilds always include the `panel-box` container id, hidden when unused, so boxed message content does not remain stale after transitions to normal text.
 - Forum update matching now tolerates Telethon update payloads that carry either `topic.id`, `topMessageId`, or no topic id, so active forum threads refresh immediately instead of waiting for polling.
 - Confirmation rendering now marks only the selected `Send` or `Cancel` action.
@@ -160,6 +162,8 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Real Telegram forum topics in Telethon 1.43 use `topic.id` for message history in this implementation. `topMessageId` is still useful DTO/debug context but should not be assumed to be the fetch key.
 - Forum update payloads may not use the same topic identifier as history/sending. When already inside a forum thread, treat matching chat id plus `topic.id`, `topMessageId`, or missing topic id as a refresh signal and let the message fetch resolve truth.
 - Topic previews are asynchronous cached state and must be tied to the selected topic id. Clearing preview fields on selection change avoids wrong-thread display/send risks if the user swipes and presses before a new preview finishes.
+- Topic preview loading should not use the complete topic list as a right-panel fallback. That briefly duplicates the left sidebar and looks like a broken split view; show the selected topic name plus loading copy until preview messages arrive.
+- Any state that supplies a native `panelBox` must leave `panelBody` empty for that page. Rendering both the old text-drawn box body and the native bordered container causes ghost/jumbled text on the right side.
 - Fetching preview messages for every forum topic inside `/topics` scales poorly. A serial 20-topic preview loop can stall the glasses for a long time; return topic metadata first and preview only the selected topic.
 - For device testing, the backend is not packaged into `.ehpk`. The `.ehpk` contains the frontend and manifest; the FastAPI backend must stay running and reachable from the phone/glasses path.
 - Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and the frontend's configured backend URL.

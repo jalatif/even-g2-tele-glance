@@ -28,6 +28,7 @@ These notes capture hardware-specific implementation details and quirks observed
 - List item count should stay within `1-20`.
 - Stable container IDs matter. Rebuilding from one screen type to another with different or stale IDs can make the browser/debug view look correct while the glasses display remains on the previous page.
 - Optional containers need stable IDs too. When a message page switches from a native boxed long message back to normal body text, keep the `panel-box` container in the rebuild and hide it when unused; omitting the container can leave stale boxed content on device.
+- Native boxed content must not also be rendered as body text. If `panelBox` is set for topic preview, recording, sent, or message states, keep the right-panel body empty for that page; otherwise the old ASCII box text overlaps the native bordered container and looks like ghost text.
 - Hidden containers should be kept stable when switching page layouts.
 - Message history is safest as one chronological buffer with a bottom-relative scroll pointer:
   - Swipe up moves the pointer one display chunk older when loaded history is available.
@@ -144,6 +145,7 @@ These notes capture hardware-specific implementation details and quirks observed
 - For Telethon `1.43`, forum message history uses `topic.id`, not `topMessageId`; `topMessageId` remains useful DTO/debug context.
 - Incoming forum update payloads can identify the topic differently from the history API. Treat matching chat id with `topic.id`, `topMessageId`, or a missing topic id as a reason to refresh the active forum thread; the follow-up history fetch is the source of truth.
 - Topic preview fetches must remain selected-topic scoped. Clear cached preview fields when selection changes and only reuse preview messages when the cached `previewTopic.id` equals the selected topic id, or a fast swipe/press can display one topic's messages while opening another.
+- When opening a forum chat, start fetching the first selected topic preview immediately. Before preview messages arrive, the right side should show selected-topic loading copy, not a duplicate of the left topic list.
 - Avoid backend topic-list preview fanout. Fetching one latest message per topic serially can stall `/topics` on large forum groups; return forum topic metadata quickly and let the frontend preview/open path fetch messages for the selected topic.
 - Telethon forum/reply history can return messages without `message.sender` populated while the result contains separate `users`/`chats` entity lists. Normalize sender names from those bundled entities using `from_id`/peer ids before returning API DTOs, otherwise incoming replies render as `Unknown`.
 - After sending, the frontend refreshes the newest messages, briefly polls so quick replies appear on glasses, and resets the visible pointer to the latest message.

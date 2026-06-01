@@ -150,6 +150,17 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'topics', selectedTopicIndex: 0 })
   })
 
+  it('starts preview loading for the first topic immediately after opening a forum chat', async () => {
+    const api = fakeApi({ authorized: true })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+
+    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', limit: 50 })
+  })
+
   it('opens selected forum topic messages and renders a message screen', async () => {
     const api = fakeApi({ authorized: true })
     const bridge = fakeBridge()
@@ -179,7 +190,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'press', index: 1 })
 
-    expect(api.listMessages).toHaveBeenNthCalledWith(1, '2', { topicId: '20', limit: 50 })
+    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '20', limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[1] })
   })
 

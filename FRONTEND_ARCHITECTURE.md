@@ -79,6 +79,8 @@ Phone-code login returns `sessionString`; the React context persists it to local
 - Messages over twenty-five words become structured boxed pages.
 - Multi-page boxed messages remain separate scroll stops until the user reaches the first/last page.
 - The returned `body` remains useful for the phone/debug pane, but the glasses bridge uses structured `box` metadata for native bordered containers.
+- For any page that returns `box`, the glasses projection must keep that page's right-panel `body` empty. This prevents old text-drawn box content from rendering underneath the native bordered container.
+- Forum topic preview panels render the selected topic plus loading copy until preview messages arrive; they should not mirror the full topic list from the left sidebar.
 
 Avoid parsing ASCII/debug text to infer native glasses layout. That caused duplicated text-box content because the native container and the old marker format could both render.
 

@@ -769,6 +769,7 @@ export class TelegramAppController {
           chats, selectedChatIndex,
           chat, topics, selectedTopicIndex: 0,
         })
+        void this.fetchTopicPreview(chat, topics[0]).catch(() => undefined)
         return
       }
       await this.openMessages(chat, undefined, previous)

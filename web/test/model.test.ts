@@ -260,6 +260,80 @@ describe('screenModel', () => {
     }
   })
 
+  it('does not double-render boxed topic previews as body text', () => {
+    const state: AppState = {
+      screen: 'sidebar', focus: 'topics',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Akira Agents', kind: 'group', isForum: true },
+      topics: [{ id: '10', title: 'Stock-Analyst' }],
+      selectedTopicIndex: 0,
+      previewTopic: { id: '10', title: 'Stock-Analyst' },
+      previewMessages: [{ id: '1', sender: 'Akira', text: 'it after a 7x run from lows '.repeat(8) }],
+    }
+
+    const model = screenModel(state)
+
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelBox).toBeDefined()
+      expect(model.panelBody).toBe('')
+    }
+  })
+
+  it('shows selected-topic loading instead of mirroring the topic list before preview loads', () => {
+    const state: AppState = {
+      screen: 'sidebar', focus: 'topics',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Akira Agents', kind: 'group', isForum: true },
+      topics: [
+        { id: '10', title: 'General' },
+        { id: '20', title: 'Assistant' },
+        { id: '30', title: 'Stock-Analyst' },
+      ],
+      selectedTopicIndex: 2,
+    }
+
+    const model = screenModel(state)
+
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelTitle).toBe('Stock-Analyst')
+      expect(model.panelBody).toBe('Loading messages...')
+      expect(model.panelBody).not.toContain('General')
+      expect(model.panelFooter).toBe('Loading messages...')
+    }
+  })
+
+  it('does not double-render boxed messages while recording or after sent state', () => {
+    const base = {
+      focus: 'messages' as const,
+      chats: [],
+      selectedChatIndex: 0,
+      chat: { id: '1', title: 'Akira Agents', kind: 'group' as const },
+      messages: [{ id: '1', sender: 'Akira', text: 'it after a 7x run from lows '.repeat(8) }],
+    }
+
+    const recording = screenModel({
+      ...base,
+      screen: 'sidebarRecording',
+      chunks: [],
+      startedAt: 1,
+    })
+    const sent = screenModel({
+      ...base,
+      screen: 'sidebarSent',
+    })
+
+    expect(recording.kind).toBe('sidebar')
+    expect(sent.kind).toBe('sidebar')
+    if (recording.kind === 'sidebar' && sent.kind === 'sidebar') {
+      expect(recording.panelBox).toBeDefined()
+      expect(recording.panelBody).toBe('')
+      expect(sent.panelBox).toBeDefined()
+      expect(sent.panelBody).toBe('')
+    }
+  })
+
   it('marks only the selected confirmation action', () => {
     const baseState: AppState = {
       screen: 'sidebarConfirm', focus: 'messages',

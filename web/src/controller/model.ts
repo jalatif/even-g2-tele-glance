@@ -122,8 +122,10 @@ export function screenModel(state: AppState): ScreenModel {
         }
         case 'topics': {
           const previewMessages = state.previewMessages
-          const hasPreview = previewMessages?.length
+          const previewLoaded = previewMessages !== undefined
           const scrollOffset = state.previewScrollOffset ?? 0
+          const msg = previewMessages ? formatMessages(previewMessages, scrollOffset) : undefined
+          const selectedTopic = state.topics[state.selectedTopicIndex]
           return {
             kind: 'sidebar',
             title: sanitizeGlassesText(state.chat.title.slice(0, 20)),
@@ -132,14 +134,16 @@ export function screenModel(state: AppState): ScreenModel {
             sidebarSelected: state.selectedTopicIndex,
             panelTitle: state.previewTopic
               ? sanitizeGlassesText(state.previewTopic.title.slice(0, 20))
-              : 'Topics',
+              : selectedTopic
+                ? sanitizeGlassesText(selectedTopic.title.slice(0, 20))
+                : 'Topics',
             panelBody: previewMessages
-              ? trimUtf8Bytes(formatMessagesBody(previewMessages, scrollOffset), TEXT_CONTAINER_BYTE_LIMIT)
-              : formatTopicPreviews(state.topics),
-            panelFooter: hasPreview ? 'Swipe topics | Press open' : 'Swipe topics',
-            panelBox: previewMessages
-              ? messagesBox(previewMessages, scrollOffset)
-              : undefined,
+              ? msg?.box ? '' : trimUtf8Bytes(msg?.body ?? '', TEXT_CONTAINER_BYTE_LIMIT)
+              : selectedTopic
+                ? 'Loading messages...'
+                : formatTopicPreviews(state.topics),
+            panelFooter: previewLoaded ? 'Swipe topics | Press open' : 'Loading messages...',
+            panelBox: msg?.box,
             focus: 'sidebar',
           }
         }
@@ -184,7 +188,7 @@ export function screenModel(state: AppState): ScreenModel {
         sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
         sidebarSelected: state.selectedChatIndex,
         panelTitle: 'Recording',
-        panelBody: msg.body,
+        panelBody: msg.box ? '' : msg.body,
         panelFooter: footerText(state.status, 'Click stop | Double click cancel'),
         panelBox: msg.box,
         focus: 'panel',
@@ -238,7 +242,7 @@ export function screenModel(state: AppState): ScreenModel {
         sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
         sidebarSelected: state.selectedChatIndex,
         panelTitle: '',
-        panelBody: msg.body,
+        panelBody: msg.box ? '' : msg.body,
         panelFooter: footerText(state.status, 'Click record | Double click back'),
         panelBox: msg.box,
         focus: 'panel',
@@ -284,14 +288,6 @@ function formatMessages(messages: Message[], scrollOffset = 0) {
   const pages = messageDisplayPages(messages)
   const pageIndex = Math.max(0, Math.min(pages.length - 1, pages.length - 1 - scrollOffset))
   return pages[pageIndex]
-}
-
-function formatMessagesBody(messages: Message[], scrollOffset = 0) {
-  return formatMessages(messages, scrollOffset).body
-}
-
-function messagesBox(messages: Message[], scrollOffset = 0): BoxedText | undefined {
-  return formatMessages(messages, scrollOffset).box
 }
 
 export function messageScrollUnitCount(messages: Message[]) {
