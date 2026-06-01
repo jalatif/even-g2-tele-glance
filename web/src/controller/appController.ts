@@ -131,6 +131,14 @@ export class TelegramAppController {
   async init() {
     await this.setState({ screen: 'loading', message: 'Checking Telegram session...' })
     await this.run(async () => {
+      if (!this.hasTelegramCredentials()) {
+        await this.setState({
+          screen: 'auth',
+          mode: 'needsSetup',
+          message: 'Follow the instructions on the Settings page to connect Telegram and the backend server.',
+        })
+        return
+      }
       const status = await this.api.authStatus()
       if (!status.authorized) {
         const hasFrontendCredentials = this.hasTelegramCredentials()
@@ -214,7 +222,7 @@ export class TelegramAppController {
       if (state.mode === 'needsSetup') {
         await this.setState({
           ...state,
-          message: 'Telegram not connected. Add Backend shared secret and Telegram API ID/hash in Settings on the phone first.',
+          message: 'Follow the instructions on the Settings page to connect Telegram and the backend server.',
         })
         return
       }
