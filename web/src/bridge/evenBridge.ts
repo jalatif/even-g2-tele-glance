@@ -12,7 +12,7 @@ import { defaultApiBaseUrl } from '../api'
 import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
-export const APP_BUILD_VERSION = '0.1.30'
+export const APP_BUILD_VERSION = '1.0.0'
 
 type EvenBridgeOptions = {
   debugEventsEnabled?: () => boolean
