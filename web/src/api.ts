@@ -50,7 +50,19 @@ function localApiBaseUrl() {
     ?? window.localStorage.getItem(G2_TELE_API_BASE_URL_STORAGE_KEY)
     ?? window.localStorage.getItem(LEGACY_API_BASE_URL_STORAGE_KEY)
   )?.trim()
-  return value || undefined
+  if (value) return value
+  try {
+    const cookies = document.cookie.split(';')
+    for (const cookie of cookies) {
+      const eq = cookie.indexOf('=')
+      if (eq === -1) continue
+      const rawKey = cookie.slice(0, eq).trim()
+      if (decodeURIComponent(rawKey) === API_BASE_URL_STORAGE_KEY) {
+        return decodeURIComponent(cookie.slice(eq + 1).trim())
+      }
+    }
+  } catch { /* cookies unavailable */ }
+  return undefined
 }
 
 export class HttpTelegramApi implements TelegramApi {

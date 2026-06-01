@@ -23,6 +23,8 @@ const LEGACY_CHAT_POLL_STORAGE_KEY = 'evenTelegram.chatPollMs'
 const LEGACY_MESSAGE_POLL_STORAGE_KEY = 'evenTelegram.messagePollMs'
 const LEGACY_RECORDING_MIN_STORAGE_KEY = 'evenTelegram.recordingMinDurationMs'
 
+const COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60
+
 export type FrontendConfig = {
   apiBaseUrl: string
   telegramApiId: string
@@ -65,63 +67,123 @@ export function loadFrontendConfig(): FrontendConfig {
 
 export function saveFrontendConfig(config: FrontendConfig) {
   const apiBaseUrl = config.apiBaseUrl.trim()
-  if (apiBaseUrl) window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, apiBaseUrl)
-  else window.localStorage.removeItem(API_BASE_URL_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_API_BASE_URL_STORAGE_KEY)
-  window.localStorage.removeItem(LEGACY_API_BASE_URL_STORAGE_KEY)
+  writeString(API_BASE_URL_STORAGE_KEY, apiBaseUrl)
+  safeLsRemoveItem(G2_TELE_API_BASE_URL_STORAGE_KEY)
+  safeLsRemoveItem(LEGACY_API_BASE_URL_STORAGE_KEY)
   writeString(TELEGRAM_API_ID_STORAGE_KEY, config.telegramApiId)
   writeString(TELEGRAM_API_HASH_STORAGE_KEY, config.telegramApiHash)
   writeString(TELEGRAM_SESSION_STORAGE_KEY, config.telegramSession)
-  window.localStorage.setItem(DEBUG_EVENTS_STORAGE_KEY, String(config.debugEventsEnabled))
-  window.localStorage.setItem(CHAT_POLL_STORAGE_KEY, String(clamp(config.chatPollMs, 1000, 60000)))
-  window.localStorage.setItem(MESSAGE_POLL_STORAGE_KEY, String(clamp(config.messagePollMs, 1000, 60000)))
-  window.localStorage.setItem(RECORDING_MIN_STORAGE_KEY, String(clamp(config.recordingMinDurationMs, 0, 5000)))
+  safeLsSetItem(DEBUG_EVENTS_STORAGE_KEY, String(config.debugEventsEnabled))
+  safeLsSetItem(CHAT_POLL_STORAGE_KEY, String(clamp(config.chatPollMs, 1000, 60000)))
+  safeLsSetItem(MESSAGE_POLL_STORAGE_KEY, String(clamp(config.messagePollMs, 1000, 60000)))
+  safeLsSetItem(RECORDING_MIN_STORAGE_KEY, String(clamp(config.recordingMinDurationMs, 0, 5000)))
   writeString(STT_BASE_URL_STORAGE_KEY, config.sttBaseUrl)
   writeString(BACKEND_SHARED_SECRET_STORAGE_KEY, config.backendSharedSecret)
 }
 
 export function resetFrontendConfig() {
-  window.localStorage.removeItem(API_BASE_URL_STORAGE_KEY)
-  window.localStorage.removeItem(LEGACY_API_BASE_URL_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_API_BASE_URL_STORAGE_KEY)
-  window.localStorage.removeItem(TELEGRAM_API_ID_STORAGE_KEY)
-  window.localStorage.removeItem(TELEGRAM_API_HASH_STORAGE_KEY)
-  window.localStorage.removeItem(TELEGRAM_SESSION_STORAGE_KEY)
-  window.localStorage.removeItem(DEBUG_EVENTS_STORAGE_KEY)
-  window.localStorage.removeItem(CHAT_POLL_STORAGE_KEY)
-  window.localStorage.removeItem(MESSAGE_POLL_STORAGE_KEY)
-  window.localStorage.removeItem(RECORDING_MIN_STORAGE_KEY)
-  window.localStorage.removeItem(STT_BASE_URL_STORAGE_KEY)
-  window.localStorage.removeItem(BACKEND_SHARED_SECRET_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_TELEGRAM_API_ID_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_TELEGRAM_API_HASH_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_TELEGRAM_SESSION_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_DEBUG_EVENTS_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_CHAT_POLL_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_MESSAGE_POLL_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_RECORDING_MIN_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_STT_BASE_URL_STORAGE_KEY)
-  window.localStorage.removeItem(G2_TELE_BACKEND_SHARED_SECRET_STORAGE_KEY)
-  window.localStorage.removeItem(LEGACY_DEBUG_EVENTS_STORAGE_KEY)
-  window.localStorage.removeItem(LEGACY_CHAT_POLL_STORAGE_KEY)
-  window.localStorage.removeItem(LEGACY_MESSAGE_POLL_STORAGE_KEY)
-  window.localStorage.removeItem(LEGACY_RECORDING_MIN_STORAGE_KEY)
+  safeLsRemoveItem(API_BASE_URL_STORAGE_KEY)
+  safeLsRemoveItem(LEGACY_API_BASE_URL_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_API_BASE_URL_STORAGE_KEY)
+  safeLsRemoveItem(TELEGRAM_API_ID_STORAGE_KEY)
+  safeLsRemoveItem(TELEGRAM_API_HASH_STORAGE_KEY)
+  safeLsRemoveItem(TELEGRAM_SESSION_STORAGE_KEY)
+  safeLsRemoveItem(DEBUG_EVENTS_STORAGE_KEY)
+  safeLsRemoveItem(CHAT_POLL_STORAGE_KEY)
+  safeLsRemoveItem(MESSAGE_POLL_STORAGE_KEY)
+  safeLsRemoveItem(RECORDING_MIN_STORAGE_KEY)
+  safeLsRemoveItem(STT_BASE_URL_STORAGE_KEY)
+  safeLsRemoveItem(BACKEND_SHARED_SECRET_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_TELEGRAM_API_ID_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_TELEGRAM_API_HASH_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_TELEGRAM_SESSION_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_DEBUG_EVENTS_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_CHAT_POLL_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_MESSAGE_POLL_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_RECORDING_MIN_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_STT_BASE_URL_STORAGE_KEY)
+  safeLsRemoveItem(G2_TELE_BACKEND_SHARED_SECRET_STORAGE_KEY)
+  safeLsRemoveItem(LEGACY_DEBUG_EVENTS_STORAGE_KEY)
+  safeLsRemoveItem(LEGACY_CHAT_POLL_STORAGE_KEY)
+  safeLsRemoveItem(LEGACY_MESSAGE_POLL_STORAGE_KEY)
+  safeLsRemoveItem(LEGACY_RECORDING_MIN_STORAGE_KEY)
+  removeCookie(TELEGRAM_API_ID_STORAGE_KEY)
+  removeCookie(TELEGRAM_API_HASH_STORAGE_KEY)
+  removeCookie(TELEGRAM_SESSION_STORAGE_KEY)
+  removeCookie(BACKEND_SHARED_SECRET_STORAGE_KEY)
+  removeCookie(STT_BASE_URL_STORAGE_KEY)
+  removeCookie(API_BASE_URL_STORAGE_KEY)
 }
+
+// --- Safe localStorage wrappers ---
+
+
+
+function safeLsGetItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeLsSetItem(key: string, value: string) {
+  try {
+    if (value) window.localStorage.setItem(key, value)
+    else window.localStorage.removeItem(key)
+  } catch { /* storage unavailable */ }
+}
+
+function safeLsRemoveItem(key: string) {
+  try {
+    window.localStorage.removeItem(key)
+  } catch { /* storage unavailable */ }
+}
+
+// --- Cookie fallback for critical string settings ---
+
+function readCookie(key: string): string | null {
+  try {
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${encodeURIComponent(key)}=([^;]*)`))
+    return match ? decodeURIComponent(match[1]) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCookie(key: string, value: string) {
+  try {
+    const encodedKey = encodeURIComponent(key)
+    if (value) {
+      const encodedValue = encodeURIComponent(value)
+      document.cookie = `${encodedKey}=${encodedValue};max-age=${COOKIE_MAX_AGE_SECONDS};path=/;SameSite=Lax`
+    } else {
+      document.cookie = `${encodedKey}=;max-age=0;path=/;SameSite=Lax`
+    }
+  } catch { /* cookies unavailable */ }
+}
+
+function removeCookie(key: string) {
+  writeCookie(key, '')
+}
+
+// --- Storage readers with cookie fallback ---
 
 function readString(key: string, ...legacyKeys: string[]) {
   for (const candidate of [key, ...legacyKeys]) {
-    const value = window.localStorage.getItem(candidate)?.trim()
+    const value = safeLsGetItem(candidate)?.trim()
     if (value) return value
   }
+  const cookieValue = readCookie(key)?.trim()
+  if (cookieValue) return cookieValue
   return ''
 }
 
 function writeString(key: string, value: string) {
   const trimmed = value.trim()
-  if (trimmed) window.localStorage.setItem(key, trimmed)
-  else window.localStorage.removeItem(key)
+  safeLsSetItem(key, trimmed)
+  writeCookie(key, trimmed)
 }
-
 function readBoolean(key: string, fallback: boolean, ...legacyKeys: string[]) {
   const value = readRaw(key, legacyKeys)
   if (value === 'true') return true
@@ -139,7 +201,7 @@ function readNumber(key: string, fallback: number, min: number, max: number, ...
 
 function readRaw(key: string, legacyKeys: string[]) {
   for (const candidate of [key, ...legacyKeys]) {
-    const value = window.localStorage.getItem(candidate)
+    const value = safeLsGetItem(candidate)
     if (value !== null) return value
   }
   return null

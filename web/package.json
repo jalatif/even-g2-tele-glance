@@ -24,6 +24,7 @@
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
+    "@types/node": "^25.9.1",
     "@vitejs/plugin-legacy": "^5.4.3",
     "typescript": "^5.4.5",
     "vite": "^5.4.11",
