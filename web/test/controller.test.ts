@@ -51,11 +51,24 @@ describe('TelegramAppController', () => {
 
     await controller.dispatch({ type: 'swipeDown' })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 1 })
-    expect(bridge.render).toHaveBeenCalledTimes(renderCount + 1)
+    expect(bridge.render).toHaveBeenCalledTimes(renderCount)
 
     await controller.dispatch({ type: 'swipeUp' })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0 })
-    expect(bridge.render).toHaveBeenCalledTimes(renderCount + 2)
+    expect(bridge.render).toHaveBeenCalledTimes(renderCount)
+  })
+
+  it('keeps chat selection moving while glasses rendering is slow', async () => {
+    const api = fakeApi({ authorized: true, chats: [chats[0], chats[1], { id: '3', title: 'Ops', kind: 'group' }] })
+    const bridge = slowBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'swipeDown' })
+
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 2 })
+    expect(bridge.render).toHaveBeenCalledTimes(1)
   })
 
   it('turns the screen off on double press from the chat list', async () => {
@@ -697,6 +710,15 @@ function speechLikePcm() {
 function fakeBridge(): GlassesBridge {
   return {
     render: vi.fn(async () => undefined),
+    setAudioEnabled: vi.fn(async () => undefined),
+    showExitConfirmation: vi.fn(async () => undefined),
+    turnScreenOff: vi.fn(async () => undefined),
+  }
+}
+
+function slowBridge(): GlassesBridge {
+  return {
+    render: vi.fn(() => new Promise<void>(() => undefined)),
     setAudioEnabled: vi.fn(async () => undefined),
     showExitConfirmation: vi.fn(async () => undefined),
     turnScreenOff: vi.fn(async () => undefined),

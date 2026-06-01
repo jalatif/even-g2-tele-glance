@@ -58,6 +58,8 @@ export class TelegramAppController {
   private topicPreviewInFlight = new Set<string>()
   private readAckMaxIds = new Map<string, Id>()
   private selectionOnlyPressReadyAt = 0
+  private renderInFlight = false
+  private pendingRenderModel: ScreenModel | undefined
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -318,15 +320,15 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'swipeUp') {
-      await this.setState({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, -1) })
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, -1) })
       return
     }
     if (input.type === 'swipeDown') {
-      await this.setState({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, 1) })
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, 1) })
       return
     }
     if (input.type === 'selectIndex') {
-      await this.setState({ ...state, selectedChatIndex: clamp(input.index, 0, state.chats.length - 1) })
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: clamp(input.index, 0, state.chats.length - 1) })
       return
     }
     if (input.type !== 'press') return
@@ -375,13 +377,13 @@ export class TelegramAppController {
     if (input.type === 'swipeUp' || input.type === 'swipeDown') {
       const delta = input.type === 'swipeUp' ? -1 : 1
       const newIndex = moveSelection(state.selectedTopicIndex, state.topics.length, delta)
-      await this.setState({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
+      await this.setStateWithoutRender({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
       this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
     if (input.type === 'selectIndex') {
       const newIndex = clamp(input.index, 0, state.topics.length - 1)
-      await this.setState({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
+      await this.setStateWithoutRender({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
       this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
@@ -990,14 +992,44 @@ export class TelegramAppController {
   }
 
   private async setState(state: AppState) {
+    this.applyState(state, true)
+    this.enqueueRender(screenModel(state))
+  }
+
+  private async setStateWithoutRender(state: AppState) {
+    this.applyState(state, false)
+  }
+
+  private applyState(state: AppState, armSelectionOnlyPress: boolean) {
     this.state = state
-    if (state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics')) {
+    if (armSelectionOnlyPress && state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics')) {
       this.selectionOnlyPressReadyAt = Date.now() + this.runtimeConfig.selectionOnlyPressDelayMs
     }
     this.syncMessagePolling()
     this.syncChatPolling()
     this.notify()
-    await this.bridge.render(screenModel(state))
+  }
+
+  private enqueueRender(model: ScreenModel) {
+    this.pendingRenderModel = model
+    if (this.renderInFlight) return
+    this.renderInFlight = true
+    void this.flushRenderQueue()
+  }
+
+  private async flushRenderQueue() {
+    try {
+      while (this.pendingRenderModel) {
+        const model = this.pendingRenderModel
+        this.pendingRenderModel = undefined
+        await this.bridge.render(model)
+      }
+    } catch {
+      // Rendering failures should not block controller state/input handling.
+    } finally {
+      this.renderInFlight = false
+      if (this.pendingRenderModel) this.enqueueRender(this.pendingRenderModel)
+    }
   }
 
   private notify() {
