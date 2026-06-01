@@ -145,7 +145,7 @@ async def test_chat_topic_and_message_endpoints(app, fake_services):
 
     assert chats.status_code == 200
     assert chats.json()[1]["isForum"] is True
-    assert topics.json() == [{"id": 11, "title": "Build", "topMessageId": 101, "unreadCount": 2}]
+    assert topics.json() == [{"id": 11, "title": "Build", "topMessageId": 101, "unreadCount": 2, "lastMessage": None}]
     assert messages.json()[0]["text"] == "Latest"
     assert telegram.message_calls == [
         {"chat_id": 2, "topic_id": 101, "before_id": 99, "limit": 3}

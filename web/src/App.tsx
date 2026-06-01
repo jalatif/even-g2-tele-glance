@@ -12,7 +12,8 @@ function AppShell() {
   const needsSetup = state.screen === 'auth' && (!settings.backendSharedSecret.trim() || !settings.telegramApiId.trim() || !settings.telegramApiHash.trim())
   const setupBanner = setupBannerText(state, settings)
   const [route, setRoute] = useState<Route>(needsSetup ? 'settings' : 'chat')
-  const title = state.screen === 'messages'
+  const isMessages = state.screen === 'sidebar' && state.focus === 'messages'
+  const title = isMessages
     ? state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title
     : 'TeleGlance'
 

@@ -1,6 +1,6 @@
 import { pcmChunksToWav } from '../audio/wav'
 import type { TelegramApi } from '../api'
-import type { Chat, Message, TelegramUpdate, Topic } from '../types'
+import type { Chat, Id, Message, TelegramUpdate, Topic } from '../types'
 import type { AppInput, AppState, RecoverableState, ScreenModel } from './model'
 import { messageScrollUnitCount, screenModel } from './model'
 
@@ -48,7 +48,9 @@ export class TelegramAppController {
     | undefined
   private rootRefreshInFlight = false
   private messageRefreshInFlight = false
-
+  private topicPreviewDebounce: ReturnType<typeof setTimeout> | undefined
+  private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
+  private topicPreviewInFlight = false
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -93,6 +95,7 @@ export class TelegramAppController {
     const thread = activeThreadState(this.state)
     if (!thread) throw new Error('Open a chat or topic before sending.')
 
+    const ctx = sidebarContext(this.state)
     await this.run(async () => {
       const sent = await this.api.sendMessage(thread.chat.id, {
         text: trimmed,
@@ -103,7 +106,8 @@ export class TelegramAppController {
         ? refreshed
         : normalizeMessagePage([...refreshed, sent])
       await this.setState({
-        screen: 'messages',
+        screen: 'sidebar', focus: 'messages',
+        chats: ctx.chats, selectedChatIndex: ctx.selectedChatIndex,
         chat: thread.chat,
         topic: thread.topic,
         messages,
@@ -119,11 +123,11 @@ export class TelegramAppController {
 
   async handleTelegramUpdate(update: TelegramUpdate) {
     const state = this.state
-    if (state.screen === 'chats' || state.screen === 'asleep' || state.screen === 'newMessage') {
+    if (state.screen === 'sidebar' && state.focus === 'chats' || state.screen === 'asleep' || state.screen === 'newMessage') {
       await this.refreshRootChats()
       return
     }
-    if (state.screen === 'messages' && updateMatchesThread(update, state)) {
+    if (state.screen === 'sidebar' && state.focus === 'messages' && updateMatchesThread(update, state)) {
       await this.refreshVisibleMessages()
     }
   }
@@ -167,14 +171,21 @@ export class TelegramAppController {
     }
 
     if (input.type === 'audioChunk') {
-      if (this.state.screen === 'recording') {
+      if (this.state.screen === 'sidebarRecording') {
         this.state = { ...this.state, chunks: [...this.state.chunks, input.pcm] }
       }
       return
     }
 
     const state = this.state
-    if ((state.screen === 'chats' || state.screen === 'topics') && input.type === 'selectIndex' && input.index === state.selectedIndex) {
+    if (state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics') && input.type === 'selectIndex') {
+      const idx = state.focus === 'chats' ? state.selectedChatIndex : state.selectedTopicIndex
+      if (input.index === idx) {
+        await this.dispatch({ type: 'press', index: input.index })
+        return
+      }
+    }
+    if (state.screen === 'sidebarConfirm' && input.type === 'selectIndex' && input.index === state.selectedIndex) {
       await this.dispatch({ type: 'press', index: input.index })
       return
     }
@@ -182,8 +193,8 @@ export class TelegramAppController {
       case 'auth':
         await this.handleAuth(state, input)
         return
-      case 'chats':
-        await this.handleChats(state, input)
+      case 'sidebar':
+        await this.handleSidebar(state, input)
         return
       case 'asleep':
         await this.handleAsleep(state, input)
@@ -191,27 +202,21 @@ export class TelegramAppController {
       case 'newMessage':
         await this.handleNewMessage(state, input)
         return
-      case 'topics':
-        await this.handleTopics(state, input)
+      case 'sidebarRecording':
+        await this.handleSidebarRecording(state, input)
         return
-      case 'messages':
-        await this.handleMessages(state, input)
+      case 'sidebarConfirm':
+        await this.handleSidebarConfirm(state, input)
         return
-      case 'recording':
-        await this.handleRecording(state, input)
-        return
-      case 'confirm':
-        await this.handleConfirm(state, input)
-        return
-      case 'sent':
-        await this.handleSent(state, input)
+      case 'sidebarSent':
+        await this.handleSidebarSent(state, input)
         return
       case 'error':
         await this.handleError(state, input)
         return
       case 'loading':
-      case 'transcribing':
-      case 'sending':
+      case 'sidebarTranscribing':
+      case 'sidebarSending':
         return
     }
   }
@@ -280,30 +285,48 @@ export class TelegramAppController {
     }, this.state.screen === 'auth' ? this.state : undefined)
   }
 
-  private async handleChats(state: Extract<AppState, { screen: 'chats' }>, input: AppInput) {
+  private async handleSidebar(
+    state: Extract<AppState, { screen: 'sidebar' }>, input: AppInput
+  ) {
+    switch (state.focus) {
+      case 'chats':
+        await this.handleSidebarChats(state as Extract<AppState, { screen: 'sidebar'; focus: 'chats' }>, input)
+        return
+      case 'topics':
+        await this.handleSidebarTopics(state as Extract<AppState, { screen: 'sidebar'; focus: 'topics' }>, input)
+        return
+      case 'messages':
+        await this.handleSidebarMessages(state as Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, input)
+        return
+    }
+  }
+
+  private async handleSidebarChats(
+    state: Extract<AppState, { screen: 'sidebar'; focus: 'chats' }>, input: AppInput
+  ) {
     if (input.type === 'doublePress') {
       this.rememberChats(state.chats)
-      await this.setState({ screen: 'asleep', chats: state.chats, selectedIndex: state.selectedIndex })
+      await this.setState({ screen: 'asleep', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
       await this.bridge.turnScreenOff?.()
       return
     }
     if (input.type === 'swipeUp') {
-      await this.setState({ ...state, selectedIndex: moveSelection(state.selectedIndex, state.chats.length, -1) })
+      await this.setState({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, -1) })
       return
     }
     if (input.type === 'swipeDown') {
-      await this.setState({ ...state, selectedIndex: moveSelection(state.selectedIndex, state.chats.length, 1) })
+      await this.setState({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, 1) })
       return
     }
     if (input.type === 'selectIndex') {
-      await this.setState({ ...state, selectedIndex: clamp(input.index, 0, state.chats.length - 1) })
+      await this.setState({ ...state, selectedChatIndex: clamp(input.index, 0, state.chats.length - 1) })
       return
     }
     if (input.type !== 'press') return
 
-    const selectedIndex = selectedInputIndex(input, state.selectedIndex, state.chats.length)
-    const selectedState = { ...state, selectedIndex }
-    const chat = selectedState.chats[selectedIndex]
+    const selectedChatIndex = selectedInputIndex(input, state.selectedChatIndex, state.chats.length)
+    const selectedState = { ...state, selectedChatIndex }
+    const chat = selectedState.chats[selectedChatIndex]
     if (!chat) return
     await this.openChat(chat, selectedState)
   }
@@ -313,51 +336,80 @@ export class TelegramAppController {
       await this.bridge.turnScreenOff?.()
       return
     }
-    await this.setState({ screen: 'chats', chats: state.chats, selectedIndex: state.selectedIndex })
+    await this.setState({ screen: 'sidebar', focus: 'chats', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
   }
 
   private async handleNewMessage(state: Extract<AppState, { screen: 'newMessage' }>, input: AppInput) {
     if (input.type === 'doublePress') {
       this.rememberChats(state.chats)
-      await this.setState({ screen: 'asleep', chats: state.chats, selectedIndex: state.selectedIndex })
+      await this.setState({ screen: 'asleep', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
       await this.bridge.turnScreenOff?.()
       return
     }
     if (input.type !== 'press') return
     await this.openMessages(state.chat, state.topic, {
-      screen: 'chats',
+      screen: 'sidebar', focus: 'chats',
       chats: state.chats,
-      selectedIndex: state.selectedIndex,
+      selectedChatIndex: state.selectedChatIndex,
     })
   }
 
-  private async handleTopics(state: Extract<AppState, { screen: 'topics' }>, input: AppInput) {
+  private async handleSidebarTopics(
+    state: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }>, input: AppInput
+  ) {
     if (input.type === 'doublePress') {
-      await this.loadChats()
+      this.cancelTopicDebounce()
+      await this.setState({
+        screen: 'sidebar', focus: 'chats',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
+      })
       return
     }
-    if (input.type === 'swipeUp') {
-      await this.setState({ ...state, selectedIndex: moveSelection(state.selectedIndex, state.topics.length, -1) })
-      return
-    }
-    if (input.type === 'swipeDown') {
-      await this.setState({ ...state, selectedIndex: moveSelection(state.selectedIndex, state.topics.length, 1) })
+    if (input.type === 'swipeUp' || input.type === 'swipeDown') {
+      const delta = input.type === 'swipeUp' ? -1 : 1
+      const newIndex = moveSelection(state.selectedTopicIndex, state.topics.length, delta)
+      await this.setState({ ...state, selectedTopicIndex: newIndex })
+      this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
     if (input.type === 'selectIndex') {
-      await this.setState({ ...state, selectedIndex: clamp(input.index, 0, state.topics.length - 1) })
+      const newIndex = clamp(input.index, 0, state.topics.length - 1)
+      await this.setState({ ...state, selectedTopicIndex: newIndex })
+      this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
     if (input.type !== 'press') return
 
-    const selectedIndex = selectedInputIndex(input, state.selectedIndex, state.topics.length)
-    const selectedState = { ...state, selectedIndex }
-    const topic = selectedState.topics[selectedIndex]
+    this.cancelTopicDebounce()
+    const selectedIndex = selectedInputIndex(input, state.selectedTopicIndex, state.topics.length)
+    const topic = state.topics[selectedIndex]
     if (!topic) return
+    const selectedState: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }> = { ...state, selectedTopicIndex: selectedIndex }
+
+    if (selectedState.previewMessages?.length) {
+      await this.setState({
+        screen: 'sidebar', focus: 'messages',
+        chats: selectedState.chats, selectedChatIndex: selectedState.selectedChatIndex,
+        chat: selectedState.chat, topic,
+        messages: selectedState.previewMessages,
+        cursor: selectedState.previewCursor ?? oldestMessageId(selectedState.previewMessages),
+        scrollOffset: selectedState.previewScrollOffset ?? 0,
+        back: selectedState,
+        newerPages: selectedState.previewNewerPages ?? [],
+        isNewestPage: selectedState.previewIsNewestPage ?? true,
+        topics: selectedState.topics,
+        selectedTopicIndex: selectedIndex,
+      })
+      this.maybePrefetchOlder()
+      return
+    }
+
     await this.openMessages(selectedState.chat, topic, selectedState)
   }
 
-  private async handleMessages(state: Extract<AppState, { screen: 'messages' }>, input: AppInput) {
+  private async handleSidebarMessages(
+    state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, input: AppInput
+  ) {
     if (input.type === 'doublePress') {
       this.cancelPendingMessagePress()
       await this.goBackFromMessages(state)
@@ -377,18 +429,81 @@ export class TelegramAppController {
 
     await this.scheduleMessagePress(state)
   }
+  private debounceTopicPreviewFetch(chat: Chat, topics: Topic[], selectedTopicIndex: number) {
+    const topic = topics[selectedTopicIndex]
+    if (!topic) return
+    this.cancelTopicDebounce()
+    this.topicPreviewDebounce = setTimeout(() => {
+      this.topicPreviewDebounce = undefined
+      void this.fetchTopicPreview(chat, topic).catch(() => undefined)
+    }, 300)
+    const maybeNodeTimeout = this.topicPreviewDebounce as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  }
 
-  private async scheduleMessagePress(state: Extract<AppState, { screen: 'messages' }>) {
+  private cancelTopicDebounce() {
+    if (!this.topicPreviewDebounce) return
+    clearTimeout(this.topicPreviewDebounce)
+    this.topicPreviewDebounce = undefined
+  }
+
+  private async fetchTopicPreview(chat: Chat, topic: Topic) {
+    const cacheKey = `${String(chat.id)}:${String(topic.id)}`
+    const cached = this.topicPreviewCache.get(cacheKey)
+    if (cached) {
+      const state = this.state
+      if (state.screen !== 'sidebar' || state.focus !== 'topics') return
+      await this.setState({
+        ...state,
+        previewTopic: topic,
+        previewMessages: cached.messages,
+        previewCursor: cached.cursor,
+        previewScrollOffset: 0,
+        previewIsNewestPage: true,
+      })
+      return
+    }
+
+    if (this.topicPreviewInFlight) return
+    this.topicPreviewInFlight = true
+    try {
+      const messages = await this.api.listMessages(chat.id, {
+        topicId: topic.id,
+        limit: MESSAGE_PAGE_LIMIT,
+      })
+      const normalized = normalizeMessagePage(messages)
+      this.topicPreviewCache.set(cacheKey, { messages: normalized, cursor: oldestMessageId(normalized) })
+      const state = this.state
+      if (state.screen !== 'sidebar' || state.focus !== 'topics') return
+      await this.setState({
+        ...state,
+        previewTopic: topic,
+        previewMessages: normalized,
+        previewCursor: oldestMessageId(normalized),
+        previewScrollOffset: 0,
+        previewIsNewestPage: true,
+      })
+    } finally {
+      this.topicPreviewInFlight = false
+    }
+  }
+
+
+  private async scheduleMessagePress(
+    state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }> | Extract<AppState, { screen: 'sidebarSent' }>
+  ) {
     this.cancelPendingMessagePress()
+    const ctx = sidebarContext(state)
     if (this.runtimeConfig.messagePressDelayMs <= 0) {
-      await this.startRecordingFromMessages(state)
+      await this.startRecordingFromMessages(state as Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, ctx)
       return
     }
     const timeout = setTimeout(() => {
       this.pendingMessagePress = undefined
       const current = this.state
-      if (current.screen !== 'messages') return
-      void this.startRecordingFromMessages(current)
+      if (current.screen !== 'sidebar' || current.focus !== 'messages') return
+      const currentCtx = sidebarContext(current)
+      void this.startRecordingFromMessages(current as Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, currentCtx)
     }, this.runtimeConfig.messagePressDelayMs)
     const maybeNodeTimeout = timeout as unknown as { unref?: () => void }
     maybeNodeTimeout.unref?.()
@@ -401,11 +516,15 @@ export class TelegramAppController {
     this.pendingMessagePress = undefined
   }
 
-  private async startRecordingFromMessages(state: Extract<AppState, { screen: 'messages' }>) {
+  private async startRecordingFromMessages(
+    state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>,
+    ctx: { chats: Chat[]; selectedChatIndex: number },
+  ) {
     this.lastMessagePressAt = Date.now()
     await this.bridge.setAudioEnabled(true)
     await this.setState({
-      screen: 'recording',
+      screen: 'sidebarRecording', focus: 'messages',
+      chats: ctx.chats, selectedChatIndex: ctx.selectedChatIndex,
       chat: state.chat,
       topic: state.topic,
       messages: state.messages,
@@ -419,12 +538,15 @@ export class TelegramAppController {
     })
   }
 
-  private async handleRecording(state: Extract<AppState, { screen: 'recording' }>, input: AppInput) {
+  private async handleSidebarRecording(
+    state: Extract<AppState, { screen: 'sidebarRecording' }>, input: AppInput
+  ) {
     if (input.type === 'doublePress') {
       await this.bridge.setAudioEnabled(false)
       if (Date.now() - state.startedAt < this.runtimeConfig.recordingMinDurationMs) {
-        await this.goBackFromMessages({
-          screen: 'messages',
+        await this.setState({
+          screen: 'sidebar', focus: 'messages',
+          chats: state.chats, selectedChatIndex: state.selectedChatIndex,
           chat: state.chat,
           topic: state.topic,
           messages: state.messages,
@@ -437,7 +559,8 @@ export class TelegramAppController {
         return
       }
       await this.setState({
-        screen: 'messages',
+        screen: 'sidebar', focus: 'messages',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
         chat: state.chat,
         topic: state.topic,
         messages: state.messages,
@@ -452,7 +575,8 @@ export class TelegramAppController {
     if (input.type !== 'press') return
     await this.bridge.setAudioEnabled(false)
     await this.setState({
-      screen: 'transcribing',
+      screen: 'sidebarTranscribing', focus: 'messages',
+      chats: state.chats, selectedChatIndex: state.selectedChatIndex,
       chat: state.chat,
       topic: state.topic,
       messages: state.messages,
@@ -465,7 +589,8 @@ export class TelegramAppController {
     await this.run(async () => {
       if (!hasRecordableAudio(state.chunks)) {
         await this.setState({
-          screen: 'messages',
+          screen: 'sidebar', focus: 'messages',
+          chats: state.chats, selectedChatIndex: state.selectedChatIndex,
           chat: state.chat,
           topic: state.topic,
           messages: state.messages,
@@ -481,7 +606,8 @@ export class TelegramAppController {
       const transcript = result.text.trim()
       if (transcript.length === 0) {
         await this.setState({
-          screen: 'messages',
+          screen: 'sidebar', focus: 'messages',
+          chats: state.chats, selectedChatIndex: state.selectedChatIndex,
           chat: state.chat,
           topic: state.topic,
           messages: state.messages,
@@ -494,7 +620,8 @@ export class TelegramAppController {
         return
       }
       await this.setState({
-        screen: 'confirm',
+        screen: 'sidebarConfirm', focus: 'messages',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
         chat: state.chat,
         topic: state.topic,
         messages: state.messages,
@@ -507,7 +634,8 @@ export class TelegramAppController {
         scrollOffset: state.scrollOffset,
       })
     }, {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: state.chats, selectedChatIndex: state.selectedChatIndex,
       chat: state.chat,
       topic: state.topic,
       messages: state.messages,
@@ -518,24 +646,39 @@ export class TelegramAppController {
     })
   }
 
-  private async handleConfirm(state: Extract<AppState, { screen: 'confirm' }>, input: AppInput) {
+  private async handleSidebarConfirm(
+    state: Extract<AppState, { screen: 'sidebarConfirm' }>, input: AppInput
+  ) {
     if (input.type === 'swipeUp' || input.type === 'swipeDown') {
       await this.setState({ ...state, selectedIndex: state.selectedIndex === 0 ? 1 : 0 })
       return
     }
     if (input.type === 'doublePress') {
-      await this.setState({ screen: 'messages', chat: state.chat, topic: state.topic, messages: state.messages, back: state.back, status: state.status, newerPages: state.newerPages, isNewestPage: state.isNewestPage, scrollOffset: state.scrollOffset })
+      await this.setState({
+        screen: 'sidebar', focus: 'messages',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
+        chat: state.chat, topic: state.topic, messages: state.messages,
+        back: state.back, status: state.status,
+        newerPages: state.newerPages, isNewestPage: state.isNewestPage, scrollOffset: state.scrollOffset,
+      })
       return
     }
     if (input.type !== 'press') return
 
     if (state.selectedIndex === 1) {
-      await this.setState({ screen: 'messages', chat: state.chat, topic: state.topic, messages: state.messages, back: state.back, status: state.status, newerPages: state.newerPages, isNewestPage: state.isNewestPage, scrollOffset: state.scrollOffset })
+      await this.setState({
+        screen: 'sidebar', focus: 'messages',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
+        chat: state.chat, topic: state.topic, messages: state.messages,
+        back: state.back, status: state.status,
+        newerPages: state.newerPages, isNewestPage: state.isNewestPage, scrollOffset: state.scrollOffset,
+      })
       return
     }
 
     await this.setState({
-      screen: 'sending',
+      screen: 'sidebarSending', focus: 'messages',
+      chats: state.chats, selectedChatIndex: state.selectedChatIndex,
       chat: state.chat,
       topic: state.topic,
       messages: state.messages,
@@ -556,7 +699,8 @@ export class TelegramAppController {
         ? refreshed
         : normalizeMessagePage([...refreshed, sent])
       await this.setState({
-        screen: 'messages',
+        screen: 'sidebar', focus: 'messages',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
         chat: state.chat,
         topic: state.topic,
         messages,
@@ -571,14 +715,25 @@ export class TelegramAppController {
     }, state)
   }
 
-  private async handleSent(state: Extract<AppState, { screen: 'sent' }>, input: AppInput) {
+  private async handleSidebarSent(
+    state: Extract<AppState, { screen: 'sidebarSent' }>, input: AppInput
+  ) {
     if (input.type === 'doublePress') {
-      await this.loadChats()
+      await this.setState({
+        screen: 'sidebar', focus: 'chats',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
+      })
       return
     }
     if (input.type === 'press') {
       const messages = await this.refreshLatestMessages(state)
-      await this.setState({ screen: 'messages', chat: state.chat, topic: state.topic, messages, cursor: oldestMessageId(messages), back: state.back, newerPages: [], isNewestPage: true, scrollOffset: 0 })
+      await this.setState({
+        screen: 'sidebar', focus: 'messages',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
+        chat: state.chat, topic: state.topic,
+        messages, cursor: oldestMessageId(messages),
+        back: state.back, newerPages: [], isNewestPage: true, scrollOffset: 0,
+      })
     }
   }
 
@@ -597,15 +752,21 @@ export class TelegramAppController {
     await this.run(async () => {
       const chats = await this.api.listChats(CHAT_LIST_LIMIT)
       this.rememberChats(chats)
-      await this.setState({ screen: 'chats', chats, selectedIndex: 0 })
+      await this.setState({ screen: 'sidebar', focus: 'chats', chats, selectedChatIndex: 0 })
     }, previous)
   }
 
   private async openChat(chat: Chat, previous: RecoverableState) {
+    const chats = previous.screen === 'sidebar' ? previous.chats : []
+    const selectedChatIndex = previous.screen === 'sidebar' ? previous.selectedChatIndex : 0
     await this.run(async () => {
       const topics = chat.isForum ? await this.api.listTopics(chat.id) : []
       if (topics.length > 0) {
-        await this.setState({ screen: 'topics', chat, topics, selectedIndex: 0 })
+        await this.setState({
+          screen: 'sidebar', focus: 'topics',
+          chats, selectedChatIndex,
+          chat, topics, selectedTopicIndex: 0,
+        })
         return
       }
       await this.openMessages(chat, undefined, previous)
@@ -613,15 +774,31 @@ export class TelegramAppController {
   }
 
   private async openMessages(chat: Chat, topic: Topic | undefined, previous: RecoverableState) {
+    const chats = previous.screen === 'sidebar' ? previous.chats : []
+    const selectedChatIndex = previous.screen === 'sidebar' ? previous.selectedChatIndex : 0
+    const topics = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.topics : undefined
+    const selectedTopicIndex = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.selectedTopicIndex : undefined
     await this.run(async () => {
       const messages = await this.api.listMessages(chat.id, { topicId: topicThreadId(topic), limit: MESSAGE_PAGE_LIMIT })
       const normalized = normalizeMessagePage(messages)
-      await this.setState({ screen: 'messages', chat, topic, messages: normalized, cursor: oldestMessageId(normalized), back: messageBackTarget(previous), newerPages: [], isNewestPage: true, scrollOffset: 0 })
+      await this.setState({
+        screen: 'sidebar', focus: 'messages',
+        chats, selectedChatIndex,
+        chat, topic,
+        messages: normalized,
+        cursor: oldestMessageId(normalized),
+        back: messageBackTarget(previous),
+        newerPages: [],
+        isNewestPage: true,
+        scrollOffset: 0,
+        topics,
+        selectedTopicIndex,
+      })
       this.maybePrefetchOlder()
     }, previous)
   }
 
-  private async loadOlderMessages(state: Extract<AppState, { screen: 'messages' }>) {
+  private async loadOlderMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
     const currentOffset = state.scrollOffset ?? 0
     const nextOffset = Math.min(currentOffset + 1, maxScrollOffset(state.messages))
     if (nextOffset > currentOffset) {
@@ -638,14 +815,14 @@ export class TelegramAppController {
     await this.run(async () => {
       await this.prefetchOlderMessages(state)
       const current = this.state
-      if (current.screen !== 'messages') return
+      if (current.screen !== 'sidebar' || current.focus !== 'messages') return
       const offset = Math.min((current.scrollOffset ?? 0) + 1, maxScrollOffset(current.messages))
       await this.setState({ ...current, scrollOffset: offset, status: 'Older messages', isNewestPage: false })
       this.maybePrefetchOlder()
     }, state)
   }
 
-  private async loadNewerMessages(state: Extract<AppState, { screen: 'messages' }>) {
+  private async loadNewerMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
     const nextOffset = Math.max(0, (state.scrollOffset ?? 0) - 1)
     if (nextOffset === (state.scrollOffset ?? 0)) return
     await this.setState({
@@ -661,7 +838,7 @@ export class TelegramAppController {
     return normalizeMessagePage(await this.api.listMessages(state.chat.id, { topicId: topicThreadId(state.topic), limit: MESSAGE_PAGE_LIMIT }))
   }
 
-  private async refreshAfterSend(state: Extract<AppState, { screen: 'confirm' }>, sent: Message) {
+  private async refreshAfterSend(state: Extract<AppState, { screen: 'sidebarConfirm' }>, sent: Message) {
     const previousIds = new Set(state.messages.map((message) => String(message.id)))
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -674,7 +851,7 @@ export class TelegramAppController {
         (message) => !previousIds.has(String(message.id)) && String(message.id) !== String(sent.id),
       )
       const current = this.state
-      if (current.screen === 'sent') {
+      if (current.screen === 'sidebarSent') {
         const messages = hasSent ? refreshed : normalizeMessagePage([...refreshed, sent])
         await this.setState({
           ...current,
@@ -684,7 +861,7 @@ export class TelegramAppController {
           isNewestPage: true,
           scrollOffset: 0,
         })
-      } else if (current.screen === 'messages') {
+      } else if (current.screen === 'sidebar' && current.focus === 'messages') {
         const messages = hasSent ? refreshed : normalizeMessagePage([...refreshed, sent])
         await this.setState({
           ...current,
@@ -699,17 +876,16 @@ export class TelegramAppController {
       if (hasSent && hasNewIncoming) return
     }
   }
-
   private maybePrefetchOlder() {
     const state = this.state
-    if (state.screen !== 'messages') return
+    if (state.screen !== 'sidebar' || state.focus !== 'messages') return
     const maxOffset = maxScrollOffset(state.messages)
     const remainingLoadedScroll = maxOffset - (state.scrollOffset ?? 0)
     if (remainingLoadedScroll > OLDER_PREFETCH_LOW_WATER) return
     void this.prefetchOlderMessages(state).catch(() => undefined)
   }
 
-  private async prefetchOlderMessages(state: Extract<AppState, { screen: 'messages' }>, options: { chain?: boolean } = {}) {
+  private async prefetchOlderMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, options: { chain?: boolean } = {}) {
     if (state.cursor === undefined) return
 
     const key = messageThreadKey(state)
@@ -729,7 +905,7 @@ export class TelegramAppController {
     if (options.chain && added) this.continueOlderPrefetch(key)
   }
 
-  private async fetchAndAppendOlderMessages(state: Extract<AppState, { screen: 'messages' }>, key: string, cursor: string): Promise<boolean> {
+  private async fetchAndAppendOlderMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, key: string, cursor: string): Promise<boolean> {
     const older = await this.api.listMessages(state.chat.id, {
       topicId: topicThreadId(state.topic),
       beforeId: state.cursor,
@@ -738,7 +914,7 @@ export class TelegramAppController {
     if (older.length === 0) return false
 
     const current = this.state
-    if (current.screen !== 'messages' || messageThreadKey(current) !== key || String(current.cursor) !== cursor) return false
+    if (current.screen !== 'sidebar' || current.focus !== 'messages' || messageThreadKey(current) !== key || String(current.cursor) !== cursor) return false
 
     const messages = normalizeMessagePage([...older, ...current.messages])
     if (!hasMessageChanges(current.messages, messages)) return false
@@ -754,24 +930,26 @@ export class TelegramAppController {
 
   private continueOlderPrefetch(key: string) {
     const current = this.state
-    if (current.screen !== 'messages' || messageThreadKey(current) !== key) return
+    if (current.screen !== 'sidebar' || current.focus !== 'messages' || messageThreadKey(current) !== key) return
     const maxOffset = maxScrollOffset(current.messages)
     const remainingLoadedScroll = maxOffset - (current.scrollOffset ?? 0)
     if (remainingLoadedScroll > OLDER_PREFETCH_LOW_WATER) return
     void this.prefetchOlderMessages(current, { chain: true }).catch(() => undefined)
   }
 
-  private async goBackFromMessages(state: Extract<AppState, { screen: 'messages' }>) {
+  private async goBackFromMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
     if (state.back) {
       await this.setState(state.back)
       return
     }
     if (state.topic) {
+      const topics = await this.api.listTopics(state.chat.id)
       await this.setState({
-        screen: 'topics',
+        screen: 'sidebar', focus: 'topics',
+        chats: state.chats, selectedChatIndex: state.selectedChatIndex,
         chat: state.chat,
-        topics: await this.api.listTopics(state.chat.id),
-        selectedIndex: 0,
+        topics,
+        selectedTopicIndex: 0,
       })
       return
     }
@@ -804,7 +982,8 @@ export class TelegramAppController {
   }
 
   private syncMessagePolling() {
-    const shouldPoll = this.state.screen === 'messages' || this.state.screen === 'sent'
+    const state = this.state
+    const shouldPoll = (state.screen === 'sidebar' && state.focus === 'messages') || state.screen === 'sidebarSent'
     if (!shouldPoll) {
       this.stopMessagePolling()
       return
@@ -824,7 +1003,8 @@ export class TelegramAppController {
   }
 
   private syncChatPolling() {
-    const shouldPoll = this.state.screen === 'chats' || this.state.screen === 'asleep' || this.state.screen === 'newMessage'
+    const state = this.state
+    const shouldPoll = (state.screen === 'sidebar' && state.focus === 'chats') || state.screen === 'asleep' || state.screen === 'newMessage'
     if (!shouldPoll) {
       this.stopChatPolling()
       return
@@ -846,7 +1026,7 @@ export class TelegramAppController {
   private async refreshRootChats() {
     if (this.rootRefreshInFlight) return
     const state = this.state
-    if (state.screen !== 'chats' && state.screen !== 'asleep' && state.screen !== 'newMessage') return
+    if ((state.screen !== 'sidebar' || state.focus !== 'chats') && state.screen !== 'asleep' && state.screen !== 'newMessage') return
     this.rootRefreshInFlight = true
     try {
       const chats = await this.api.listChats(CHAT_LIST_LIMIT).catch(() => undefined)
@@ -856,11 +1036,16 @@ export class TelegramAppController {
       this.rememberChats(chats)
 
       const current = this.state
-      if (current.screen !== 'chats' && current.screen !== 'asleep' && current.screen !== 'newMessage') return
+      if ((current.screen !== 'sidebar' || current.focus !== 'chats') && current.screen !== 'asleep' && current.screen !== 'newMessage') return
 
-      const selectedIndex = clamp(current.selectedIndex, 0, Math.max(0, chats.length - 1))
+      const selectedChatIndex = clamp(
+        current.screen === 'sidebar' ? current.selectedChatIndex : current.selectedChatIndex,
+        0, Math.max(0, chats.length - 1),
+      )
       if (!activity) {
-        if (current.screen === 'chats') await this.setState({ ...current, chats, selectedIndex })
+        if (current.screen === 'sidebar' && current.focus === 'chats') {
+          await this.setState({ ...current, chats, selectedChatIndex })
+        }
         return
       }
 
@@ -871,7 +1056,7 @@ export class TelegramAppController {
         topic,
         message: activity.chat.lastMessage ?? '',
         chats,
-        selectedIndex,
+        selectedChatIndex,
       })
     } finally {
       this.rootRefreshInFlight = false
@@ -901,17 +1086,17 @@ export class TelegramAppController {
   private async refreshVisibleMessages() {
     if (this.messageRefreshInFlight) return
     const state = this.state
-    if (state.screen !== 'messages' && state.screen !== 'sent') return
+    if ((state.screen !== 'sidebar' || state.focus !== 'messages') && state.screen !== 'sidebarSent') return
     this.messageRefreshInFlight = true
     try {
       const messages = await this.refreshLatestMessages(state).catch(() => undefined)
       if (!messages || messages.length === 0) return
       const current = this.state
-      if (current.screen !== 'messages' && current.screen !== 'sent') return
+      if ((current.screen !== 'sidebar' || current.focus !== 'messages') && current.screen !== 'sidebarSent') return
 
       const merged = normalizeMessagePage([...current.messages, ...messages])
       if (!hasMessageChanges(current.messages, merged)) return
-      if (current.screen === 'messages') {
+      if (current.screen === 'sidebar' && current.focus === 'messages') {
         await this.setState({ ...current, messages: merged, cursor: oldestMessageId(merged), status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
         this.maybePrefetchOlder()
         return
@@ -1016,13 +1201,15 @@ function activeThreadState(state: AppState):
     back?: RecoverableState
   }
   | undefined {
+  if (state.screen === 'sidebar' && state.focus === 'messages') {
+    return { chat: state.chat, topic: state.topic, back: state.back }
+  }
   switch (state.screen) {
-    case 'messages':
-    case 'recording':
-    case 'transcribing':
-    case 'confirm':
-    case 'sending':
-    case 'sent':
+    case 'sidebarRecording':
+    case 'sidebarTranscribing':
+    case 'sidebarConfirm':
+    case 'sidebarSending':
+    case 'sidebarSent':
       return { chat: state.chat, topic: state.topic, back: state.back }
     default:
       return undefined
@@ -1037,8 +1224,19 @@ function oldestMessageId(messages: { id: string | number }[]) {
 }
 
 function messageBackTarget(previous: RecoverableState): RecoverableState | undefined {
-  if (previous.screen === 'messages') return previous.back
+  if (previous.screen === 'sidebar' && previous.focus === 'messages') return previous.back
   return previous
+}
+
+function sidebarContext(state: AppState): { chats: Chat[]; selectedChatIndex: number } {
+  if (state.screen === 'sidebar' || state.screen === 'sidebarRecording' || state.screen === 'sidebarTranscribing' ||
+    state.screen === 'sidebarConfirm' || state.screen === 'sidebarSending' || state.screen === 'sidebarSent') {
+    return { chats: state.chats, selectedChatIndex: state.selectedChatIndex }
+  }
+  if (state.screen === 'newMessage' || state.screen === 'asleep') {
+    return { chats: state.chats, selectedChatIndex: state.selectedChatIndex }
+  }
+  return { chats: [], selectedChatIndex: 0 }
 }
 
 function hasRecordableAudio(chunks: Uint8Array[]) {

@@ -31,6 +31,7 @@ export type Topic = {
   title: string
   topMessageId?: Id
   unreadCount?: number
+  lastMessage?: string | null
 }
 
 export type Message = {

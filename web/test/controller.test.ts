@@ -46,15 +46,15 @@ describe('TelegramAppController', () => {
     const controller = new TelegramAppController(api, bridge)
 
     await controller.init()
-    expect(controller.snapshot).toMatchObject({ screen: 'chats', selectedIndex: 0 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0 })
     const renderCount = vi.mocked(bridge.render).mock.calls.length
 
     await controller.dispatch({ type: 'swipeDown' })
-    expect(controller.snapshot).toMatchObject({ screen: 'chats', selectedIndex: 1 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 1 })
     expect(bridge.render).toHaveBeenCalledTimes(renderCount + 1)
 
     await controller.dispatch({ type: 'swipeUp' })
-    expect(controller.snapshot).toMatchObject({ screen: 'chats', selectedIndex: 0 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0 })
     expect(bridge.render).toHaveBeenCalledTimes(renderCount + 2)
   })
 
@@ -86,7 +86,7 @@ describe('TelegramAppController', () => {
 
     await controller.dispatch({ type: 'doublePress' })
 
-    expect(controller.snapshot).toMatchObject({ screen: 'chats' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
   })
 
   it('wakes from screen-off state when a root chat receives a new message', async () => {
@@ -118,7 +118,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
 
     expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, limit: 50 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages', chat: expect.objectContaining({ id: '1' }) })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', chat: expect.objectContaining({ id: '1' }) })
   })
 
   it('resolves unread forum topic before opening a new-message prompt', async () => {
@@ -135,7 +135,7 @@ describe('TelegramAppController', () => {
 
     expect(api.listTopics).toHaveBeenCalledWith('2')
     expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '20', limit: 50 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages', topic: expect.objectContaining({ id: '20' }) })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: expect.objectContaining({ id: '20' }) })
   })
 
   it('opens forum topics before message history', async () => {
@@ -147,7 +147,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
 
     expect(api.listTopics).toHaveBeenCalledWith('2')
-    expect(controller.snapshot).toMatchObject({ screen: 'topics', selectedIndex: 0 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'topics', selectedTopicIndex: 0 })
   })
 
   it('opens selected forum topic messages and renders a message screen', async () => {
@@ -161,11 +161,11 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
 
     expect(api.listMessages).toHaveBeenNthCalledWith(1, '2', { topicId: '10', limit: 50 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages', topic: topics[0] })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[0] })
     expect(bridge.render).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        kind: 'text',
-        title: 'Messages: Launch',
+        kind: 'sidebar',
+        title: 'Launch',
       }),
     )
   })
@@ -180,7 +180,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press', index: 1 })
 
     expect(api.listMessages).toHaveBeenNthCalledWith(1, '2', { topicId: '20', limit: 50 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages', topic: topics[1] })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[1] })
   })
 
   it('opens the currently selected chat when the glasses emit a selection-only click event', async () => {
@@ -191,7 +191,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'selectIndex', index: 0 })
 
     expect(api.listMessages).toHaveBeenNthCalledWith(1, '1', { topicId: undefined, limit: 50 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
   })
 
   it('opens messages directly for normal chats', async () => {
@@ -202,7 +202,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
 
     expect(api.listMessages).toHaveBeenNthCalledWith(1, '1', { topicId: undefined, limit: 50 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
   })
 
   it('normalizes newest-first API messages into chronological display order', async () => {
@@ -213,7 +213,8 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
 
     expect(controller.snapshot).toMatchObject({
-      screen: 'messages',
+      screen: 'sidebar',
+      focus: 'messages',
       messages: [...reversedMessages].reverse(),
       cursor: 100,
       isNewestPage: true,
@@ -231,7 +232,8 @@ describe('TelegramAppController', () => {
 
     expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
     expect(controller.snapshot).toMatchObject({
-      screen: 'messages',
+      screen: 'sidebar',
+      focus: 'messages',
       messages: [...olderMessages, ...messages],
       cursor: 80,
       scrollOffset: 0,
@@ -247,7 +249,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'swipeDown' })
 
     expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages', messages, isNewestPage: true })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', messages, isNewestPage: true })
   })
 
   it('swipes down from older content one smooth step toward the newest message', async () => {
@@ -264,7 +266,8 @@ describe('TelegramAppController', () => {
 
     expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
     expect(controller.snapshot).toMatchObject({
-      screen: 'messages',
+      screen: 'sidebar',
+      focus: 'messages',
       messages: [...olderMessages, ...[...reversedMessages].reverse()],
       cursor: 80,
       scrollOffset: 0,
@@ -285,7 +288,8 @@ describe('TelegramAppController', () => {
     await refreshVisibleMessages(controller)
 
     expect(controller.snapshot).toMatchObject({
-      screen: 'messages',
+      screen: 'sidebar',
+      focus: 'messages',
       messages: [...olderMessages, ...[...reversedMessages].reverse()],
       cursor: 80,
       isNewestPage: false,
@@ -306,7 +310,8 @@ describe('TelegramAppController', () => {
     await refreshVisibleMessages(controller)
 
     expect(controller.snapshot).toMatchObject({
-      screen: 'messages',
+      screen: 'sidebar',
+      focus: 'messages',
       messages: [...olderMessages, ...reversedMessages, newReply].sort((left, right) => Number(left.id) - Number(right.id)),
       cursor: 80,
       isNewestPage: true,
@@ -326,7 +331,8 @@ describe('TelegramAppController', () => {
     await controller.handleTelegramUpdate({ type: 'message', chatId: '1', message: newReply })
 
     expect(controller.snapshot).toMatchObject({
-      screen: 'messages',
+      screen: 'sidebar',
+      focus: 'messages',
       status: 'New reply',
       messages: [...reversedMessages, newReply].sort((left, right) => Number(left.id) - Number(right.id)),
     })
@@ -385,7 +391,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'swipeUp' })
     await controller.dispatch({ type: 'doublePress' })
 
-    expect(controller.snapshot).toMatchObject({ screen: 'topics', selectedIndex: 0 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'topics', selectedTopicIndex: 0 })
     expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', beforeId: 100, limit: 50 })
   })
 
@@ -397,12 +403,12 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'press' })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
 
     await controller.dispatch({ type: 'doublePress' })
 
     expect(bridge.setAudioEnabled).not.toHaveBeenCalled()
-    expect(controller.snapshot).toMatchObject({ screen: 'chats' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
   })
 
   it('records, transcribes, confirms, and sends a voice reply', async () => {
@@ -419,11 +425,11 @@ describe('TelegramAppController', () => {
     expect(bridge.setAudioEnabled).toHaveBeenNthCalledWith(1, true)
     expect(bridge.setAudioEnabled).toHaveBeenNthCalledWith(2, false)
     expect(api.transcribe).toHaveBeenCalledOnce()
-    expect(controller.snapshot).toMatchObject({ screen: 'confirm', transcript: 'Reply text', selectedIndex: 0 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebarConfirm', transcript: 'Reply text', selectedIndex: 0 })
 
     await controller.dispatch({ type: 'press' })
     expect(api.sendMessage).toHaveBeenCalledWith('1', { text: 'Reply text', topicId: undefined })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
   })
 
   it('sends a typed phone reply to the active thread and resets to the newest message', async () => {
@@ -439,12 +445,13 @@ describe('TelegramAppController', () => {
 
     expect(api.sendMessage).toHaveBeenCalledWith('1', { text: 'typed from phone', topicId: undefined })
     expect(controller.snapshot).toMatchObject({
-      screen: 'messages',
+      screen: 'sidebar',
+      focus: 'messages',
       status: 'Sent',
       isNewestPage: true,
       scrollOffset: 0,
     })
-    expect(states).toContain('messages')
+    expect(states).toContain('sidebar')
   })
 
   it('rejects typed phone sends when no message thread is active', async () => {
@@ -468,7 +475,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
 
     expect(api.sendMessage).not.toHaveBeenCalled()
-    expect(controller.snapshot).toMatchObject({ screen: 'messages' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
   })
 })
 

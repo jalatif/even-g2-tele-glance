@@ -125,12 +125,13 @@ def normalize_dialog(dialog: Any) -> ChatSummary:
     )
 
 
-def normalize_topic(topic: Any) -> TopicSummary:
+def normalize_topic(topic: Any, last_message: Optional[str] = None) -> TopicSummary:
     return TopicSummary(
         id=int(getattr(topic, "id")),
         title=str(getattr(topic, "title", "Untitled")),
         top_message_id=int(getattr(topic, "top_message", getattr(topic, "top_message_id", 0))),
         unread_count=int(getattr(topic, "unread_count", 0) or 0),
+        last_message=last_message,
     )
 
 
@@ -438,7 +439,7 @@ class TelethonTelegramService:
     async def list_topics(self, chat_id: int) -> list[TopicSummary]:
         client = await self._get_client()
         try:
-            from telethon.tl.functions.messages import GetForumTopicsRequest
+            from telethon.tl.functions.messages import GetForumTopicsRequest, GetRepliesRequest
         except ImportError as exc:
             raise TelegramServiceError("Telethon forum topic API is unavailable") from exc
 
@@ -457,7 +458,24 @@ class TelethonTelegramService:
                 ),
                 timeout=20,
             )
-            return [normalize_topic(topic) for topic in getattr(result, "topics", [])]
+            topics = getattr(result, "topics", [])
+            normalized = []
+            for topic in topics:
+                last_msg: Optional[str] = None
+                try:
+                    replies = await asyncio.wait_for(
+                        client(GetRepliesRequest(peer=entity, msg_id=int(getattr(topic, "id")), offset_id=0, offset_date=None, add_offset=0, limit=1, max_id=0, min_id=0, hash=0)),
+                        timeout=8,
+                    )
+                    msgs = getattr(replies, "messages", [])
+                    if msgs:
+                        msg_text = getattr(msgs[0], "message", None) or ""
+                        if msg_text:
+                            last_msg = str(msg_text)[:120]
+                except Exception:
+                    pass
+                normalized.append(normalize_topic(topic, last_message=last_msg))
+            return normalized
         except Exception as exc:
             raise wrap_telegram_error(exc) from exc
 

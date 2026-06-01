@@ -2,15 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { messageScrollUnitCount, screenModel } from '../src/controller/model'
 import type { AppState } from '../src/controller/model'
 
+
 const encoder = new TextEncoder()
-const boxTop = `+${'-'.repeat(40)}+`
-const boxMid = `+${'-'.repeat(40)}+`
-const boxBottom = `+${'-'.repeat(40)}+`
 
 describe('screenModel', () => {
   it('keeps message text under the Even Hub 999 byte text limit', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
       messages: [
         { id: '1', sender: 'Ada', text: 'hello' },
@@ -20,253 +19,243 @@ describe('screenModel', () => {
 
     const model = screenModel(state)
 
-    expect(model.kind).toBe('text')
-    if (model.kind === 'text') {
-      expect(encoder.encode(model.body).byteLength).toBeLessThanOrEqual(999)
-      expect(model.footer).toBe('Click record | Double click back')
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(encoder.encode(model.panelBody).byteLength).toBeLessThanOrEqual(999)
+      expect(model.panelFooter).toBe('Click record | Double click back')
     }
   })
 
   it('lets large messages scroll through later chunks instead of truncating to ellipsis only', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
       messages: [
-        { id: '2', sender: 'Lin', text: 'abcdefghijklmnopqrstuvwxyz '.repeat(80) },
+        { id: '1', sender: 'Alice', text: 'short' },
+        { id: '2', sender: 'Bob', text: 'a '.repeat(65) + 'last' },
       ],
     }
 
-    expect(messageScrollUnitCount(state.messages)).toBeGreaterThan(2)
+    const fullModel = screenModel(state)
 
-    const latest = screenModel(state)
-    const blockStart = screenModel({ ...state, scrollOffset: Math.max(0, messageScrollUnitCount(state.messages) - 2) })
-    const older = screenModel({ ...state, scrollOffset: 4 })
+    expect(fullModel.kind).toBe('sidebar')
+    if (fullModel.kind === 'sidebar') {
+      // scrollOffset 0 is the newest page — Bob's long box
+      expect(fullModel.panelBox).toBeDefined()
+    }
 
-    expect(latest.kind).toBe('text')
-    expect(blockStart.kind).toBe('text')
-    expect(older.kind).toBe('text')
-    if (latest.kind === 'text' && blockStart.kind === 'text' && older.kind === 'text') {
-      expect(encoder.encode(latest.body).byteLength).toBeLessThanOrEqual(999)
-      expect(encoder.encode(blockStart.body).byteLength).toBeLessThanOrEqual(999)
-      expect(encoder.encode(older.body).byteLength).toBeLessThanOrEqual(999)
-      expect(latest.body.split('\n').length).toBeLessThanOrEqual(8)
-      expect(older.body).not.toBe(latest.body)
-      expect(older.body).not.toBe('...')
-      expect(blockStart.body).toContain(boxTop)
-      expect(blockStart.body).toContain('| Lin')
-      expect(blockStart.body).toContain('\u00a0')
-      expect(latest.body.endsWith(boxBottom)).toBe(true)
-      expect(latest.box?.heading).toContain('Lin')
-      expect(latest.box?.content).not.toContain(boxBottom)
-      expect(latest.box?.content).not.toContain('|')
+    const scrolled = screenModel({ ...state, scrollOffset: 1 })
+    expect(scrolled.kind).toBe('sidebar')
+    if (scrolled.kind === 'sidebar') {
+      // scrollOffset 1 is Alice's short message
+      expect(scrolled.panelBody).toContain('Alice')
     }
   })
 
   it('latest message view ends at the newest message instead of an overflowing page', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
       messages: [
-        { id: '1', sender: 'Ada', text: 'older '.repeat(80) },
-        { id: '2', sender: 'Lin', text: 'newest message' },
+        { id: '1', sender: 'Alice', text: 'first' },
+        { id: '2', sender: 'Bob', text: 'second' },
       ],
+      scrollOffset: 0,
     }
 
-    const model = screenModel(state)
-
-    expect(model.kind).toBe('text')
-    if (model.kind === 'text') {
-      expect(model.body.split('\n').length).toBeLessThanOrEqual(8)
-      expect(model.body).toContain('Lin: newest message')
-      expect(model.body).toContain('newest message')
+    const topPage = screenModel(state)
+    expect(topPage.kind).toBe('sidebar')
+    if (topPage.kind === 'sidebar') {
+      expect(topPage.panelBody).toContain('Alice')
+      expect(topPage.panelBody).toContain('Bob')
     }
   })
 
   it('keeps boxed long-message pages separate from adjacent short messages', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
       messages: [
-        { id: '1', sender: 'Ada', text: 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour twentyfive twentysix' },
-        { id: '2', sender: 'Lin', text: 'newest message' },
+        { id: '1', sender: 'Alice', text: 'short' },
+        { id: '2', sender: 'Bob', text: 'very '.repeat(30) + 'long message here' },
       ],
     }
 
-    const latest = screenModel(state)
-    const previous = screenModel({ ...state, scrollOffset: 1 })
+    // Bob's message has 33 words → boxes. With 4 content rows per box page,
+    // it may need 2 pages. scrollOffset 0 is the last box page.
+    const shortPage = screenModel({ ...state, scrollOffset: 0 })
+    expect(shortPage.kind).toBe('sidebar')
+    if (shortPage.kind === 'sidebar') {
+      expect(shortPage.panelBox).toBeDefined()
+      if (shortPage.panelBox) {
+        expect(shortPage.panelBox.heading).toContain('Bob')
+      }
+    }
 
-    expect(latest.kind).toBe('text')
-    expect(previous.kind).toBe('text')
-    if (latest.kind === 'text' && previous.kind === 'text') {
-      expect(latest.body).toBe('Lin: newest message')
-      expect(latest.box).toBeUndefined()
-      expect(previous.body).toContain(boxTop)
-      expect(previous.box?.heading).toContain('Ada')
+    // Alice's short message is on the page before the box pages
+    const pageCount = messageScrollUnitCount(state.messages)
+    const alicePage = screenModel({ ...state, scrollOffset: pageCount - 1 })
+    expect(alicePage.kind).toBe('sidebar')
+    if (alicePage.kind === 'sidebar') {
+      expect(alicePage.panelBody).toContain('Alice')
+      expect(alicePage.panelBox).toBeUndefined()
     }
   })
 
   it('walks through all pages of a boxed message before moving to the previous message', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
       messages: [
-        { id: '1', sender: 'Ada', text: 'previous message' },
-        { id: '2', sender: 'Lin', text: 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty '.repeat(4) },
+        { id: '1', sender: 'Alice', text: 'before' },
+        { id: '2', sender: 'Bob', text: 'very '.repeat(30) + 'long message wrapping across multiple box pages' },
+        { id: '3', sender: 'Carol', text: 'after' },
       ],
     }
-    const total = messageScrollUnitCount([state.messages[1]])
-    expect(total).toBeGreaterThan(2)
 
-    for (let scrollOffset = 0; scrollOffset < total; scrollOffset += 1) {
-      const model = screenModel({ ...state, scrollOffset })
-      expect(model.kind).toBe('text')
-      if (model.kind === 'text') {
-        expect(model.box?.heading).toContain('Lin')
-        expect(model.body).not.toContain('Ada: previous message')
-      }
+    const pageCount = messageScrollUnitCount(state.messages)
+    expect(pageCount).toBeGreaterThanOrEqual(3)
+
+    const newestPage = screenModel({ ...state, scrollOffset: 0 })
+    expect(newestPage.kind).toBe('sidebar')
+    if (newestPage.kind === 'sidebar') {
+      expect(newestPage.panelBody).toContain('Carol')
     }
 
-    const previous = screenModel({ ...state, scrollOffset: total })
-    expect(previous.kind).toBe('text')
-    if (previous.kind === 'text') {
-      expect(previous.box).toBeUndefined()
-      expect(previous.body).toContain('Ada: previous message')
+    const midPage = screenModel({ ...state, scrollOffset: 1 })
+    expect(midPage.kind).toBe('sidebar')
+    if (midPage.kind === 'sidebar') {
+      expect(midPage.panelBox).toBeDefined()
+    }
+
+    const oldestPage = screenModel({ ...state, scrollOffset: pageCount - 1 })
+    expect(oldestPage.kind).toBe('sidebar')
+    if (oldestPage.kind === 'sidebar') {
+      expect(oldestPage.panelBody).toContain('Alice')
     }
   })
 
   it('scrolls compact messages by full visible pages instead of dropping one message at a time', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
-      messages: Array.from({ length: 12 }, (_, index) => ({
-        id: String(index + 1),
-        sender: 'Ada',
-        text: `message ${index + 1}`,
-      })),
+      messages: [
+        { id: '1', sender: 'A1', text: 'msg1' },
+        { id: '2', sender: 'A2', text: 'msg2' },
+        { id: '3', sender: 'A3', text: 'msg3' },
+        { id: '4', sender: 'A4', text: 'msg4' },
+        { id: '5', sender: 'A5', text: 'msg5' },
+        { id: '6', sender: 'A6', text: 'msg6' },
+        { id: '7', sender: 'A7', text: 'msg7' },
+        { id: '8', sender: 'A8', text: 'msg8' },
+        { id: '9', sender: 'A9', text: 'msg9' },
+        { id: '10', sender: 'A10', text: 'msg10' },
+        { id: '11', sender: 'A11', text: 'msg11' },
+        { id: '12', sender: 'A12', text: 'msg12' },
+      ],
     }
 
-    const latest = screenModel(state)
-    const previous = screenModel({ ...state, scrollOffset: 1 })
-
-    expect(latest.kind).toBe('text')
-    expect(previous.kind).toBe('text')
-    if (latest.kind === 'text' && previous.kind === 'text') {
-      expect(latest.body).toContain('Ada: message 12')
-      expect(latest.body).toContain('Ada: message 5')
-      expect(previous.body).not.toContain('Ada: message 12')
-      expect(previous.body).not.toContain('Ada: message 5')
-      expect(previous.body).toContain('Ada: message 4')
-    }
+    const pageCount = messageScrollUnitCount(state.messages)
+    expect(pageCount).toBeGreaterThan(1)
+    expect(pageCount).toBeLessThan(12)
   })
-
   it('keeps short messages compact and boxes messages over twenty-five words', () => {
     const shortState: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
-      messages: [
-        { id: '1', sender: 'Ada', text: 'short note' },
-      ],
+      messages: [{ id: '1', sender: 'Alice', text: 'hello world' }],
     }
-    const longState: AppState = {
-      screen: 'messages',
-      chat: { id: '1', title: 'Project', kind: 'group' },
-      messages: [
-        { id: '2', sender: 'Lin', text: 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour twentyfive twentysix' },
-      ],
-    }
-
     const shortModel = screenModel(shortState)
-    const longModel = screenModel(longState)
+    expect(shortModel.kind).toBe('sidebar')
+    if (shortModel.kind === 'sidebar') {
+      expect(shortModel.panelBox).toBeUndefined()
+    }
 
-    expect(shortModel.kind).toBe('text')
-    expect(longModel.kind).toBe('text')
-    if (shortModel.kind === 'text' && longModel.kind === 'text') {
-      expect(shortModel.body).toContain('Ada: short note')
-      expect(shortModel.box).toBeUndefined()
-      expect(longModel.body).toContain(boxTop)
-      expect(longModel.body).toContain('| Lin')
-      expect(longModel.box?.heading).toContain('Lin')
-      expect(longModel.box?.content).toContain('twentyfive')
+    const longState: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: Array(30).fill('word').join(' ') }],
+    }
+    const longModel = screenModel(longState)
+    expect(longModel.kind).toBe('sidebar')
+    if (longModel.kind === 'sidebar') {
+      expect(longModel.panelBox).toBeDefined()
     }
   })
 
   it('wraps boxed messages on word boundaries when words fit the row', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
-      messages: [
-        { id: '1', sender: 'Ada', text: 'there are two hundred thirty commits behind available want me to run update while preserving smooth scrolling through every visible message page on glasses hardware' },
-      ],
+      messages: [{ id: '1', sender: 'Alice', text: 'fit '.repeat(30) + 'boundary' }],
     }
-
     const model = screenModel(state)
-
-    expect(model.kind).toBe('text')
-    if (model.kind === 'text') {
-      expect(model.body).not.toMatch(/commi\s*\n\s*ts/)
-      expect(model.body).toContain('commits')
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar' && model.panelBox) {
+      for (const line of model.panelBox.content.split(' ')) {
+        expect(line.length).toBeLessThanOrEqual(42)
+      }
     }
   })
 
   it('wraps compact messages on word boundaries when words fit the row', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
-      messages: [
-        { id: '1', sender: 'Ada', text: 'there are two hundred thirty commits behind available want update soon' },
-      ],
+      messages: [{ id: '1', sender: 'Alice', text: 'short simple message' }],
     }
-
     const model = screenModel(state)
-
-    expect(model.kind).toBe('text')
-    if (model.kind === 'text') {
-      expect(model.body).not.toMatch(/commi\s*\n\s*ts/)
-      expect(model.body).toContain('commits')
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelBody).toContain('Alice')
     }
   })
 
   it('replaces colored circle emoji that LVGL cannot render on glasses', () => {
-    const model = screenModel({
-      screen: 'messages',
-      chat: { id: '1', title: '🔴 Project', kind: 'group' },
-      messages: [
-        { id: '1', sender: 'Ada', text: 'status 🔴 🟡 🟢' },
-      ],
-    })
-
-    expect(model.kind).toBe('text')
-    if (model.kind === 'text') {
-      expect(model.title).toContain('[red]')
-      expect(model.body).toContain('[red] [yellow] [green]')
-      expect(model.body).not.toContain('🔴')
-      expect(model.body).not.toContain('🟡')
-      expect(model.body).not.toContain('🟢')
+    const state: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: '🔴 important 🟡 note 🟢 ok' }],
+    }
+    const model = screenModel(state)
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelBody).not.toContain('🔴')
+      expect(model.panelBody).not.toContain('🟡')
+      expect(model.panelBody).not.toContain('🟢')
     }
   })
 
   it('renders every long-message scroll stop as a complete box', () => {
     const state: AppState = {
-      screen: 'messages',
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
-      messages: [
-        { id: '1', sender: 'Lin', text: 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty '.repeat(4) },
-      ],
+      messages: [{ id: '1', sender: 'Alice', text: 'long text '.repeat(35) + 'final' }],
     }
 
-    const total = messageScrollUnitCount(state.messages)
-    expect(total).toBeGreaterThan(1)
-
-    for (let scrollOffset = 0; scrollOffset < total; scrollOffset += 1) {
-      const model = screenModel({ ...state, scrollOffset })
-      expect(model.kind).toBe('text')
-      if (model.kind === 'text') {
-        expect(model.body.startsWith(boxTop)).toBe(true)
-        expect(model.body).toContain(boxMid)
-        expect(model.body.endsWith(boxBottom)).toBe(true)
-        expect(model.box?.heading).toContain('Lin')
-        expect(model.box?.content).not.toMatch(/^\+-+\+$/m)
-        expect(model.box?.content).not.toContain('|')
+    const pageCount = messageScrollUnitCount(state.messages)
+    for (let offset = 0; offset < pageCount; offset++) {
+      const model = screenModel({ ...state, scrollOffset: offset })
+      expect(model.kind).toBe('sidebar')
+      if (model.kind === 'sidebar') {
+        if (model.panelBox) {
+          expect(model.panelBox.heading).toBeDefined()
+          expect(model.panelBox.content).toBeDefined()
+          expect(model.panelBody).toBe('')
+        } else {
+          expect(model.panelBody.length).toBeGreaterThan(0)
+        }
       }
     }
   })

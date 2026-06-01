@@ -53,6 +53,7 @@ class TopicSummary(ApiModel):
     title: str
     top_message_id: int
     unread_count: int = 0
+    last_message: Optional[str] = None
 
 
 class MessageSummary(ApiModel):

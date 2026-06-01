@@ -7,7 +7,7 @@ const MESSAGE_VISIBLE_ROW_LIMIT = 8
 const MESSAGE_BOX_WIDTH = 42
 const MESSAGE_BOX_CONTENT_WIDTH = MESSAGE_BOX_WIDTH - 4
 const MESSAGE_BOX_CONTENT_ROWS = MESSAGE_VISIBLE_ROW_LIMIT - 4
-const MESSAGE_BOX_PAD = '\u00a0'
+const MESSAGE_BOX_PAD = ' '
 const MESSAGE_BOX_WORD_THRESHOLD = 25
 const encoder = new TextEncoder()
 
@@ -23,6 +23,12 @@ export type AppInput =
 export type ScreenModel =
   | { kind: 'text'; title: string; body: string; footer?: string; box?: BoxedText }
   | { kind: 'list'; title: string; items: string[]; selectedIndex: number }
+  | { kind: 'sidebar';
+      title: string;
+      sidebarTitle: string; sidebarItems: string[]; sidebarSelected: number;
+      panelTitle: string; panelBody: string; panelFooter: string;
+      panelBox?: BoxedText;
+      focus: 'sidebar' | 'panel'; }
 
 export type BoxedText = {
   heading: string
@@ -32,21 +38,58 @@ export type BoxedText = {
 export type AppState =
   | { screen: 'loading'; message: string }
   | { screen: 'auth'; mode: 'needsSetup' | 'signedOut' | 'phonePending'; message: string; phone?: string }
-  | { screen: 'chats'; chats: Chat[]; selectedIndex: number }
-  | { screen: 'asleep'; chats: Chat[]; selectedIndex: number }
-  | { screen: 'newMessage'; chat: Chat; topic?: Topic; message: string; chats: Chat[]; selectedIndex: number }
-  | { screen: 'topics'; chat: Chat; topics: Topic[]; selectedIndex: number }
-  | { screen: 'messages'; chat: Chat; topic?: Topic; messages: Message[]; cursor?: Id; scrollOffset?: number; back?: RecoverableState; status?: string; newerPages?: Message[][]; isNewestPage?: boolean }
-  | { screen: 'recording'; chat: Chat; topic?: Topic; messages: Message[]; chunks: Uint8Array[]; startedAt: number; scrollOffset?: number; back?: RecoverableState; status?: string; newerPages?: Message[][]; isNewestPage?: boolean }
-  | { screen: 'transcribing'; chat: Chat; topic?: Topic; messages: Message[]; scrollOffset?: number; back?: RecoverableState; status?: string; newerPages?: Message[][]; isNewestPage?: boolean }
-  | { screen: 'confirm'; chat: Chat; topic?: Topic; messages: Message[]; transcript: string; selectedIndex: number; scrollOffset?: number; back?: RecoverableState; status?: string; newerPages?: Message[][]; isNewestPage?: boolean }
-  | { screen: 'sending'; chat: Chat; topic?: Topic; messages: Message[]; transcript: string; scrollOffset?: number; back?: RecoverableState; status?: string; newerPages?: Message[][]; isNewestPage?: boolean }
-  | { screen: 'sent'; chat: Chat; topic?: Topic; messages: Message[]; scrollOffset?: number; back?: RecoverableState; status?: string; newerPages?: Message[][]; isNewestPage?: boolean }
+  | { screen: 'sidebar'; focus: 'chats'; chats: Chat[]; selectedChatIndex: number }
+  | { screen: 'asleep'; chats: Chat[]; selectedChatIndex: number }
+  | { screen: 'newMessage'; chat: Chat; topic?: Topic; message: string; chats: Chat[]; selectedChatIndex: number }
+  | { screen: 'sidebar'; focus: 'topics';
+      chats: Chat[]; selectedChatIndex: number;
+      chat: Chat; topics: Topic[]; selectedTopicIndex: number;
+      previewTopic?: Topic; previewMessages?: Message[];
+      previewCursor?: Id; previewScrollOffset?: number;
+      previewNewerPages?: Message[][]; previewIsNewestPage?: boolean; }
+  | { screen: 'sidebarRecording'; focus: 'messages';
+      chats: Chat[]; selectedChatIndex: number;
+      chat: Chat; topic?: Topic;
+      messages: Message[]; scrollOffset?: number;
+      chunks: Uint8Array[]; startedAt: number;
+      back?: RecoverableState; status?: string;
+      newerPages?: Message[][]; isNewestPage?: boolean; }
+  | { screen: 'sidebarTranscribing'; focus: 'messages';
+      chats: Chat[]; selectedChatIndex: number;
+      chat: Chat; topic?: Topic;
+      messages: Message[]; scrollOffset?: number;
+      back?: RecoverableState; status?: string;
+      newerPages?: Message[][]; isNewestPage?: boolean; }
+  | { screen: 'sidebar'; focus: 'messages';
+      chats: Chat[]; selectedChatIndex: number;
+      chat: Chat; topic?: Topic;
+      messages: Message[]; cursor?: Id; scrollOffset?: number;
+      back?: RecoverableState; status?: string;
+      newerPages?: Message[][]; isNewestPage?: boolean;
+      topics?: Topic[]; selectedTopicIndex?: number; }
+  | { screen: 'sidebarConfirm'; focus: 'messages';
+      chats: Chat[]; selectedChatIndex: number;
+      chat: Chat; topic?: Topic;
+      messages: Message[]; transcript: string; selectedIndex: number;
+      scrollOffset?: number; back?: RecoverableState; status?: string;
+      newerPages?: Message[][]; isNewestPage?: boolean; }
+  | { screen: 'sidebarSending'; focus: 'messages';
+      chats: Chat[]; selectedChatIndex: number;
+      chat: Chat; topic?: Topic;
+      messages: Message[]; transcript: string;
+      scrollOffset?: number; back?: RecoverableState; status?: string;
+      newerPages?: Message[][]; isNewestPage?: boolean; }
+  | { screen: 'sidebarSent'; focus: 'messages';
+      chats: Chat[]; selectedChatIndex: number;
+      chat: Chat; topic?: Topic;
+      messages: Message[]; scrollOffset?: number;
+      back?: RecoverableState; status?: string;
+      newerPages?: Message[][]; isNewestPage?: boolean; }
   | { screen: 'error'; message: string; previous?: RecoverableState }
 
 export type RecoverableState = Extract<
   AppState,
-  { screen: 'auth' | 'chats' | 'asleep' | 'newMessage' | 'topics' | 'messages' | 'confirm' | 'sent' }
+  { screen: 'auth' | 'sidebar' | 'asleep' | 'newMessage' | 'sidebarConfirm' | 'sidebarSent' }
 >
 
 export function screenModel(state: AppState): ScreenModel {
@@ -59,13 +102,66 @@ export function screenModel(state: AppState): ScreenModel {
         title: state.mode === 'phonePending' ? 'Telegram Login' : 'Telegram',
         body: state.message,
       }
-    case 'chats':
-      return {
-        kind: 'list',
-        title: 'Chats',
-        items: state.chats.map(chatLabel),
-        selectedIndex: state.selectedIndex,
+    case 'sidebar': {
+      switch (state.focus) {
+        case 'chats': {
+          const selected = state.chats[state.selectedChatIndex]
+          return {
+            kind: 'sidebar',
+            title: 'Telegram',
+            sidebarTitle: 'Chats',
+            sidebarItems: state.chats.map(chatLabel),
+            sidebarSelected: state.selectedChatIndex,
+            panelTitle: selected ? sanitizeGlassesText(selected.title.slice(0, 20)) : '',
+            panelBody: selected?.lastMessage
+              ? trimUtf8Bytes(sanitizeGlassesText(selected.lastMessage.slice(0, 200)), TEXT_CONTAINER_BYTE_LIMIT)
+              : ' ',
+            panelFooter: 'Swipe chats | Press open',
+            focus: 'sidebar',
+          }
+        }
+        case 'topics': {
+          const previewMessages = state.previewMessages
+          const hasPreview = previewMessages?.length
+          const scrollOffset = state.previewScrollOffset ?? 0
+          return {
+            kind: 'sidebar',
+            title: sanitizeGlassesText(state.chat.title.slice(0, 20)),
+            sidebarTitle: 'Topics',
+            sidebarItems: state.topics.map(topicLabel),
+            sidebarSelected: state.selectedTopicIndex,
+            panelTitle: state.previewTopic
+              ? sanitizeGlassesText(state.previewTopic.title.slice(0, 20))
+              : 'Topics',
+            panelBody: previewMessages
+              ? trimUtf8Bytes(formatMessagesBody(previewMessages, scrollOffset), TEXT_CONTAINER_BYTE_LIMIT)
+              : formatTopicPreviews(state.topics),
+            panelFooter: hasPreview ? 'Swipe topics | Press open' : 'Swipe topics',
+            panelBox: previewMessages
+              ? messagesBox(previewMessages, scrollOffset)
+              : undefined,
+            focus: 'sidebar',
+          }
+        }
+        case 'messages': {
+          const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
+          return {
+            kind: 'sidebar',
+            title: sanitizeGlassesText(state.topic ? state.topic.title.slice(0, 20) : state.chat.title.slice(0, 20)),
+            sidebarTitle: state.topic ? 'Topics' : 'Chats',
+            sidebarItems: state.topics?.length
+              ? state.topics.map(topicLabel)
+              : state.chats.map(chatLabel),
+            sidebarSelected: state.topic ? (state.selectedTopicIndex ?? 0) : state.selectedChatIndex,
+            panelTitle: '',
+            panelBody: msg.box ? '' : msg.body,
+            panelFooter: footerText(state.status, 'Click record | Double click back'),
+            panelBox: msg.box,
+            focus: 'panel',
+          }
+        }
       }
+    }
     case 'asleep':
       return {
         kind: 'text',
@@ -79,53 +175,75 @@ export function screenModel(state: AppState): ScreenModel {
         body: sanitizeGlassesText(`${state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title}\n\n${state.message || 'New message'}\n\nClick to open.`),
         footer: 'Double click dismiss',
       }
-    case 'topics':
+    case 'sidebarRecording': {
+      const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
       return {
-        kind: 'list',
-        title: sanitizeGlassesText(`Topics: ${state.chat.title}`),
-        items: state.topics.map(topicLabel),
-        selectedIndex: state.selectedIndex,
-      }
-    case 'messages':
-      return {
-        kind: 'text',
-        title: sanitizeGlassesText(state.topic ? `Messages: ${state.topic.title}` : `Messages: ${state.chat.title}`),
-        ...formatMessages(state.messages, state.scrollOffset ?? 0),
-        footer: footerText(state.status, 'Click record | Double click back'),
-      }
-    case 'recording':
-      return {
-        kind: 'text',
+        kind: 'sidebar',
         title: 'Recording reply',
-        ...formatMessages(state.messages, state.scrollOffset ?? 0),
-        footer: footerText(state.status, 'Click stop | Double click cancel'),
+        sidebarTitle: state.topic ? 'Topics' : 'Chats',
+        sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
+        sidebarSelected: state.selectedChatIndex,
+        panelTitle: 'Recording',
+        panelBody: msg.body,
+        panelFooter: footerText(state.status, 'Click stop | Double click cancel'),
+        panelBox: msg.box,
+        focus: 'panel',
       }
-    case 'transcribing':
+    }
+    case 'sidebarTranscribing':
       return {
-        kind: 'text',
-        title: 'Transcribing reply',
-        body: 'Converting voice reply...',
+        kind: 'sidebar',
+        title: 'Transcribing',
+        sidebarTitle: '',
+        sidebarItems: [],
+        sidebarSelected: 0,
+        panelTitle: 'Converting voice...',
+        panelBody: '',
+        panelFooter: '',
+        focus: 'panel',
       }
-    case 'confirm':
+    case 'sidebarConfirm': {
+      const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
       return {
-        kind: 'list',
-        title: sanitizeGlassesText(`Reply: ${state.transcript}`),
-        items: ['Send', 'Cancel'],
-        selectedIndex: state.selectedIndex,
+        kind: 'sidebar',
+        title: sanitizeGlassesText(`Reply: ${state.transcript.slice(0, 30)}`),
+        sidebarTitle: state.topic ? 'Topics' : 'Chats',
+        sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
+        sidebarSelected: state.selectedChatIndex,
+        panelTitle: '',
+        panelBody: `> ${state.selectedIndex === 0 ? 'Send' : '  Send'}\n> ${state.selectedIndex === 1 ? 'Cancel' : '  Cancel'}`,
+        panelFooter: 'Swipe select | Press confirm',
+        panelBox: msg.box,
+        focus: 'panel',
       }
-    case 'sending':
+    }
+    case 'sidebarSending':
       return {
-        kind: 'text',
+        kind: 'sidebar',
         title: 'Sending reply',
-        body: state.transcript,
+        sidebarTitle: '',
+        sidebarItems: [],
+        sidebarSelected: 0,
+        panelTitle: 'Sending...',
+        panelBody: state.transcript,
+        panelFooter: '',
+        focus: 'panel',
       }
-    case 'sent':
+    case 'sidebarSent': {
+      const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
       return {
-        kind: 'text',
+        kind: 'sidebar',
         title: 'Reply sent',
-        ...formatMessages(state.messages, state.scrollOffset ?? 0),
-        footer: footerText(state.status, 'Click record | Double click back'),
+        sidebarTitle: state.topic ? 'Topics' : 'Chats',
+        sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
+        sidebarSelected: state.selectedChatIndex,
+        panelTitle: '',
+        panelBody: msg.body,
+        panelFooter: footerText(state.status, 'Click record | Double click back'),
+        panelBox: msg.box,
+        focus: 'panel',
       }
+    }
     case 'error':
       return {
         kind: 'text',
@@ -134,10 +252,21 @@ export function screenModel(state: AppState): ScreenModel {
       }
   }
 }
-
 function chatLabel(chat: Chat) {
   const unread = chat.unreadCount ? ` (${chat.unreadCount})` : ''
   return sanitizeGlassesText(`${chat.title}${unread}`)
+}
+
+function formatTopicPreviews(topics: Topic[]) {
+  if (topics.length === 0) return ' '
+  const lines = topics.map((topic) => {
+    const name = sanitizeGlassesText(topic.title.slice(0, 24))
+    const preview = topic.lastMessage
+      ? sanitizeGlassesText(topic.lastMessage.slice(0, 60))
+      : ''
+    return preview ? `${name}: ${preview}` : name
+  })
+  return trimUtf8Bytes(lines.join('\n'), TEXT_CONTAINER_BYTE_LIMIT)
 }
 
 function topicLabel(topic: Topic) {
@@ -155,6 +284,14 @@ function formatMessages(messages: Message[], scrollOffset = 0) {
   const pages = messageDisplayPages(messages)
   const pageIndex = Math.max(0, Math.min(pages.length - 1, pages.length - 1 - scrollOffset))
   return pages[pageIndex]
+}
+
+function formatMessagesBody(messages: Message[], scrollOffset = 0) {
+  return formatMessages(messages, scrollOffset).body
+}
+
+function messagesBox(messages: Message[], scrollOffset = 0): BoxedText | undefined {
+  return formatMessages(messages, scrollOffset).box
 }
 
 export function messageScrollUnitCount(messages: Message[]) {

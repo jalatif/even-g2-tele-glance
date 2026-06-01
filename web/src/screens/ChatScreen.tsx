@@ -9,8 +9,9 @@ export function ChatScreen() {
   const [isSending, setIsSending] = useState(false)
   const messageEndRef = useRef<HTMLDivElement | null>(null)
 
-  const activeMessages = 'messages' in state ? state.messages : []
-  const canSend = state.screen === 'messages' && draft.trim().length > 0 && !isSending
+  const sidebarMessages = (state.screen === 'sidebar' && state.focus === 'messages') || state.screen === 'sidebarRecording' || state.screen === 'sidebarConfirm' || state.screen === 'sidebarSent'
+  const activeMessages = sidebarMessages ? state.messages : []
+  const canSend = state.screen === 'sidebar' && state.focus === 'messages' && draft.trim().length > 0 && !isSending
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: 'end' })
@@ -35,7 +36,7 @@ export function ChatScreen() {
     <main className="chat-screen">
       <section className="phone-panel message-panel">
         <PhoneStateView />
-        {state.screen === 'messages' && (
+        {state.screen === 'sidebar' && state.focus === 'messages' && (
           <div className="messages-list" aria-label="Messages">
             {state.messages.length === 0 ? (
               <p className="empty-text">No messages yet.</p>
@@ -44,7 +45,7 @@ export function ChatScreen() {
           </div>
         )}
       </section>
-      {state.screen === 'messages' ? (
+      {state.screen === 'sidebar' && state.focus === 'messages' ? (
         <form
           className="composer"
           onSubmit={(event) => {
@@ -139,13 +140,13 @@ function PhoneStateView() {
       </div>
     )
   }
-  if (state.screen === 'chats') {
+  if (state.screen === 'sidebar' && state.focus === 'chats') {
     return (
       <div className="stack">
         <h2>Chats</h2>
         <div className="select-list">
           {state.chats.map((chat, index) => (
-            <button key={String(chat.id)} type="button" className={index === state.selectedIndex ? 'selected' : ''} onClick={() => void dispatch({ type: 'press', index })}>
+            <button key={String(chat.id)} type="button" className={index === state.selectedChatIndex ? 'selected' : ''} onClick={() => void dispatch({ type: 'press', index })}>
               <span>{chat.title}</span>
               {chat.unreadCount ? <strong>{chat.unreadCount}</strong> : null}
             </button>
@@ -154,13 +155,13 @@ function PhoneStateView() {
       </div>
     )
   }
-  if (state.screen === 'topics') {
+  if (state.screen === 'sidebar' && state.focus === 'topics') {
     return (
       <div className="stack">
         <h2>{state.chat.title}</h2>
         <div className="select-list">
           {state.topics.map((topic, index) => (
-            <button key={String(topic.id)} type="button" className={index === state.selectedIndex ? 'selected' : ''} onClick={() => void dispatch({ type: 'press', index })}>
+            <button key={String(topic.id)} type="button" className={index === state.selectedTopicIndex ? 'selected' : ''} onClick={() => void dispatch({ type: 'press', index })}>
               <span>{topic.title}</span>
               {topic.unreadCount ? <strong>{topic.unreadCount}</strong> : null}
             </button>
@@ -169,7 +170,7 @@ function PhoneStateView() {
       </div>
     )
   }
-  if (state.screen === 'messages') {
+  if (state.screen === 'sidebar' && state.focus === 'messages') {
     return (
       <div className="thread-heading">
         <div>
@@ -192,11 +193,11 @@ function PhoneStateView() {
   }
   if (state.screen === 'asleep') return <p className="empty-text">Glasses screen is off. Double-click glasses to wake.</p>
   if (state.screen === 'loading') return <p className="empty-text">{state.message}</p>
-  if (state.screen === 'recording') return <p className="empty-text">Recording on glasses...</p>
-  if (state.screen === 'transcribing') return <p className="empty-text">Transcribing voice reply...</p>
-  if (state.screen === 'confirm') return <p className="empty-text">Confirm reply on glasses: {state.transcript}</p>
-  if (state.screen === 'sending') return <p className="empty-text">Sending reply...</p>
-  if (state.screen === 'sent') return <p className="empty-text">Reply sent.</p>
+  if (state.screen === 'sidebarRecording') return <p className="empty-text">Recording on glasses...</p>
+  if (state.screen === 'sidebarTranscribing') return <p className="empty-text">Transcribing voice reply...</p>
+  if (state.screen === 'sidebarConfirm') return <p className="empty-text">Confirm reply on glasses: {state.transcript}</p>
+  if (state.screen === 'sidebarSending') return <p className="empty-text">Sending reply...</p>
+  if (state.screen === 'sidebarSent') return <p className="empty-text">Reply sent.</p>
   return (
     <div className="stack">
       <h2>Error</h2>
@@ -210,10 +211,10 @@ function PhoneActions() {
   const { state, dispatch } = useApp()
   return (
     <nav className="phone-actions" aria-label="Phone actions">
-      <button type="button" onClick={() => void dispatch({ type: 'swipeUp' })} disabled={state.screen !== 'messages' && state.screen !== 'chats' && state.screen !== 'topics'}>
+      <button type="button" onClick={() => void dispatch({ type: 'swipeUp' })} disabled={!((state.screen === 'sidebar' && (state.focus === 'messages' || state.focus === 'chats' || state.focus === 'topics')))}>
         Older / Up
       </button>
-      <button type="button" onClick={() => void dispatch({ type: 'swipeDown' })} disabled={state.screen !== 'messages' && state.screen !== 'chats' && state.screen !== 'topics'}>
+      <button type="button" onClick={() => void dispatch({ type: 'swipeDown' })} disabled={!((state.screen === 'sidebar' && (state.focus === 'messages' || state.focus === 'chats' || state.focus === 'topics')))}>
         Newer / Down
       </button>
       <button type="button" onClick={() => void dispatch({ type: 'doublePress' })}>

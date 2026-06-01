@@ -48,11 +48,11 @@ export class EvenHubGlassesBridge implements GlassesBridge {
 
   async render(model: ScreenModel) {
     if (this.hasRendered) {
-      const container = model.kind === 'list' ? buildListPage(model, RebuildPageContainer) : buildTextPage(model, RebuildPageContainer)
+      const container = buildPage(model, RebuildPageContainer)
       await this.sdk.rebuildPageContainer(container)
       return
     }
-    const container = model.kind === 'list' ? buildListPage(model, CreateStartUpPageContainer) : buildTextPage(model, CreateStartUpPageContainer)
+    const container = buildPage(model, CreateStartUpPageContainer)
     await this.sdk.createStartUpPageContainer(container)
     this.hasRendered = true
   }
@@ -84,6 +84,153 @@ export class EvenHubGlassesBridge implements GlassesBridge {
 
 type PageContainerClass = typeof CreateStartUpPageContainer | typeof RebuildPageContainer
 
+
+function buildPage(model: ScreenModel, Container: PageContainerClass) {
+  if (model.kind === 'sidebar') return buildSidebarPage(model, Container)
+  if (model.kind === 'list') return buildListPage(model, Container)
+  return buildTextPage(model, Container)
+}
+
+function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Container: PageContainerClass) {
+  const hasPanelBox = Boolean(model.panelBox)
+
+  const outerBorder = new TextContainerProperty({
+    containerID: 0,
+    containerName: 'outer',
+    content: '',
+    xPosition: 0,
+    yPosition: 0,
+    width: 576,
+    height: 288,
+    borderWidth: 2,
+    borderColor: 8,
+    paddingLength: 0,
+    isEventCapture: 0,
+  })
+  const title = new TextContainerProperty({
+    containerID: 1,
+    containerName: 'title',
+    content: trimForContainer(model.title, 100),
+    xPosition: 2,
+    yPosition: 2,
+    width: 572,
+    height: 36,
+    borderWidth: 0,
+    borderColor: 8,
+    paddingLength: 4,
+    isEventCapture: 0,
+  })
+  const overlay = new TextContainerProperty({
+    containerID: 2,
+    containerName: 'event-overlay',
+    content: '',
+    xPosition: 0,
+    yPosition: 0,
+    width: 576,
+    height: 288,
+    borderWidth: 0,
+    borderColor: 8,
+    paddingLength: 0,
+    isEventCapture: 1,
+  })
+  const sidebar = new TextContainerProperty({
+    containerID: 5,
+    containerName: 'sidebar',
+    content: trimForContainer(fillToContainer(formatSidebarItems(model)), 999),
+    xPosition: 2,
+    yPosition: 38,
+    width: 168,
+    height: 206,
+    borderWidth: 0,
+    borderColor: 8,
+    paddingLength: 4,
+    isEventCapture: 0,
+  })
+  const sidebarSeparator = new TextContainerProperty({
+    containerID: 3,
+    containerName: 'separator',
+    content: '',
+    xPosition: 168,
+    yPosition: 38,
+    width: 2,
+    height: 206,
+    borderWidth: 1,
+    borderColor: 8,
+    paddingLength: 0,
+    isEventCapture: 0,
+  })
+  const panelBody = new TextContainerProperty({
+    containerID: 6,
+    content: trimForContainer(fillToContainer(model.panelBody || ' '), 999),
+    xPosition: 170,
+    yPosition: 38,
+    width: 404,
+    height: 206,
+    borderWidth: 0,
+    borderColor: 8,
+    paddingLength: 4,
+    isEventCapture: 0,
+  })
+  const panelBox = hasPanelBox
+    ? new TextContainerProperty({
+        containerID: 7,
+        containerName: 'panel-box',
+        content: trimForContainer(formatBoxContent(model.panelBox!), 999),
+        xPosition: 184,
+        yPosition: 54,
+        width: 376,
+        height: 190,
+        borderWidth: 1,
+        borderColor: 8,
+        paddingLength: 8,
+        isEventCapture: 0,
+      })
+    : new TextContainerProperty({
+        containerID: 7,
+        containerName: 'panel-box',
+        content: '',
+        xPosition: 0,
+        yPosition: 287,
+        width: 1,
+        height: 1,
+        borderWidth: 0,
+        borderColor: 8,
+        paddingLength: 0,
+        isEventCapture: 0,
+      })
+  const footer = new TextContainerProperty({
+    containerID: 4,
+    containerName: 'footer',
+    content: trimForContainer(model.panelFooter, 120),
+    xPosition: 2,
+    yPosition: 248,
+    width: 572,
+    height: 38,
+    borderWidth: 1,
+    borderColor: 8,
+    paddingLength: 4,
+    isEventCapture: 0,
+  })
+  const list = hiddenListContainer()
+  const textObjects = hasPanelBox
+    ? [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, panelBox, footer]
+    : [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, footer]
+  return new Container({
+    containerTotalNum: textObjects.length + 1,
+    textObject: textObjects,
+    listObject: [list],
+  })
+}
+
+function formatSidebarItems(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
+  if (model.sidebarItems.length === 0) return ''
+  return model.sidebarItems
+    .map((item, index) => {
+      const prefix = index === model.sidebarSelected ? '> ' : '  '
+      return `${prefix}${item}`
+    })
+    .join('\n')
+}
 function buildTextPage(model: Extract<ScreenModel, { kind: 'text' }>, Container: PageContainerClass) {
   if (model.box && model.footer) return buildBoxedTextPage(model, model.box, Container)
 
@@ -343,4 +490,13 @@ function summarizeForDebug(value: unknown): unknown {
     output[key] = summarizeForDebug(item)
   }
   return output
+}
+
+const CONTAINER_FILL_BYTES = 990
+
+function fillToContainer(content: string) {
+  const currentBytes = encoder.encode(content).byteLength
+  if (currentBytes >= CONTAINER_FILL_BYTES) return content
+  const padBytes = CONTAINER_FILL_BYTES - currentBytes
+  return content + ' '.repeat(padBytes)
 }
