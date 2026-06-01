@@ -1,3 +1,5 @@
+from collections import deque
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Optional
 
@@ -10,6 +12,7 @@ from app.dependencies import get_telegram_service, get_transcription_service
 from app.models import (
     AuthStatus,
     ChatSummary,
+    DebugEvent,
     MessageSummary,
     QrLoginStart,
     QrLoginStatus,
@@ -26,6 +29,7 @@ from app.services.transcription import TranscriptionServiceError, WhisperTranscr
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app_settings = settings or get_settings()
     api = FastAPI(title="Even Telegram Backend")
+    debug_events: deque[dict] = deque(maxlen=100)
     api.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.backend_cors_origins,
@@ -38,6 +42,25 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @api.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @api.post("/api/debug/events")
+    async def append_debug_event(payload: DebugEvent) -> dict[str, int]:
+        event = payload.model_dump(mode="json")
+        mapped = event.get("mapped") or {}
+        if mapped.get("type") == "audioChunk":
+            return {"count": len(debug_events)}
+        event["received_at"] = datetime.now(timezone.utc).isoformat()
+        debug_events.append(event)
+        return {"count": len(debug_events)}
+
+    @api.get("/api/debug/events")
+    async def list_debug_events() -> list[dict]:
+        return list(debug_events)
+
+    @api.delete("/api/debug/events")
+    async def clear_debug_events() -> dict[str, int]:
+        debug_events.clear()
+        return {"count": 0}
 
     @api.get("/api/auth/status", response_model=AuthStatus)
     async def auth_status(

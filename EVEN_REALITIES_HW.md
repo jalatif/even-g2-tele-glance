@@ -1,0 +1,165 @@
+# Even Realities Hardware Notes
+
+These notes capture hardware-specific implementation details and quirks observed while building and testing the Even G2 Telegram app. They are intentionally focused on real device behavior, not simulator-only behavior.
+
+## Packaging And Runtime
+
+- The `.ehpk` package contains the frontend and `app.json` manifest only. The FastAPI backend is not packaged and must keep running somewhere reachable from the phone/glasses path.
+- For local hardware testing, Tailscale has been the practical default route:
+  - `npm run configure:tailscale --prefix web`
+  - `npm run build:tailscale --prefix web`
+  - package with `evenhub-cli pack`
+- `TAILSCALE_ENABLED=true` allows backend CORS for Tailscale `100.64.0.0/10` origins.
+- The phone running the Even Realities app must be able to reach the backend URL in both:
+  - `web/.env.local`
+  - `app.json` network whitelist
+- Before repacking, bump `app.json` `version` and delete stale `.ehpk` outputs so the package metadata and filename match.
+- The app now also supports a phone/debug-side `Backend URL` field stored in `localStorage`, so the backend route can be changed without rebuilding.
+- The Even phone app/glasses path can keep running stale packaged frontend code after reinstall-like workflows. If a fix appears not to apply, fully remove the app/package from the phone app and reinstall the new `.ehpk`.
+- Add a frontend build marker to debug events when validating hardware fixes. In this app, `buildVersion` is sent with `/api/debug/events`; if backend output shows `build_version: null` or an older value, the device is not running the expected package.
+
+## Display Containers
+
+- The G2 display target is `576x288`.
+- Text/list container limits are strict on hardware and simulator.
+- Text content must be byte-bounded, not character-bounded. Content over roughly `999` UTF-8 bytes can fail rendering or leave the glasses on a stale screen.
+- List item count should stay within `1-20`.
+- Stable container IDs matter. Rebuilding from one screen type to another with different or stale IDs can make the browser/debug view look correct while the glasses display remains on the previous page.
+- Hidden containers should be kept stable when switching page layouts.
+- Message history is safest as one chronological buffer with a bottom-relative scroll pointer:
+  - Swipe up moves the pointer one display chunk older when loaded history is available.
+  - Fetch older Telegram history only when the pointer reaches the oldest loaded message.
+  - Swipe down moves the pointer one display chunk newer.
+  - The latest message pointer is treated as the bottom boundary.
+  - Opening a chat/topic, sending a message, or receiving a new incoming message should reset the pointer to latest.
+- Large messages must be split into scrollable display chunks before applying the `999` byte container cap. Trimming one oversized message line directly causes the user to see only a short prefix plus `...`, with no way to read the rest.
+- Older history should be prefetched in the background while a message thread is open and as the user approaches the oldest loaded content. Waiting until the exact oldest visible chunk causes a noticeable page-load jump on glasses.
+- For longer threads, prefetch should chain multiple older pages ahead up to a bounded local buffer. One-page lookahead is still too easy to outrun with repeated swipes.
+- Avoid showing passive polling text such as `Checking replies...` in the footer. Keep the footer quiet unless there is a meaningful transient state such as `New reply`, `Sent`, recording, or scroll direction feedback.
+- Root chat-list double-click should not invoke shutdown because touch-and-hold already reaches the Even Hub shutdown flow on hardware.
+- Touch-and-hold on the root screen already triggers the Even Hub shutdown flow on hardware, so root double-click is better used as an app-level screen-off/asleep shortcut.
+- The SDK version in use does not document a dedicated screen-off API. The app should render a blank/asleep screen and optionally attempt best-effort native methods such as `screenOff` when present.
+- While asleep, keep root chat polling active. A changed recent chat with unread count should wake the display into a `New Telegram` prompt; clicking that prompt should open the target chat, and for forum chats it should resolve the first unread topic when available.
+- Manual wake from the app-level asleep screen should only respond to double-click. Single click, swipe, and foreground events should leave the app asleep and re-request screen-off so accidental touches do not turn the display back on.
+- Long message display should include visible block markers before and after each message. Splitting long messages into chunks without separators makes it hard to tell where a Telegram message begins or ends while scrolling.
+- Messages over ten words read better as fixed-width text boxes on G2. Keep short messages compact as `Sender: text`; render long messages with full rectangle box-drawing borders, a sender header, and wrapped content rows.
+- Long-message boxes should paginate as complete rectangles. Each scroll stop should include top border, sender/header, content rows, and bottom border so text never appears outside the box while reading through a long message.
+- The frontend message window must be both byte-bounded and visible-line-bounded. Sending a latest page that is under `999` bytes but taller than the body container lets firmware keep its own internal scroll position, so `scrollOffset: 0` may show the last page but not the actual last message. Keep the model output to the visible row count so the newest window ends at the latest message marker.
+- Message content and control hints should be separate containers where possible. This avoids mixing scrollable message text with footer/control text.
+
+## Input Events
+
+- Simulator and real G2 hardware emit different event shapes.
+- Scroll events can work while click events do not, so event mapping must handle:
+  - SDK-normalized events
+  - raw/protobuf-like events
+  - gesture `eventType` values from `listEvent`, `textEvent`, or `sysEvent`
+  - `camelCase`
+  - `snake_case`
+  - protobuf-style names such as `Event_Type`
+  - numeric strings
+  - press/tap aliases
+- The SDK can normalize `CLICK_EVENT` value `0` to `undefined` in some paths. Treat missing `eventType` on an event-capturing text/list container as a single press.
+- Double-click can surface as a `sysEvent` rather than a `textEvent`/`listEvent` depending on the active container/layout. Match Caduceus/even-toolkit behavior by mapping gestures from `listEvent ?? textEvent ?? sysEvent`.
+- The SDK parser may produce `sysEvent` with `eventSource` but without `eventType`, while raw `jsonData.eventType` still contains the real value. Preserve raw `jsonData.eventType`; otherwise captured hardware payloads such as `{ eventType: 3, eventSource: 2 }` can incorrectly fall through to single press.
+- During the double-click investigation, hardware logs showed the actual double-click payload as:
+  - raw `jsonData`: `{ "eventType": 3, "eventSource": 2 }`
+  - normalized `sysEvent`: sometimes `{ "eventType": 3, "eventSource": 2 }`, sometimes only `{ "eventSource": 2 }`
+  - stale frontend builds mapped this to single press.
+- If logs show `eventType: 3` but mapped input is `press`, first verify the running `buildVersion` before changing gesture code. The final fix was already correct locally; the device was still running stale package code.
+- A list click may surface only as a selection event with the same index already highlighted. If using native lists, `selectIndex` on the current item should be interpreted as a press.
+- Relying on native `ListContainerProperty` for navigation was unreliable on hardware. Clicks only registered inconsistently.
+- The reliable hardware pattern, borrowed from `~/Work/g2-caduceus`, is:
+  - Render list-like UI as plain text.
+  - Add a full-screen invisible text container with `isEventCapture: 1`.
+  - Manage selection/highlight in app state.
+  - Re-render text on swipe to move the visible highlight.
+- Do not synthesize double press by coalescing two click events. Hardware can emit duplicate tap payloads, and delayed coalescing made single tap behavior unreliable.
+- Use immediate tap dispatch with duplicate debounce instead:
+  - Single tap dispatches immediately.
+  - Near-duplicate tap payloads are ignored.
+  - Native `DOUBLE_CLICK_EVENT` maps to double press/back.
+- Avoid synchronously rebuilding the page or starting audio on the first tap when that same screen also supports double-click. On G2 hardware, changing page state immediately after the first tap can prevent the native double-click event from being generated. Delay only the conflicting single-tap action briefly; keep list/chat selection immediate.
+- Caduceus-style debounce constants that worked well:
+  - duplicate tap debounce around `90ms`
+  - duplicate double-tap debounce around `140ms`
+  - tap cooldown around `220ms`
+- Scroll events may also duplicate on hardware. Caduceus suppresses repeated same-direction scrolls for a short window and suppresses spurious scrolls shortly after text updates.
+
+## Audio
+
+- The documented SDK exposes press, double press, and swipe. True hold was not used for v1 recording UX.
+- Current recording fallback:
+  - Single press starts recording.
+  - Single press stops recording and transcribes.
+  - Double press cancels/back.
+- Audio control uses `bridge.audioControl(true/false)`.
+- Audio arrives through `audioEvent.audioPcm`.
+- Expected format is 16 kHz signed 16-bit little-endian PCM.
+- The frontend wraps collected PCM chunks as WAV before sending to `/api/transcribe`.
+- Simulator microphone input can produce silent/all-zero audio. The app guards against too-short/all-zero recordings to avoid unnecessary Whisper calls.
+- On hardware, audio can cut off if tap events duplicate or if a stop tap is interpreted too early. The Caduceus app handles this better with:
+  - a recorder abstraction
+  - minimum recording duration
+  - optional VAD/silence auto-stop
+  - auto-stop callback that closes the mic and still delivers the WAV blob
+- If audio remains unreliable, port the Caduceus recorder/VAD pattern next rather than relying only on manual start/stop.
+
+## Backend And Debugging
+
+- Keep Telegram credentials and session server-side only.
+- `TELEGRAM_SESSION_PATH` should resolve from the repository root so login persists whether the backend starts from repo root or `server/`.
+- Hardware debug logging is useful because WebView console access is limited.
+- The backend has temporary in-memory debug endpoints:
+  - `POST /api/debug/events`
+  - `GET /api/debug/events`
+  - `DELETE /api/debug/events`
+- The frontend logs each raw Even Hub event plus its mapped app input to `/api/debug/events`.
+- Debug logs should include the frontend `buildVersion` during hardware validation. This is the fastest way to distinguish a real mapping bug from stale device code.
+- If hardware input fails again:
+  - Clear events with `DELETE /api/debug/events`.
+  - Perform the failing gesture on glasses.
+  - Inspect `GET /api/debug/events`.
+  - Confirm `build_version` is the expected package version.
+  - If the version is stale or null, fully remove/reinstall the packaged app.
+  - If no events appear at all, use ADB/logcat because the WebView may not be receiving the event.
+
+## Telegram-Specific Hardware Validation
+
+- The real Telegram login flow has succeeded and `server/data/telegram.session` exists locally.
+- Real chat loading, forum topic listing, and forum topic message loading were validated against the Akira Agents group.
+- For Telethon `1.43`, forum message history uses `topic.id`, not `topMessageId`; `topMessageId` remains useful DTO/debug context.
+- Telethon forum/reply history can return messages without `message.sender` populated while the result contains separate `users`/`chats` entity lists. Normalize sender names from those bundled entities using `from_id`/peer ids before returning API DTOs, otherwise incoming replies render as `Unknown`.
+- After sending, the frontend refreshes the newest messages, briefly polls so quick replies appear on glasses, and resets the visible pointer to the latest message.
+- Incoming replies detected while reading older content should jump back to the newest/latest pointer.
+- The glasses text renderer has a narrower practical line width than the browser/debug pane. A 44-character Unicode box can look correct in the browser but wrap badly on the glasses display; use ASCII borders and keep boxed message lines around 30 characters total so the right border stays on the same rendered row. Normal trailing spaces can be collapsed or ignored before a right border, so boxed rows use non-breaking space padding.
+- Text-drawn rectangles still do not visually align on G2 because the glasses renderer is not a true monospace grid; hyphens and letters have different pixel widths. For long-message pages, prefer native `TextContainerProperty` borders and put the message text inside the bordered container instead of drawing borders with text.
+- The browser/debug pane and glasses display are not interchangeable for final layout QA. The browser can make text-drawn boxes look correct while the glasses pane exposes proportional glyph widths, collapsed spacing, or firmware wrapping. Treat the glasses pane or real G2 as the source of truth.
+
+## Current Known Good Input Pattern
+
+The click reliability fix that worked on real hardware in package `0.1.4` was:
+
+1. Render chat/topic/confirmation lists as text, not native list containers.
+2. Put an invisible full-screen event-capturing text overlay over the page.
+3. Dispatch single tap immediately.
+4. Debounce duplicate tap payloads.
+5. Trust native `DOUBLE_CLICK_EVENT` for back/cancel instead of synthesizing double press.
+6. Re-render app-managed text highlight on swipe.
+7. For message screens, delay tap-to-record briefly so double-click-back can win before audio starts and the page rebuilds.
+8. Preserve raw `jsonData.eventType` before SDK normalization can drop it.
+9. Verify the device is actually running the intended build before interpreting gesture results.
+
+This should be treated as the baseline for future G2 screens in this app.
+
+## Remaining Hardware QA Cases
+
+- Audio recording on real G2 after the input reliability fix.
+- Minimum recording duration and VAD behavior.
+- Phone locked or backgrounded.
+- Idle for more than two minutes.
+- Returning from another phone app.
+- Root-page exit behavior.
+- Recovery after backend disconnect.
+- Backend URL changes from the phone/debug config screen.
+- Real message send/receive smoke test before private release.

@@ -37,31 +37,59 @@ describe('mapEvenHubEvent', () => {
     expect(mapEvenHubEvent({ textEvent: { eventType: '2' } })).toEqual({ type: 'swipeDown' })
   })
 
-  it('coalesces rapid clicks into double press instead of two presses', () => {
-    vi.useFakeTimers()
-    const onInput = vi.fn()
-    const coalesce = createInputCoalescer(onInput, 250)
-
-    coalesce({ type: 'press' })
-    coalesce({ type: 'press' })
-    vi.advanceTimersByTime(300)
-
-    expect(onInput).toHaveBeenCalledTimes(1)
-    expect(onInput).toHaveBeenCalledWith({ type: 'doublePress' })
-    vi.useRealTimers()
+  it('maps gesture event types from system events like even-toolkit', () => {
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 0 } })).toEqual({ type: 'press' })
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 3 } })).toEqual({ type: 'doublePress' })
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 1 } })).toEqual({ type: 'swipeUp' })
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 2 } })).toEqual({ type: 'swipeDown' })
   })
 
-  it('emits a single press only after the double press window expires', () => {
+  it('keeps raw jsonData eventType when SDK-normalized sysEvent omits it', () => {
+    expect(
+      mapEvenHubEvent({
+        jsonData: { eventType: 3, eventSource: 2 },
+        sysEvent: { eventSource: 2 },
+      }),
+    ).toEqual({ type: 'doublePress' })
+  })
+
+  it('debounces duplicate click payloads instead of synthesizing double press', () => {
     vi.useFakeTimers()
     const onInput = vi.fn()
     const coalesce = createInputCoalescer(onInput, 250)
 
     coalesce({ type: 'press' })
-    expect(onInput).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(250)
+    coalesce({ type: 'press' })
 
     expect(onInput).toHaveBeenCalledTimes(1)
     expect(onInput).toHaveBeenCalledWith({ type: 'press' })
+    vi.useRealTimers()
+  })
+
+  it('emits a single press immediately', () => {
+    vi.useFakeTimers()
+    const onInput = vi.fn()
+    const coalesce = createInputCoalescer(onInput, 250)
+
+    coalesce({ type: 'press' })
+
+    expect(onInput).toHaveBeenCalledTimes(1)
+    expect(onInput).toHaveBeenCalledWith({ type: 'press' })
+    vi.useRealTimers()
+  })
+
+  it('allows a native double press shortly after a press payload', () => {
+    vi.useFakeTimers()
+    const onInput = vi.fn()
+    const coalesce = createInputCoalescer(onInput, 90, 220)
+
+    coalesce({ type: 'press' })
+    vi.advanceTimersByTime(80)
+    coalesce({ type: 'doublePress' })
+
+    expect(onInput).toHaveBeenCalledTimes(2)
+    expect(onInput).toHaveBeenNthCalledWith(1, { type: 'press' })
+    expect(onInput).toHaveBeenNthCalledWith(2, { type: 'doublePress' })
     vi.useRealTimers()
   })
 })

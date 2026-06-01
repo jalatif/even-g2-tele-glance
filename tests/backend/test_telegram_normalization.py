@@ -31,6 +31,12 @@ class Message:
     date: datetime
     out: bool = False
     sender: Optional[Entity] = None
+    from_id: object = None
+
+
+@dataclass
+class PeerUser:
+    user_id: int
 
 
 @dataclass
@@ -87,3 +93,17 @@ def test_normalize_message_sender_and_outgoing_flag():
     assert normalized.sender == "@owner"
     assert normalized.text == "On it"
     assert normalized.outgoing is True
+
+
+def test_normalize_message_sender_from_result_entities_when_sender_is_missing():
+    message = Message(
+        id=13,
+        from_id=PeerUser(user_id=2),
+        sender=None,
+        message="Reply from bundled user",
+        date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    normalized = normalize_message(message, {2: Entity(id=2, first_name="Lin")})
+
+    assert normalized.sender == "Lin"

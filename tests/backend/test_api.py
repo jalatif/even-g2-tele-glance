@@ -137,6 +137,36 @@ async def test_qr_login_image_endpoint(app):
 
 
 @pytest.mark.asyncio
+async def test_debug_events_accept_null_mapped_input(app):
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/debug/events",
+            json={"source": "even-hub", "buildVersion": "test", "raw": {"eventType": 0}, "mapped": None},
+        )
+        events = await client.get("/api/debug/events")
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 1}
+    assert events.json()[0]["mapped"] is None
+
+
+@pytest.mark.asyncio
+async def test_debug_events_skip_audio_chunks(app):
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/debug/events",
+            json={"source": "even-hub", "buildVersion": "test", "raw": {}, "mapped": {"type": "audioChunk"}},
+        )
+        events = await client.get("/api/debug/events")
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 0}
+    assert events.json() == []
+
+
+@pytest.mark.asyncio
 async def test_send_payload_generation_for_normal_and_topic_chats(app, fake_services):
     telegram, _ = fake_services
     transport = httpx.ASGITransport(app=app)

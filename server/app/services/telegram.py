@@ -98,8 +98,10 @@ def normalize_topic(topic: Any) -> TopicSummary:
     )
 
 
-def normalize_message(message: Any) -> MessageSummary:
+def normalize_message(message: Any, entities_by_peer: Optional[dict[int, Any]] = None) -> MessageSummary:
     sender = getattr(message, "sender", None)
+    if sender is None and entities_by_peer:
+        sender = entities_by_peer.get(_message_peer_key(message))
     sender_name = _display_name(sender) if sender is not None else None
     return MessageSummary(
         id=int(getattr(message, "id")),
@@ -108,6 +110,47 @@ def normalize_message(message: Any) -> MessageSummary:
         sent_at=getattr(message, "date", None),
         outgoing=bool(getattr(message, "out", False)),
     )
+
+
+def _entity_lookup(entities: list[Any]) -> dict[int, Any]:
+    lookup: dict[int, Any] = {}
+    for entity in entities:
+        for key in _entity_keys(entity):
+            lookup[key] = entity
+    return lookup
+
+
+def _entity_keys(entity: Any) -> set[int]:
+    keys: set[int] = set()
+    entity_id = getattr(entity, "id", None)
+    if entity_id is not None:
+        keys.add(int(entity_id))
+        if getattr(entity, "broadcast", False) or getattr(entity, "megagroup", False) or getattr(entity, "forum", False):
+            keys.add(-1000000000000 - int(entity_id))
+    try:
+        from telethon import utils
+
+        keys.add(int(utils.get_peer_id(entity)))
+    except Exception:
+        pass
+    return keys
+
+
+def _message_peer_key(message: Any) -> Optional[int]:
+    peer = getattr(message, "from_id", None) or getattr(message, "peer_id", None)
+    if peer is None:
+        sender_id = getattr(message, "sender_id", None)
+        return int(sender_id) if sender_id is not None else None
+    for attr in ("user_id", "chat_id", "channel_id"):
+        value = getattr(peer, attr, None)
+        if value is not None:
+            return int(value)
+    try:
+        from telethon import utils
+
+        return int(utils.get_peer_id(peer))
+    except Exception:
+        return None
 
 
 def qr_login_start_from_telethon(qr_login: Any) -> QrLoginStart:
@@ -330,7 +373,9 @@ class TelethonTelegramService:
                     ),
                     timeout=20,
                 )
-                return [normalize_message(message) for message in getattr(result, "messages", [])]
+                entities = [*getattr(result, "users", []), *getattr(result, "chats", [])]
+                entities_by_peer = _entity_lookup(entities)
+                return [normalize_message(message, entities_by_peer) for message in getattr(result, "messages", [])]
 
             messages = await asyncio.wait_for(client.get_messages(entity, **kwargs), timeout=20)
             return [normalize_message(message) for message in messages]

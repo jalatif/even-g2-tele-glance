@@ -19,9 +19,16 @@ class Settings(BaseSettings):
     )
     backend_cors_origin_regex: Optional[str] = Field(default=None, validation_alias="BACKEND_CORS_ORIGIN_REGEX")
     tailscale_enabled: bool = Field(default=True, validation_alias="TAILSCALE_ENABLED")
-    whisper_model: str = Field(default="small", validation_alias="WHISPER_MODEL")
+    whisper_model: str = Field(default="base", validation_alias="WHISPER_MODEL")
     whisper_device: str = Field(default="auto", validation_alias="WHISPER_DEVICE")
     whisper_compute_type: str = Field(default="int8", validation_alias="WHISPER_COMPUTE_TYPE")
+    whisper_beam_size: int = Field(default=1, validation_alias="WHISPER_BEAM_SIZE")
+    whisper_best_of: int = Field(default=1, validation_alias="WHISPER_BEST_OF")
+    whisper_temperature: float = Field(default=0.0, validation_alias="WHISPER_TEMPERATURE")
+    whisper_condition_on_previous_text: bool = Field(
+        default=False,
+        validation_alias="WHISPER_CONDITION_ON_PREVIOUS_TEXT",
+    )
 
     model_config = SettingsConfigDict(env_file=("server/.env", ".env"), extra="ignore")
 

@@ -24,7 +24,8 @@
 - Chat list loads last five threads and handles empty/error states.
 - Selecting a chat with topics opens topic selection.
 - Selecting a chat without topics opens messages directly.
-- Message screen paginates older messages.
+- Message screen keeps a latest-message pointer, prefetches older history, and paginates long messages as complete chunks.
+- Long message pages render with native Even Hub text-container borders on glasses instead of text-drawn boxes, because the G2 renderer is not a true monospace grid.
 - Single press starts recording; second single press stops and transcribes.
 - Confirmation screen exposes selectable `Send` and `Cancel`.
 - Swipe changes confirmation selection; single press executes highlighted action.
@@ -55,3 +56,5 @@
 - Confirm the phone can reach the local backend over LAN.
 - Verify microphone permission prompt and `g2-microphone` permission behavior.
 - Validate recording, transcription, send confirmation, and cancellation on real G2 hardware.
+- Validate root-screen double-click asleep/wake behavior and incoming-message notification jump-to-thread behavior on real G2 hardware.
+- Validate long-message bordered display in the glasses pane, not just the browser/debug pane.

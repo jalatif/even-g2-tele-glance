@@ -44,7 +44,13 @@ class WhisperTranscriptionService:
                 handle.write(wav_bytes)
                 temp_path = handle.name
 
-            segments, info = model.transcribe(temp_path)
+            segments, info = model.transcribe(
+                temp_path,
+                beam_size=self.settings.whisper_beam_size,
+                best_of=self.settings.whisper_best_of,
+                temperature=self.settings.whisper_temperature,
+                condition_on_previous_text=self.settings.whisper_condition_on_previous_text,
+            )
             text = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
             return TranscriptionResponse(
                 text=text,

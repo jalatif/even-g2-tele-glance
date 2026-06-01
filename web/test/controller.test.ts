@@ -44,11 +44,91 @@ describe('TelegramAppController', () => {
 
     await controller.dispatch({ type: 'swipeDown' })
     expect(controller.snapshot).toMatchObject({ screen: 'chats', selectedIndex: 1 })
-    expect(bridge.render).toHaveBeenCalledTimes(renderCount)
+    expect(bridge.render).toHaveBeenCalledTimes(renderCount + 1)
 
     await controller.dispatch({ type: 'swipeUp' })
     expect(controller.snapshot).toMatchObject({ screen: 'chats', selectedIndex: 0 })
-    expect(bridge.render).toHaveBeenCalledTimes(renderCount)
+    expect(bridge.render).toHaveBeenCalledTimes(renderCount + 2)
+  })
+
+  it('turns the screen off on double press from the chat list', async () => {
+    const api = fakeApi({ authorized: true })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await controller.dispatch({ type: 'doublePress' })
+
+    expect(bridge.turnScreenOff).toHaveBeenCalledOnce()
+    expect(controller.snapshot).toMatchObject({ screen: 'asleep' })
+  })
+
+  it('only wakes the screen-off state with double press', async () => {
+    const api = fakeApi({ authorized: true })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await controller.dispatch({ type: 'doublePress' })
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'foreground' })
+
+    expect(controller.snapshot).toMatchObject({ screen: 'asleep' })
+    expect(bridge.turnScreenOff).toHaveBeenCalledTimes(4)
+
+    await controller.dispatch({ type: 'doublePress' })
+
+    expect(controller.snapshot).toMatchObject({ screen: 'chats' })
+  })
+
+  it('wakes from screen-off state when a root chat receives a new message', async () => {
+    let currentChats = chats
+    const api = fakeApi({ authorized: true, chats: () => currentChats })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'doublePress' })
+    currentChats = [{ ...chats[0], unreadCount: 1, lastMessage: 'wake up' }, chats[1]]
+    await refreshRootChats(controller)
+
+    expect(controller.snapshot).toMatchObject({
+      screen: 'newMessage',
+      chat: expect.objectContaining({ id: '1' }),
+      message: 'wake up',
+    })
+  })
+
+  it('opens the new-message target thread on press', async () => {
+    let currentChats = chats
+    const api = fakeApi({ authorized: true, chats: () => currentChats })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'doublePress' })
+    currentChats = [{ ...chats[0], unreadCount: 1, lastMessage: 'wake up' }, chats[1]]
+    await refreshRootChats(controller)
+    await controller.dispatch({ type: 'press' })
+
+    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, limit: 50 })
+    expect(controller.snapshot).toMatchObject({ screen: 'messages', chat: expect.objectContaining({ id: '1' }) })
+  })
+
+  it('resolves unread forum topic before opening a new-message prompt', async () => {
+    let currentChats = chats
+    const unreadTopics = [{ ...topics[1], unreadCount: 1 }, topics[0]]
+    const api = fakeApi({ authorized: true, chats: () => currentChats, topics: unreadTopics })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'doublePress' })
+    currentChats = [chats[0], { ...chats[1], unreadCount: 1, lastMessage: 'topic ping' }]
+    await refreshRootChats(controller)
+    await controller.dispatch({ type: 'press' })
+
+    expect(api.listTopics).toHaveBeenCalledWith('2')
+    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '20', limit: 50 })
+    expect(controller.snapshot).toMatchObject({ screen: 'messages', topic: expect.objectContaining({ id: '20' }) })
   })
 
   it('opens forum topics before message history', async () => {
@@ -73,7 +153,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'press' })
 
-    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', limit: 8 })
+    expect(api.listMessages).toHaveBeenNthCalledWith(1, '2', { topicId: '10', limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'messages', topic: topics[0] })
     expect(bridge.render).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -92,7 +172,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'press', index: 1 })
 
-    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '20', limit: 8 })
+    expect(api.listMessages).toHaveBeenNthCalledWith(1, '2', { topicId: '20', limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'messages', topic: topics[1] })
   })
 
@@ -103,7 +183,7 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'selectIndex', index: 0 })
 
-    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, limit: 8 })
+    expect(api.listMessages).toHaveBeenNthCalledWith(1, '1', { topicId: undefined, limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'messages' })
   })
 
@@ -114,7 +194,7 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
 
-    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, limit: 8 })
+    expect(api.listMessages).toHaveBeenNthCalledWith(1, '1', { topicId: undefined, limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'messages' })
   })
 
@@ -133,7 +213,7 @@ describe('TelegramAppController', () => {
     })
   })
 
-  it('pages to older messages instead of appending an oversized history blob', async () => {
+  it('loads older messages into the same chronological buffer', async () => {
     const olderMessages: Message[] = [{ id: '80', sender: 'Alice', text: 'older page' }]
     const api = fakeApi({ authorized: true, olderMessages })
     const controller = new TelegramAppController(api, fakeBridge())
@@ -142,8 +222,13 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeUp' })
 
-    expect(api.listMessages).toHaveBeenLastCalledWith('1', { topicId: undefined, beforeId: 100, limit: 8 })
-    expect(controller.snapshot).toMatchObject({ screen: 'messages', messages: olderMessages, cursor: 80 })
+    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'messages',
+      messages: [...olderMessages, ...messages],
+      cursor: 80,
+      scrollOffset: 1,
+    })
   })
 
   it('does not cycle when swiping down on the newest message page', async () => {
@@ -154,11 +239,11 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeDown' })
 
-    expect(api.listMessages).toHaveBeenCalledTimes(1)
+    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'messages', messages, isNewestPage: true })
   })
 
-  it('swipes down from an older page back toward the newer page without reordering messages', async () => {
+  it('swipes down from older content one smooth step toward the newest message', async () => {
     const olderMessages: Message[] = [{ id: '80', sender: 'Alice', text: 'older page' }]
     const api = fakeApi({ authorized: true, latestMessages: reversedMessages, olderMessages })
     const controller = new TelegramAppController(api, fakeBridge())
@@ -166,14 +251,17 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeUp' })
+    await controller.dispatch({ type: 'swipeUp' })
+    await controller.dispatch({ type: 'swipeUp' })
     await controller.dispatch({ type: 'swipeDown' })
 
-    expect(api.listMessages).toHaveBeenCalledTimes(2)
+    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
     expect(controller.snapshot).toMatchObject({
       screen: 'messages',
-      messages: [...reversedMessages].reverse(),
-      cursor: 100,
-      isNewestPage: true,
+      messages: [...olderMessages, ...[...reversedMessages].reverse()],
+      cursor: 80,
+      scrollOffset: 2,
+      isNewestPage: false,
     })
   })
 
@@ -185,11 +273,13 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeUp' })
+    await controller.dispatch({ type: 'swipeUp' })
+    await controller.dispatch({ type: 'swipeUp' })
     await refreshVisibleMessages(controller)
 
     expect(controller.snapshot).toMatchObject({
       screen: 'messages',
-      messages: olderMessages,
+      messages: [...olderMessages, ...[...reversedMessages].reverse()],
       cursor: 80,
       isNewestPage: false,
     })
@@ -210,8 +300,8 @@ describe('TelegramAppController', () => {
 
     expect(controller.snapshot).toMatchObject({
       screen: 'messages',
-      messages: [...reversedMessages, newReply].sort((left, right) => Number(left.id) - Number(right.id)),
-      cursor: 100,
+      messages: [...olderMessages, ...reversedMessages, newReply].sort((left, right) => Number(left.id) - Number(right.id)),
+      cursor: 80,
       isNewestPage: true,
       status: 'New reply',
     })
@@ -229,13 +319,29 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'doublePress' })
 
     expect(controller.snapshot).toMatchObject({ screen: 'topics', selectedIndex: 0 })
-    expect(api.listMessages).toHaveBeenCalledTimes(2)
+    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', beforeId: 100, limit: 50 })
+  })
+
+  it('lets double press win before delayed recording starts', async () => {
+    const api = fakeApi({ authorized: true })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'press' })
+    expect(controller.snapshot).toMatchObject({ screen: 'messages' })
+
+    await controller.dispatch({ type: 'doublePress' })
+
+    expect(bridge.setAudioEnabled).not.toHaveBeenCalled()
+    expect(controller.snapshot).toMatchObject({ screen: 'chats' })
   })
 
   it('records, transcribes, confirms, and sends a voice reply', async () => {
     const api = fakeApi({ authorized: true, transcription: { text: 'Reply text' } })
     const bridge = fakeBridge()
-    const controller = new TelegramAppController(api, bridge)
+    const controller = new TelegramAppController(api, bridge, 0)
 
     await controller.init()
     await controller.dispatch({ type: 'press' })
@@ -255,7 +361,7 @@ describe('TelegramAppController', () => {
 
   it('cancels from confirmation when Cancel is selected', async () => {
     const api = fakeApi({ authorized: true, transcription: { text: 'Cancel me' } })
-    const controller = new TelegramAppController(api, fakeBridge())
+    const controller = new TelegramAppController(api, fakeBridge(), 0)
 
     await controller.init()
     await controller.dispatch({ type: 'press' })
@@ -270,7 +376,7 @@ describe('TelegramAppController', () => {
   })
 })
 
-function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[]); olderMessages?: Message[] }): TelegramApi {
+function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[]); olderMessages?: Message[]; chats?: Chat[] | (() => Chat[]); topics?: Topic[] }): TelegramApi {
   const listMessages = vi.fn(async (_chatId, request) => {
     if (request?.beforeId !== undefined) return options.olderMessages ?? []
     if (typeof options.latestMessages === 'function') return options.latestMessages()
@@ -281,8 +387,8 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
     authStatus: vi.fn(async () => ({ authorized: options.authorized })),
     startQrAuth: vi.fn(async () => ({ token: 'token', url: 'tg://login?token=token' })),
     qrAuthStatus: vi.fn(async () => ({ authorized: options.authorized, expired: false })),
-    listChats: vi.fn(async () => chats),
-    listTopics: vi.fn(async () => topics),
+    listChats: vi.fn(async () => typeof options.chats === 'function' ? options.chats() : options.chats ?? chats),
+    listTopics: vi.fn(async () => options.topics ?? topics),
     listMessages,
     sendMessage: vi.fn(async (_chatId, request) => ({
       id: '101',
@@ -307,9 +413,15 @@ function fakeBridge(): GlassesBridge {
   return {
     render: vi.fn(async () => undefined),
     setAudioEnabled: vi.fn(async () => undefined),
+    showExitConfirmation: vi.fn(async () => undefined),
+    turnScreenOff: vi.fn(async () => undefined),
   }
 }
 
 function refreshVisibleMessages(controller: TelegramAppController) {
   return (controller as unknown as { refreshVisibleMessages: () => Promise<void> }).refreshVisibleMessages()
+}
+
+function refreshRootChats(controller: TelegramAppController) {
+  return (controller as unknown as { refreshRootChats: () => Promise<void> }).refreshRootChats()
 }

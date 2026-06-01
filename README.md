@@ -46,6 +46,15 @@ Even Hub simulator validation:
 npx @evenrealities/evenhub-simulator@0.7.2 http://localhost:5173
 ```
 
+Hardware package build:
+
+```sh
+npm run build:tailscale --prefix web
+npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o even-telegram-<version>.ehpk
+```
+
+Hardware-specific implementation notes are maintained in [EVEN_REALITIES_HW.md](EVEN_REALITIES_HW.md). In particular, the G2 glasses display does not render text as a true monospace grid, so long-message blocks use native `TextContainerProperty` borders instead of text-drawn rectangles.
+
 ## Required Environment
 
 Create `server/.env` from `server/.env.example` and set:
@@ -55,5 +64,9 @@ Create `server/.env` from `server/.env.example` and set:
 - `WHISPER_MODEL`
 - `WHISPER_DEVICE`
 - `WHISPER_COMPUTE_TYPE`
+- `WHISPER_BEAM_SIZE`
+- `WHISPER_BEST_OF`
+- `WHISPER_TEMPERATURE`
+- `WHISPER_CONDITION_ON_PREVIOUS_TEXT`
 
 Telegram session files are stored under `server/data/` and ignored by Git.

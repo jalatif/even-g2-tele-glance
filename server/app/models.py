@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -69,3 +69,11 @@ class TranscriptionResponse(ApiModel):
     text: str
     language: Optional[str] = None
     duration_seconds: Optional[float] = None
+
+
+class DebugEvent(ApiModel):
+    source: str = "web"
+    build_version: Optional[str] = None
+    raw: Any
+    mapped: Any = None
+    note: Optional[str] = None

@@ -8,14 +8,20 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import type { GlassesBridge } from '../controller/appController'
 import type { AppInput, ScreenModel } from '../controller/model'
+import { defaultApiBaseUrl } from '../api'
 import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
+const APP_BUILD_VERSION = '0.1.22'
 
 type EvenBridgeInstance = {
   createStartUpPageContainer(container: unknown): Promise<number>
   rebuildPageContainer(container: unknown): Promise<boolean>
   audioControl(enabled: boolean): Promise<unknown>
+  shutDownPageContainer?(exitMode?: number): Promise<boolean>
+  callEvenApp?(method: string, payload: unknown): Promise<boolean>
+  screenOff?(): Promise<boolean>
+  turnScreenOff?(): Promise<boolean>
   onEvenHubEvent(listener: (event: unknown) => void): (() => void) | void
 }
 
@@ -30,6 +36,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     const dispatchInput = createInputCoalescer(onInput)
     sdk.onEvenHubEvent((event) => {
       const input = mapEvenHubEvent(event as Parameters<typeof mapEvenHubEvent>[0])
+      if (input?.type !== 'audioChunk') void logHardwareEvent(event, input)
       if (input) dispatchInput(input)
     })
     return adapter
@@ -49,11 +56,34 @@ export class EvenHubGlassesBridge implements GlassesBridge {
   async setAudioEnabled(enabled: boolean) {
     await this.sdk.audioControl(enabled)
   }
+
+  async showExitConfirmation() {
+    if (typeof this.sdk.shutDownPageContainer === 'function') {
+      await this.sdk.shutDownPageContainer(1)
+      return
+    }
+    await this.sdk.callEvenApp?.('shutDownPageContainer', { exitMode: 1 })
+  }
+
+  async turnScreenOff() {
+    if (typeof this.sdk.screenOff === 'function') {
+      await this.sdk.screenOff()
+      return
+    }
+    if (typeof this.sdk.turnScreenOff === 'function') {
+      await this.sdk.turnScreenOff()
+      return
+    }
+    await this.sdk.callEvenApp?.('screenOff', {})
+  }
 }
 
 type PageContainerClass = typeof CreateStartUpPageContainer | typeof RebuildPageContainer
 
 function buildTextPage(model: Extract<ScreenModel, { kind: 'text' }>, Container: PageContainerClass) {
+  const boxedBody = parseBoxedBody(model.body)
+  if (boxedBody && model.footer) return buildBoxedTextPage(model, boxedBody, Container)
+
   const hasFooter = Boolean(model.footer)
   const title = new TextContainerProperty({
     containerID: 1,
@@ -102,61 +132,104 @@ function buildTextPage(model: Extract<ScreenModel, { kind: 'text' }>, Container:
   })
 }
 
-function buildListPage(model: Extract<ScreenModel, { kind: 'list' }>, Container: PageContainerClass) {
-  const renderedItems = model.items.length > 0 ? model.items.slice(0, 20) : ['Empty']
+function buildBoxedTextPage(model: Extract<ScreenModel, { kind: 'text' }>, boxedBody: BoxedBody, Container: PageContainerClass) {
   const title = new TextContainerProperty({
     containerID: 1,
     containerName: 'title',
-    content: trimForContainer(model.title, 160),
+    content: trimForContainer(model.title, 120),
     xPosition: 0,
     yPosition: 0,
     width: 576,
-    height: 44,
+    height: 42,
     borderWidth: 0,
     borderColor: 8,
     paddingLength: 4,
     isEventCapture: 0,
   })
-  const list = new ListContainerProperty({
-    containerID: 3,
-    containerName: 'list',
+  const overlay = new TextContainerProperty({
+    containerID: 2,
+    containerName: 'body-events',
+    content: '',
     xPosition: 0,
-    yPosition: 44,
+    yPosition: 42,
     width: 576,
-    height: 244,
+    height: 204,
     borderWidth: 0,
     borderColor: 8,
-    paddingLength: 4,
-    itemContainer: new ListItemContainerProperty({
-      itemCount: renderedItems.length,
-      itemWidth: 568,
-      itemName: renderedItems.map((item) => trimForContainer(item, 64)),
-      isItemSelectBorderEn: 1,
-    }),
+    paddingLength: 0,
     isEventCapture: 1,
   })
-  const body = hiddenTextContainer()
-  const footer = hiddenFooterContainer()
+  const box = new TextContainerProperty({
+    containerID: 5,
+    containerName: 'msg-box',
+    content: trimForContainer(boxedBody.content, 999),
+    xPosition: 14,
+    yPosition: 58,
+    width: 430,
+    height: 172,
+    borderWidth: 1,
+    borderColor: 8,
+    paddingLength: 8,
+    isEventCapture: 0,
+  })
+  const footer = new TextContainerProperty({
+    containerID: 4,
+    containerName: 'footer',
+    content: trimForContainer(model.footer ?? '', 180),
+    xPosition: 0,
+    yPosition: 246,
+    width: 576,
+    height: 42,
+    borderWidth: 1,
+    borderColor: 8,
+    paddingLength: 4,
+    isEventCapture: 0,
+  })
+  const list = hiddenListContainer()
   return new Container({
-    containerTotalNum: 4,
-    textObject: [title, body, footer],
+    containerTotalNum: 5,
+    textObject: [title, overlay, box, footer],
     listObject: [list],
   })
 }
 
-function hiddenTextContainer() {
-  return new TextContainerProperty({
-    containerID: 2,
-    containerName: 'body',
-    content: '',
+type BoxedBody = {
+  content: string
+}
+
+function buildListPage(model: Extract<ScreenModel, { kind: 'list' }>, Container: PageContainerClass) {
+  const content = new TextContainerProperty({
+    containerID: 5,
+    containerName: 'menu',
+    content: trimForContainer(formatListAsText(model), 999),
     xPosition: 0,
-    yPosition: 287,
-    width: 1,
-    height: 1,
+    yPosition: 0,
+    width: 576,
+    height: 288,
+    borderWidth: 0,
+    borderColor: 8,
+    paddingLength: 6,
+    isEventCapture: 0,
+  })
+  const overlay = new TextContainerProperty({
+    containerID: 2,
+    containerName: 'event-overlay',
+    xPosition: 0,
+    yPosition: 0,
+    width: 576,
+    height: 288,
     borderWidth: 0,
     borderColor: 8,
     paddingLength: 0,
-    isEventCapture: 0,
+    content: '',
+    isEventCapture: 1,
+  })
+  const list = hiddenListContainer()
+  const footer = hiddenFooterContainer()
+  return new Container({
+    containerTotalNum: 4,
+    textObject: [overlay, content, footer],
+    listObject: [list],
   })
 }
 
@@ -209,4 +282,81 @@ function trimForContainer(value: string, maxLength: number) {
     output = candidate
   }
   return `${output}${suffix}`
+}
+
+function parseBoxedBody(body: string): BoxedBody | undefined {
+  const lines = body.split('\n')
+  if (lines.length < 5) return undefined
+  if (!isBoxBorder(lines[0]) || !isBoxBorder(lines[2]) || !isBoxBorder(lines[lines.length - 1])) return undefined
+
+  const heading = unboxLine(lines[1])
+  const message = lines.slice(3, -1).map(unboxLine).join('\n').trimEnd()
+  return {
+    content: message ? `${heading}\n\n${message}` : heading,
+  }
+}
+
+function isBoxBorder(line: string) {
+  return /^\+-+\+$/.test(line)
+}
+
+function unboxLine(line: string) {
+  const withoutBars = line.startsWith('|') && line.endsWith('|') ? line.slice(1, -1) : line
+  return withoutBars.replace(/\u00a0/g, ' ').trim()
+}
+
+function formatListAsText(model: Extract<ScreenModel, { kind: 'list' }>) {
+  const items = model.items.length > 0 ? model.items : ['Empty']
+  const visible = visibleListWindow(items, model.selectedIndex, 8)
+  const lines = [
+    model.title,
+    '---------------------------',
+    ...visible.map((item, index) => {
+      const itemIndex = visible.start + index
+      const marker = itemIndex === model.selectedIndex ? '> ' : '  '
+      return `${marker}${trimForContainer(item, 54)}`
+    }),
+  ]
+  return lines.join('\n')
+}
+
+function visibleListWindow(items: string[], selectedIndex: number, maxVisible: number) {
+  const clamped = Math.max(0, Math.min(selectedIndex, items.length - 1))
+  const half = Math.floor(maxVisible / 2)
+  const start = Math.max(0, Math.min(clamped - half, Math.max(0, items.length - maxVisible)))
+  return Object.assign(items.slice(start, start + maxVisible), { start })
+}
+
+async function logHardwareEvent(raw: unknown, mapped: AppInput | undefined) {
+  try {
+    await fetch(`${defaultApiBaseUrl()}/api/debug/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'even-hub',
+        buildVersion: APP_BUILD_VERSION,
+        raw: summarizeForDebug(raw),
+        mapped: mapped ?? null,
+      }),
+    })
+  } catch {
+    // Debug logging must never affect glasses input handling.
+  }
+}
+
+function summarizeForDebug(value: unknown): unknown {
+  if (value instanceof Uint8Array) return { type: 'Uint8Array', byteLength: value.byteLength, preview: Array.from(value.slice(0, 16)) }
+  if (value instanceof ArrayBuffer) return { type: 'ArrayBuffer', byteLength: value.byteLength }
+  if (Array.isArray(value)) return value.slice(0, 20).map(summarizeForDebug)
+  if (typeof value !== 'object' || value === null) return value
+
+  const output: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (key.toLowerCase().includes('audiopcm')) {
+      output[key] = summarizeForDebug(item)
+      continue
+    }
+    output[key] = summarizeForDebug(item)
+  }
+  return output
 }

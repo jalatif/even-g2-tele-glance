@@ -31,54 +31,48 @@ type EventRecord = Record<string, unknown>
 
 export function createInputCoalescer(
   onInput: (input: AppInput) => void | Promise<void>,
-  delayMs = 650,
+  duplicateTapDebounceMs = 90,
+  tapCooldownMs = 220,
 ) {
-  let pendingPress: { input: Extract<AppInput, { type: 'press' }>; timer: ReturnType<typeof setTimeout> } | undefined
+  let lastTapTime = 0
+  let lastTapKind: 'press' | 'doublePress' | undefined
 
   function emit(input: AppInput) {
     void onInput(input)
   }
 
-  function flushPress() {
-    if (!pendingPress) return
-    clearTimeout(pendingPress.timer)
-    const input = pendingPress.input
-    pendingPress = undefined
-    emit(input)
-  }
-
   return (input: AppInput) => {
-    if (input.type === 'press') {
-      if (pendingPress) {
-        clearTimeout(pendingPress.timer)
-        const index = input.index ?? pendingPress.input.index
-        pendingPress = undefined
-        emit({ type: 'doublePress', index })
-        return
-      }
-      const timer = setTimeout(() => {
-        pendingPress = undefined
-        emit(input)
-      }, delayMs)
-      pendingPress = { input, timer }
-      return
-    }
-
     if (input.type === 'doublePress') {
-      if (pendingPress) {
-        clearTimeout(pendingPress.timer)
-        pendingPress = undefined
-      }
+      const now = Date.now()
+      const elapsed = now - lastTapTime
+
+      if (lastTapKind === 'doublePress' && elapsed < 140) return
+
+      lastTapTime = now
+      lastTapKind = 'doublePress'
       emit(input)
       return
     }
 
-    if (input.type !== 'audioChunk') flushPress()
+    if (input.type === 'press') {
+      const now = Date.now()
+      const elapsed = now - lastTapTime
+
+      if (lastTapKind === 'press' && elapsed < duplicateTapDebounceMs) return
+      if (lastTapKind === 'doublePress' && elapsed < tapCooldownMs) return
+
+      lastTapTime = now
+      lastTapKind = 'press'
+      emit(input)
+      return
+    }
+
     emit(input)
   }
 }
 
 export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | undefined {
+  const rawEventType = readRawEventType(event)
   const normalized = normalizeEvent(event)
 
   if (normalized.audioEvent?.audioPcm) {
@@ -90,17 +84,29 @@ export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | u
   }
 
   const listEvent = normalized.listEvent
-  const eventType = readEventType(listEvent) ?? readEventType(normalized.textEvent)
+  const eventRecord = listEvent ?? normalized.textEvent ?? normalized.sysEvent
+  const eventType = readEventType(eventRecord) ?? rawEventType
   const index = readSelectedIndex(listEvent)
   if (index !== undefined && eventType === undefined) {
     return { type: 'selectIndex', index }
   }
 
-  if (eventType === undefined || eventTypeEquals(eventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalIndex('press', index)
   if (eventTypeEquals(eventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalIndex('doublePress', index)
+  if (eventType === undefined || eventTypeEquals(eventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalIndex('press', index)
   if (eventTypeEquals(eventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return { type: 'swipeUp' }
   if (eventTypeEquals(eventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return { type: 'swipeDown' }
   return undefined
+}
+
+function readRawEventType(event: EvenHubEventLike | unknown): number | string | undefined {
+  if (!isRecord(event)) return undefined
+  const candidate = event as EvenHubEventLike
+  return (
+    readEventType(candidate.listEvent) ??
+    readEventType(candidate.textEvent) ??
+    readEventType(candidate.sysEvent) ??
+    readEventType(firstRecord(candidate.jsonData, candidate.data, candidate))
+  )
 }
 
 function toUint8Array(value: Uint8Array | ArrayBuffer | number[]) {

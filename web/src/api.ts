@@ -23,7 +23,15 @@ export interface TelegramApi {
 }
 
 export function defaultApiBaseUrl() {
-  return import.meta.env.VITE_API_BASE_URL ?? runtimeTailscaleApiBaseUrl() ?? 'http://localhost:8787'
+  return localApiBaseUrl() ?? import.meta.env.VITE_API_BASE_URL ?? runtimeTailscaleApiBaseUrl() ?? 'http://localhost:8787'
+}
+
+export const API_BASE_URL_STORAGE_KEY = 'evenTelegram.apiBaseUrl'
+
+function localApiBaseUrl() {
+  if (typeof window === 'undefined') return undefined
+  const value = window.localStorage.getItem(API_BASE_URL_STORAGE_KEY)?.trim()
+  return value || undefined
 }
 
 function runtimeTailscaleApiBaseUrl() {
