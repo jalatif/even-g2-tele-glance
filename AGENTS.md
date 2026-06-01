@@ -153,6 +153,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Chat/topic list scroll input updates controller state without rebuilding the glasses page. The native list is allowed to keep moving immediately, while topic previews/message fetches update the right panel asynchronously.
 - Hardware input mapping now prefers fast raw-event parsing before the SDK normalizer. Debug event logging is default-off and throttled to one background event at a time so WebCrypto/fetch logging cannot flood the phone input path.
 - Hardware input dispatch and glasses rendering are separated from the SDK event callback. Controller state changes enqueue a deferred, coalesced render instead of calling `rebuildPageContainer` synchronously, and slow chat/topic opens keep the sidebar/message surface interactive while the right panel shows loading.
+- Controller state changes also defer React phone UI notifications and screen-model formatting. Sidebar-focus pages use a visible native Even Hub list so selection movement is firmware-local instead of requiring a text-container rebuild for every up/down input.
 
 ## Observed Issues and Learnings
 
@@ -183,6 +184,8 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - The real G2 hardware path can be much slower than simulator if every input runs through expensive SDK normalization or debug logging. Keep input mapping synchronous work minimal, use raw payload parsing first, and make debug telemetry best-effort/throttled.
 - `setState()` must not start native page rebuilds synchronously from input handling. Even when render promises are not awaited, calling `bridge.render()` inline can still build containers and enter the native bridge before the event callback returns, making all clicks/swipes feel delayed on real hardware.
 - Avoid full-screen loading states for chat/topic open and message pagination during normal navigation. Keep the current UI navigable, show loading only in the right-side panel/status area, and ignore stale async results if the user has already swiped/backed away.
+- Deferring `bridge.render()` is not enough if `setState()` still builds `screenModel(state)` or notifies React synchronously. Message page formatting and phone WebView rerenders share the same JS thread as glasses input events, so both must be deferred/coalesced.
+- A text-rendered sidebar cannot move natively. When chat/topic selection has focus, use a real `ListContainerProperty` with event capture; reserve text-rendered sidebars for panel-focus pages where the user scrolls messages instead of the left list.
 - For device testing, the backend is not packaged into `.ehpk`. The `.ehpk` contains the frontend and manifest; the FastAPI backend must stay running and reachable from the phone/glasses path.
 - Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and the frontend's configured backend URL.
 - Simulator microphone input can produce silent/all-zero audio. Guarding that path avoids unnecessary Whisper calls and confusing transcription errors during simulator validation.

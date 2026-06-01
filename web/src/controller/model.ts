@@ -10,6 +10,7 @@ const MESSAGE_BOX_CONTENT_ROWS = MESSAGE_VISIBLE_ROW_LIMIT - 4
 const MESSAGE_BOX_PAD = ' '
 const MESSAGE_BOX_WORD_THRESHOLD = 25
 const encoder = new TextEncoder()
+const messagePageCache = new WeakMap<Message[], MessageDisplayPage[]>()
 
 export type AppInput =
   | { type: 'press'; index?: number }
@@ -302,6 +303,9 @@ export function messageScrollUnitCount(messages: Message[]) {
 }
 
 function messageDisplayPages(messages: Message[]): MessageDisplayPage[] {
+  const cached = messagePageCache.get(messages)
+  if (cached) return cached
+
   const blocks = messageDisplayBlocks(messages)
   const pages: MessageDisplayPage[] = []
   let endExclusive = blocks.length
@@ -337,6 +341,7 @@ function messageDisplayPages(messages: Message[]): MessageDisplayPage[] {
     endExclusive = start
   }
 
+  messagePageCache.set(messages, pages)
   return pages
 }
 

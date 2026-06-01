@@ -113,6 +113,7 @@ function buildPage(model: ScreenModel, Container: PageContainerClass) {
 
 function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Container: PageContainerClass) {
   const hasPanelBox = Boolean(model.panelBox)
+  const sidebarHasFocus = model.focus === 'sidebar'
 
   const outerBorder = new TextContainerProperty({
     containerID: 0,
@@ -151,7 +152,7 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     borderWidth: 0,
     borderColor: 8,
     paddingLength: 0,
-    isEventCapture: 1,
+    isEventCapture: sidebarHasFocus ? 0 : 1,
   })
   const sidebar = new TextContainerProperty({
     containerID: 5,
@@ -231,8 +232,10 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     paddingLength: 4,
     isEventCapture: 0,
   })
-  const list = hiddenListContainer()
-  const textObjects = [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, panelBox, footer]
+  const list = sidebarHasFocus ? sidebarListContainer(model) : hiddenListContainer()
+  const textObjects = sidebarHasFocus
+    ? [outerBorder, title, overlay, sidebarSeparator, panelBody, panelBox, footer]
+    : [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, panelBox, footer]
   return new Container({
     containerTotalNum: textObjects.length + 1,
     textObject: textObjects,
@@ -417,6 +420,28 @@ function hiddenListContainer() {
       isItemSelectBorderEn: 0,
     }),
     isEventCapture: 0,
+  })
+}
+
+function sidebarListContainer(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
+  const items = (model.sidebarItems.length ? model.sidebarItems : ['']).slice(0, 20).map((item) => trimForContainer(item, 64))
+  return new ListContainerProperty({
+    containerID: 3,
+    containerName: 'sidebar-list',
+    xPosition: 2,
+    yPosition: 38,
+    width: 166,
+    height: 206,
+    borderWidth: 0,
+    borderColor: 8,
+    paddingLength: 4,
+    itemContainer: new ListItemContainerProperty({
+      itemCount: items.length,
+      itemWidth: 0,
+      itemName: items,
+      isItemSelectBorderEn: 1,
+    }),
+    isEventCapture: 1,
   })
 }
 

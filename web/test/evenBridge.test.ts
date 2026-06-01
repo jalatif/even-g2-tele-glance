@@ -93,4 +93,79 @@ describe('EvenHubGlassesBridge', () => {
     expect(output).toContain('"containerID":7')
     expect(output).toContain('"containerName":"panel-box"')
   })
+
+  it('uses a visible event-capturing native list while the sidebar has focus', async () => {
+    let rendered: unknown
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer(container: unknown) {
+        rendered = container
+        return 0
+      },
+      async rebuildPageContainer() {
+        return true
+      },
+      async audioControl() {
+        return undefined
+      },
+      onEvenHubEvent() {
+        return undefined
+      },
+    })
+
+    await bridge.render({
+      kind: 'sidebar',
+      title: 'Telegram',
+      sidebarTitle: 'Chats',
+      sidebarItems: ['Alice', 'Project'],
+      sidebarSelected: 0,
+      panelTitle: 'Alice',
+      panelBody: 'Preview',
+      panelFooter: 'Swipe chats | Press open',
+      focus: 'sidebar',
+    })
+
+    const output = JSON.stringify(rendered)
+    expect(output).toContain('"containerName":"sidebar-list"')
+    expect(output).toContain('"itemName":["Alice","Project"]')
+    expect(output).toContain('"isItemSelectBorderEn":1')
+    expect(output).toContain('"isEventCapture":1')
+    expect(output).not.toContain('"containerName":"sidebar","content"')
+  })
+
+  it('uses text sidebar and panel event capture while messages have focus', async () => {
+    let rendered: unknown
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer(container: unknown) {
+        rendered = container
+        return 0
+      },
+      async rebuildPageContainer() {
+        return true
+      },
+      async audioControl() {
+        return undefined
+      },
+      onEvenHubEvent() {
+        return undefined
+      },
+    })
+
+    await bridge.render({
+      kind: 'sidebar',
+      title: 'Launch',
+      sidebarTitle: 'Topics',
+      sidebarItems: ['Launch', 'Support'],
+      sidebarSelected: 1,
+      panelTitle: '',
+      panelBody: 'Message',
+      panelFooter: 'Click record',
+      focus: 'panel',
+    })
+
+    const output = JSON.stringify(rendered)
+    expect(output).toContain('"containerName":"sidebar"')
+    expect(output).toContain('Support')
+    expect(output).toContain('"containerName":"event-overlay"')
+    expect(output).not.toContain('"containerName":"sidebar-list"')
+  })
 })

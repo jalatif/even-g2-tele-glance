@@ -706,6 +706,7 @@ describe('TelegramAppController', () => {
       isNewestPage: true,
       scrollOffset: 0,
     })
+    await flushAsync()
     expect(states).toContain('sidebar')
   })
 

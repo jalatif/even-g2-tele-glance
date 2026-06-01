@@ -61,8 +61,10 @@ export class TelegramAppController {
   private readAckMaxIds = new Map<string, Id>()
   private selectionOnlyPressReadyAt = 0
   private renderInFlight = false
-  private pendingRenderModel: ScreenModel | undefined
+  private pendingRenderState: AppState | undefined
   private renderTimer: ReturnType<typeof setTimeout> | undefined
+  private notifyTimer: ReturnType<typeof setTimeout> | undefined
+  private notifyPending = false
   private openRequestId = 0
   constructor(
     private readonly api: TelegramApi,
@@ -1048,7 +1050,7 @@ export class TelegramAppController {
 
   private async setState(state: AppState) {
     this.applyState(state, true)
-    this.enqueueRender(screenModel(state))
+    this.enqueueRender(state)
   }
 
   private async setStateWithoutRender(state: AppState) {
@@ -1062,11 +1064,11 @@ export class TelegramAppController {
     }
     this.syncMessagePolling()
     this.syncChatPolling()
-    this.notify()
+    this.enqueueNotify()
   }
 
-  private enqueueRender(model: ScreenModel) {
-    this.pendingRenderModel = model
+  private enqueueRender(state: AppState) {
+    this.pendingRenderState = state
     this.scheduleRenderFlush(RENDER_DEFER_MS)
   }
 
@@ -1083,15 +1085,28 @@ export class TelegramAppController {
 
   private async flushRenderQueue() {
     try {
-      const model = this.pendingRenderModel
-      this.pendingRenderModel = undefined
-      if (model) await this.bridge.render(model)
+      const state = this.pendingRenderState
+      this.pendingRenderState = undefined
+      if (state) await this.bridge.render(screenModel(state))
     } catch {
       // Rendering failures should not block controller state/input handling.
     } finally {
       this.renderInFlight = false
-      if (this.pendingRenderModel) this.scheduleRenderFlush(RENDER_COOLDOWN_MS)
+      if (this.pendingRenderState) this.scheduleRenderFlush(RENDER_COOLDOWN_MS)
     }
+  }
+
+  private enqueueNotify() {
+    this.notifyPending = true
+    if (this.notifyTimer) return
+    this.notifyTimer = setTimeout(() => {
+      this.notifyTimer = undefined
+      if (!this.notifyPending) return
+      this.notifyPending = false
+      this.notify()
+    }, 0)
+    const maybeNodeTimeout = this.notifyTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
   }
 
   private notify() {
