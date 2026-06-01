@@ -1,0 +1,36 @@
+.DS_Store
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# Python
+__pycache__/
+.pycache/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+server/data/
+*.session
+*.session-journal
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Builds and simulator output
+dist/
+build/
+.vite/
+coverage/
+.evenhub/

@@ -1,0 +1,235 @@
+import { evenHubEventFromJson } from '@evenrealities/even_hub_sdk'
+import type { AppInput } from '../controller/model'
+
+export const EvenEventType = {
+  click: 0,
+  scrollTop: 1,
+  scrollBottom: 2,
+  doubleClick: 3,
+  foregroundEnter: 4,
+} as const
+
+const EvenEventTypeName = {
+  click: 'CLICK_EVENT',
+  scrollTop: 'SCROLL_TOP_EVENT',
+  scrollBottom: 'SCROLL_BOTTOM_EVENT',
+  doubleClick: 'DOUBLE_CLICK_EVENT',
+  foregroundEnter: 'FOREGROUND_ENTER_EVENT',
+} as const
+
+type EvenHubEventLike = {
+  type?: string
+  data?: unknown
+  jsonData?: Record<string, unknown>
+  textEvent?: EventRecord
+  listEvent?: EventRecord
+  audioEvent?: { audioPcm?: Uint8Array | ArrayBuffer | number[] }
+  sysEvent?: EventRecord
+}
+
+type EventRecord = Record<string, unknown>
+
+export function createInputCoalescer(
+  onInput: (input: AppInput) => void | Promise<void>,
+  delayMs = 650,
+) {
+  let pendingPress: { input: Extract<AppInput, { type: 'press' }>; timer: ReturnType<typeof setTimeout> } | undefined
+
+  function emit(input: AppInput) {
+    void onInput(input)
+  }
+
+  function flushPress() {
+    if (!pendingPress) return
+    clearTimeout(pendingPress.timer)
+    const input = pendingPress.input
+    pendingPress = undefined
+    emit(input)
+  }
+
+  return (input: AppInput) => {
+    if (input.type === 'press') {
+      if (pendingPress) {
+        clearTimeout(pendingPress.timer)
+        const index = input.index ?? pendingPress.input.index
+        pendingPress = undefined
+        emit({ type: 'doublePress', index })
+        return
+      }
+      const timer = setTimeout(() => {
+        pendingPress = undefined
+        emit(input)
+      }, delayMs)
+      pendingPress = { input, timer }
+      return
+    }
+
+    if (input.type === 'doublePress') {
+      if (pendingPress) {
+        clearTimeout(pendingPress.timer)
+        pendingPress = undefined
+      }
+      emit(input)
+      return
+    }
+
+    if (input.type !== 'audioChunk') flushPress()
+    emit(input)
+  }
+}
+
+export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | undefined {
+  const normalized = normalizeEvent(event)
+
+  if (normalized.audioEvent?.audioPcm) {
+    return { type: 'audioChunk', pcm: toUint8Array(normalized.audioEvent.audioPcm) }
+  }
+
+  if (eventTypeEquals(readEventType(normalized.sysEvent), EvenEventType.foregroundEnter, EvenEventTypeName.foregroundEnter)) {
+    return { type: 'foreground' }
+  }
+
+  const listEvent = normalized.listEvent
+  const eventType = readEventType(listEvent) ?? readEventType(normalized.textEvent)
+  const index = readSelectedIndex(listEvent)
+  if (index !== undefined && eventType === undefined) {
+    return { type: 'selectIndex', index }
+  }
+
+  if (eventType === undefined || eventTypeEquals(eventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalIndex('press', index)
+  if (eventTypeEquals(eventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalIndex('doublePress', index)
+  if (eventTypeEquals(eventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return { type: 'swipeUp' }
+  if (eventTypeEquals(eventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return { type: 'swipeDown' }
+  return undefined
+}
+
+function toUint8Array(value: Uint8Array | ArrayBuffer | number[]) {
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  return Uint8Array.from(value)
+}
+
+function normalizeEvent(event: EvenHubEventLike | unknown): EvenHubEventLike {
+  const original = isRecord(event) ? event : {}
+  try {
+    const parsed = evenHubEventFromJson(original)
+    if (parsed.listEvent || parsed.textEvent || parsed.sysEvent || parsed.audioEvent) {
+      const rawPayload = firstRecord(original.jsonData, original.data)
+      return {
+        ...parsed,
+        listEvent: parsed.listEvent ? mergeDefined(rawPayload, parsed.listEvent as unknown as EventRecord) : undefined,
+        textEvent: parsed.textEvent ? mergeDefined(rawPayload, parsed.textEvent as unknown as EventRecord) : undefined,
+        sysEvent: parsed.sysEvent ? mergeDefined(rawPayload, parsed.sysEvent as unknown as EventRecord) : undefined,
+      } as EvenHubEventLike
+    }
+  } catch {
+    // Fall through to best-effort raw host payload parsing.
+  }
+
+  const eventType = typeof original.type === 'string' ? normalizeKey(original.type) : undefined
+  const payload = firstRecord(original.jsonData, original.data, original)
+  if (eventType?.includes('LIST')) return { listEvent: payload }
+  if (eventType?.includes('TEXT')) return { textEvent: payload }
+  if (eventType?.includes('SYS') || eventType?.includes('SYSTEM')) return { sysEvent: payload }
+  if (eventType?.includes('AUDIO')) {
+    const audioPcm = pickValue(payload, ['audioPcm', 'AudioPcm', 'audio_pcm', 'audioPCM'])
+    return { audioEvent: { audioPcm: audioPcm as Uint8Array | ArrayBuffer | number[] } }
+  }
+  return original as EvenHubEventLike
+}
+
+function readEventType(record: EventRecord | undefined): number | string | undefined {
+  const value = pickValue(record, ['eventType', 'Event_Type', 'event_type', 'event', 'Event', 'action', 'Action'])
+  return typeof value === 'number' || typeof value === 'string' ? value : undefined
+}
+
+function readSelectedIndex(record: EventRecord | undefined): number | undefined {
+  const value = pickValue(record, [
+    'currentSelectItemIndex',
+    'CurrentSelect_ItemIndex',
+    'current_select_item_index',
+    'currentSelectIndex',
+    'selectedIndex',
+    'selectIndex',
+    'index',
+  ])
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function eventTypeEquals(value: number | string | undefined, numeric: number, name: string) {
+  if (value === numeric) return true
+  if (typeof value === 'string') {
+    const numericValue = Number(value)
+    if (Number.isFinite(numericValue) && numericValue === numeric) return true
+    const normalizedValue = normalizeKey(value)
+    const normalizedName = normalizeKey(name)
+    if (normalizedValue === normalizedName || normalizedValue === normalizedName.replace(/_EVENT$/, '')) return true
+    return eventTypeAliases(numeric).includes(normalizedValue)
+  }
+  return false
+}
+
+function withOptionalIndex(type: 'press' | 'doublePress', index: number | undefined): AppInput {
+  return index === undefined ? { type } : { type, index }
+}
+
+function eventTypeAliases(numeric: number) {
+  switch (numeric) {
+    case EvenEventType.click:
+      return ['CLICK', 'SINGLE_CLICK', 'PRESS', 'SINGLE_PRESS', 'TAP', 'SINGLE_TAP', 'TOUCH']
+    case EvenEventType.doubleClick:
+      return ['DOUBLE_CLICK', 'DOUBLE_PRESS', 'DOUBLE_TAP']
+    case EvenEventType.scrollTop:
+      return ['SCROLL_TOP', 'SCROLL_UP', 'SWIPE_UP', 'UP']
+    case EvenEventType.scrollBottom:
+      return ['SCROLL_BOTTOM', 'SCROLL_DOWN', 'SWIPE_DOWN', 'DOWN']
+    case EvenEventType.foregroundEnter:
+      return ['FOREGROUND_ENTER', 'FOREGROUND']
+    default:
+      return []
+  }
+}
+
+function normalizeKey(value: string) {
+  return value
+    .trim()
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+}
+
+function pickValue(record: EventRecord | undefined, keys: string[]) {
+  if (!record) return undefined
+  for (const key of keys) {
+    if (key in record) return record[key]
+    const normalizedKey = normalizeKey(key)
+    const matchedKey = Object.keys(record).find((candidate) => normalizeKey(candidate) === normalizedKey)
+    if (matchedKey) return record[matchedKey]
+  }
+  return undefined
+}
+
+function firstRecord(...values: unknown[]): EventRecord {
+  for (const value of values) {
+    if (isRecord(value)) return value
+  }
+  return {}
+}
+
+function mergeDefined(base: EventRecord, overlay: EventRecord): EventRecord {
+  const output: EventRecord = { ...base }
+  for (const [key, value] of Object.entries(overlay)) {
+    if (value !== undefined) output[key] = value
+  }
+  return output
+}
+
+function isRecord(value: unknown): value is EventRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
