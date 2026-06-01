@@ -152,6 +152,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Packaged phone builds persist frontend settings through Even App SDK local storage, with browser `localStorage` kept as the simulator/development fallback. Telegram API credentials, backend shared secret, and MTProto StringSession are restored from SDK storage before backend auth/controller startup.
 - Chat/topic list scroll input updates controller state without rebuilding the glasses page. The native list is allowed to keep moving immediately, while topic previews/message fetches update the right panel asynchronously.
 - Hardware input mapping now prefers fast raw-event parsing before the SDK normalizer. Debug event logging is default-off and throttled to one background event at a time so WebCrypto/fetch logging cannot flood the phone input path.
+- Hardware input dispatch and glasses rendering are separated from the SDK event callback. Controller state changes enqueue a deferred, coalesced render instead of calling `rebuildPageContainer` synchronously, and slow chat/topic opens keep the sidebar/message surface interactive while the right panel shows loading.
 
 ## Observed Issues and Learnings
 
@@ -180,6 +181,8 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Phone packaged WebView `localStorage` is not reliable across reopen/update even when simulator browser storage works. Use the Even Hub SDK app-side local storage for durable phone settings, and update the React settings draft after asynchronous restore so the phone UI does not show stale empty fields.
 - On-device scroll events can arrive faster than page rebuilds complete. Do not await or trigger full glasses rebuilds for plain list selection movement, and keep same-direction swipe debounce narrow enough to filter duplicates without dropping intentional repeated swipes.
 - The real G2 hardware path can be much slower than simulator if every input runs through expensive SDK normalization or debug logging. Keep input mapping synchronous work minimal, use raw payload parsing first, and make debug telemetry best-effort/throttled.
+- `setState()` must not start native page rebuilds synchronously from input handling. Even when render promises are not awaited, calling `bridge.render()` inline can still build containers and enter the native bridge before the event callback returns, making all clicks/swipes feel delayed on real hardware.
+- Avoid full-screen loading states for chat/topic open and message pagination during normal navigation. Keep the current UI navigable, show loading only in the right-side panel/status area, and ignore stale async results if the user has already swiped/backed away.
 - For device testing, the backend is not packaged into `.ehpk`. The `.ehpk` contains the frontend and manifest; the FastAPI backend must stay running and reachable from the phone/glasses path.
 - Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and the frontend's configured backend URL.
 - Simulator microphone input can produce silent/all-zero audio. Guarding that path avoids unnecessary Whisper calls and confusing transcription errors during simulator validation.

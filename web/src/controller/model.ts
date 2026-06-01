@@ -38,7 +38,7 @@ export type BoxedText = {
 export type AppState =
   | { screen: 'loading'; message: string }
   | { screen: 'auth'; mode: 'needsSetup' | 'signedOut' | 'phonePending'; message: string; phone?: string }
-  | { screen: 'sidebar'; focus: 'chats'; chats: Chat[]; selectedChatIndex: number }
+  | { screen: 'sidebar'; focus: 'chats'; chats: Chat[]; selectedChatIndex: number; status?: string }
   | { screen: 'asleep'; chats: Chat[]; selectedChatIndex: number }
   | { screen: 'newMessage'; chat: Chat; topic?: Topic; message: string; chats: Chat[]; selectedChatIndex: number }
   | { screen: 'sidebar'; focus: 'topics';
@@ -113,10 +113,12 @@ export function screenModel(state: AppState): ScreenModel {
             sidebarItems: state.chats.map(chatLabel),
             sidebarSelected: state.selectedChatIndex,
             panelTitle: selected ? sanitizeGlassesText(selected.title.slice(0, 20)) : '',
-            panelBody: selected?.lastMessage
+            panelBody: state.status
+              ? state.status
+              : selected?.lastMessage
               ? trimUtf8Bytes(sanitizeGlassesText(selected.lastMessage.slice(0, 200)), TEXT_CONTAINER_BYTE_LIMIT)
               : ' ',
-            panelFooter: 'Swipe chats | Press open',
+            panelFooter: state.status ?? 'Swipe chats | Press open',
             focus: 'sidebar',
           }
         }

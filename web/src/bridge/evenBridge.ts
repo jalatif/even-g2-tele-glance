@@ -53,7 +53,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
           })
         }, 0)
       }
-      if (input) dispatchInput(input)
+      if (input) setTimeout(() => dispatchInput(input), 0)
     })
     return adapter
   }

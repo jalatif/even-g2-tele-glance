@@ -88,6 +88,16 @@ export function createInputCoalescer(
 
 export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | undefined {
   const rawEventType = readRawEventType(event)
+  const rawRecord = readRawRecord(event)
+  const rawIndex = readSelectedIndex(rawRecord)
+  if (eventTypeEquals(rawEventType, EvenEventType.foregroundEnter, EvenEventTypeName.foregroundEnter)) {
+    return { type: 'foreground' }
+  }
+  if (eventTypeEquals(rawEventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalIndex('doublePress', rawIndex)
+  if (eventTypeEquals(rawEventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalIndex('press', rawIndex)
+  if (eventTypeEquals(rawEventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return { type: 'swipeUp' }
+  if (eventTypeEquals(rawEventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return { type: 'swipeDown' }
+
   const normalized = normalizeEvent(event)
 
   if (normalized.audioEvent?.audioPcm) {
@@ -122,6 +132,15 @@ function readRawEventType(event: EvenHubEventLike | unknown): number | string | 
     readEventType(candidate.sysEvent) ??
     readEventType(firstRecord(candidate.jsonData, candidate.data, candidate))
   )
+}
+
+function readRawRecord(event: EvenHubEventLike | unknown): EventRecord | undefined {
+  if (!isRecord(event)) return undefined
+  const candidate = event as EvenHubEventLike
+  return candidate.listEvent
+    ?? candidate.textEvent
+    ?? candidate.sysEvent
+    ?? firstRecord(candidate.jsonData, candidate.data, candidate)
 }
 
 function toUint8Array(value: Uint8Array | ArrayBuffer | number[]) {

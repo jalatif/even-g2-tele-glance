@@ -32,6 +32,7 @@ describe('TelegramAppController', () => {
     })
 
     await controller.dispatch({ type: 'press' })
+    await flushAsync()
     expect(controller.snapshot).toMatchObject({
       screen: 'auth',
       mode: 'signedOut',
@@ -64,6 +65,7 @@ describe('TelegramAppController', () => {
     const controller = new TelegramAppController(api, bridge)
 
     await controller.init()
+    await flushAsync()
     await controller.dispatch({ type: 'swipeDown' })
     await controller.dispatch({ type: 'swipeDown' })
 
@@ -183,6 +185,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'swipeDown' })
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'press' })
+    await flushAsync()
 
     expect(api.listMessages).toHaveBeenNthCalledWith(1, '2', { topicId: '10', limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[0] })
@@ -265,12 +268,34 @@ describe('TelegramAppController', () => {
     const opening = controller.dispatch({ type: 'press' })
     await flushAsync()
 
-    expect(controller.snapshot).toMatchObject({ screen: 'loading', message: 'Loading Alice...' })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'messages',
+      status: 'Loading Alice...',
+    })
 
     messagePage.resolve(messages)
     await opening
 
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+  })
+
+  it('can back out while a slow chat open is still loading', async () => {
+    const messagePage = deferred<Message[]>()
+    const api = fakeApi({ authorized: true, latestMessages: () => messagePage.promise })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    const opening = controller.dispatch({ type: 'press' })
+    await flushAsync()
+    await controller.dispatch({ type: 'doublePress' })
+
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
+
+    messagePage.resolve(messages)
+    await opening
+
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
   })
 
   it('shows loading immediately while opening a forum chat with slow topics', async () => {
@@ -283,12 +308,18 @@ describe('TelegramAppController', () => {
     const opening = controller.dispatch({ type: 'press' })
     await flushAsync()
 
-    expect(controller.snapshot).toMatchObject({ screen: 'loading', message: 'Opening Project...' })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'chats',
+      status: 'Opening Project...',
+    })
+    await controller.dispatch({ type: 'swipeUp' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0, status: undefined })
 
     topicPage.resolve(topics)
     await opening
 
-    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'topics' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0, status: undefined })
   })
 
   it('marks normal chat messages read and clears the local unread badge when viewed', async () => {

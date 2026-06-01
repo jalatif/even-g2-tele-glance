@@ -17,6 +17,8 @@ const MESSAGE_PAGE_LIMIT = 50
 const OLDER_PREFETCH_LOW_WATER = 4
 const CHAT_LIST_LIMIT = 20
 const LOADING_OLDER_STATUS = 'Loading older messages...'
+const RENDER_DEFER_MS = 0
+const RENDER_COOLDOWN_MS = 50
 const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePressDelayMs: 260,
   messagePollMs: 3000,
@@ -60,6 +62,8 @@ export class TelegramAppController {
   private selectionOnlyPressReadyAt = 0
   private renderInFlight = false
   private pendingRenderModel: ScreenModel | undefined
+  private renderTimer: ReturnType<typeof setTimeout> | undefined
+  private openRequestId = 0
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -320,15 +324,18 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'swipeUp') {
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, -1) })
+      this.openRequestId += 1
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, -1), status: undefined })
       return
     }
     if (input.type === 'swipeDown') {
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, 1) })
+      this.openRequestId += 1
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, 1), status: undefined })
       return
     }
     if (input.type === 'selectIndex') {
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: clamp(input.index, 0, state.chats.length - 1) })
+      if (input.index !== state.selectedChatIndex) this.openRequestId += 1
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: clamp(input.index, 0, state.chats.length - 1), status: undefined })
       return
     }
     if (input.type !== 'press') return
@@ -375,6 +382,7 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'swipeUp' || input.type === 'swipeDown') {
+      this.openRequestId += 1
       const delta = input.type === 'swipeUp' ? -1 : 1
       const newIndex = moveSelection(state.selectedTopicIndex, state.topics.length, delta)
       await this.setStateWithoutRender({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
@@ -382,6 +390,7 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'selectIndex') {
+      if (input.index !== state.selectedTopicIndex) this.openRequestId += 1
       const newIndex = clamp(input.index, 0, state.topics.length - 1)
       await this.setStateWithoutRender({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
       this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
@@ -396,6 +405,7 @@ export class TelegramAppController {
     const selectedState: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }> = { ...state, selectedTopicIndex: selectedIndex }
 
     if (selectedState.previewMessages?.length && selectedState.previewTopic && String(selectedState.previewTopic.id) === String(topic.id)) {
+      this.openRequestId += 1
       await this.setState({
         screen: 'sidebar', focus: 'messages',
         chats: selectedState.chats, selectedChatIndex: selectedState.selectedChatIndex,
@@ -420,10 +430,12 @@ export class TelegramAppController {
     state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, input: AppInput
   ) {
     if (input.type === 'doublePress') {
+      this.openRequestId += 1
       this.cancelPendingMessagePress()
       await this.goBackFromMessages(state)
       return
     }
+    if (state.messages.length === 0 && state.status?.startsWith('Loading')) return
     if (input.type === 'swipeUp') {
       this.cancelPendingMessagePress()
       await this.loadOlderMessages(state)
@@ -770,9 +782,19 @@ export class TelegramAppController {
   private async openChat(chat: Chat, previous: RecoverableState) {
     const chats = previous.screen === 'sidebar' ? previous.chats : []
     const selectedChatIndex = previous.screen === 'sidebar' ? previous.selectedChatIndex : 0
+    const requestId = ++this.openRequestId
     await this.run(async () => {
-      await this.setState({ screen: 'loading', message: `Opening ${chat.title}...` })
+      if (!chat.isForum) {
+        await this.openMessages(chat, undefined, previous, requestId)
+        return
+      }
+      await this.setState({
+        screen: 'sidebar', focus: 'chats',
+        chats, selectedChatIndex,
+        status: `Opening ${chat.title}...`,
+      })
       const topics = chat.isForum ? await this.api.listTopics(chat.id) : []
+      if (requestId !== this.openRequestId || !this.isStillOpeningChat(chat, selectedChatIndex)) return
       if (topics.length > 0) {
         await this.setState({
           screen: 'sidebar', focus: 'topics',
@@ -782,18 +804,31 @@ export class TelegramAppController {
         void this.fetchTopicPreview(chat, topics[0]).catch(() => undefined)
         return
       }
-      await this.openMessages(chat, undefined, previous)
+      await this.openMessages(chat, undefined, previous, requestId)
     }, previous)
   }
 
-  private async openMessages(chat: Chat, topic: Topic | undefined, previous: RecoverableState) {
+  private async openMessages(chat: Chat, topic: Topic | undefined, previous: RecoverableState, requestId = ++this.openRequestId) {
     const chats = previous.screen === 'sidebar' ? previous.chats : []
     const selectedChatIndex = previous.screen === 'sidebar' ? previous.selectedChatIndex : 0
     const topics = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.topics : undefined
     const selectedTopicIndex = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.selectedTopicIndex : undefined
     await this.run(async () => {
-      await this.setState({ screen: 'loading', message: `Loading ${topic?.title ?? chat.title}...` })
+      await this.setState({
+        screen: 'sidebar', focus: 'messages',
+        chats, selectedChatIndex,
+        chat, topic,
+        messages: [],
+        back: messageBackTarget(previous),
+        status: `Loading ${topic?.title ?? chat.title}...`,
+        newerPages: [],
+        isNewestPage: true,
+        scrollOffset: 0,
+        topics,
+        selectedTopicIndex,
+      })
       const messages = await this.api.listMessages(chat.id, { topicId: topicThreadId(topic), limit: MESSAGE_PAGE_LIMIT })
+      if (requestId !== this.openRequestId || !this.isStillOpeningMessages(chat, topic, requestId)) return
       const normalized = normalizeMessagePage(messages)
       await this.setStateWithVisibleRead({
         screen: 'sidebar', focus: 'messages',
@@ -962,6 +997,7 @@ export class TelegramAppController {
   }
 
   private async goBackFromMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
+    this.openRequestId += 1
     if (state.back) {
       await this.setState(state.back)
       return
@@ -993,6 +1029,23 @@ export class TelegramAppController {
     }
   }
 
+  private isStillOpeningChat(chat: Chat, selectedChatIndex: number) {
+    const current = this.state
+    return current.screen === 'sidebar'
+      && current.focus === 'chats'
+      && current.selectedChatIndex === selectedChatIndex
+      && String(current.chats[selectedChatIndex]?.id) === String(chat.id)
+  }
+
+  private isStillOpeningMessages(chat: Chat, topic: Topic | undefined, requestId: number) {
+    const current = this.state
+    return requestId === this.openRequestId
+      && current.screen === 'sidebar'
+      && current.focus === 'messages'
+      && String(current.chat.id) === String(chat.id)
+      && String(topicThreadId(current.topic) ?? '') === String(topicThreadId(topic) ?? '')
+  }
+
   private async setState(state: AppState) {
     this.applyState(state, true)
     this.enqueueRender(screenModel(state))
@@ -1014,23 +1067,30 @@ export class TelegramAppController {
 
   private enqueueRender(model: ScreenModel) {
     this.pendingRenderModel = model
-    if (this.renderInFlight) return
-    this.renderInFlight = true
-    void this.flushRenderQueue()
+    this.scheduleRenderFlush(RENDER_DEFER_MS)
+  }
+
+  private scheduleRenderFlush(delayMs: number) {
+    if (this.renderInFlight || this.renderTimer) return
+    this.renderTimer = setTimeout(() => {
+      this.renderTimer = undefined
+      this.renderInFlight = true
+      void this.flushRenderQueue()
+    }, delayMs)
+    const maybeNodeTimeout = this.renderTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
   }
 
   private async flushRenderQueue() {
     try {
-      while (this.pendingRenderModel) {
-        const model = this.pendingRenderModel
-        this.pendingRenderModel = undefined
-        await this.bridge.render(model)
-      }
+      const model = this.pendingRenderModel
+      this.pendingRenderModel = undefined
+      if (model) await this.bridge.render(model)
     } catch {
       // Rendering failures should not block controller state/input handling.
     } finally {
       this.renderInFlight = false
-      if (this.pendingRenderModel) this.enqueueRender(this.pendingRenderModel)
+      if (this.pendingRenderModel) this.scheduleRenderFlush(RENDER_COOLDOWN_MS)
     }
   }
 
