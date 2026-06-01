@@ -1,1 +1,1 @@
-"""Backend package for the Even G2 Telegram app."""
+"""Backend package for the G2 Tele app."""

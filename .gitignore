@@ -30,6 +30,7 @@ pnpm-debug.log*
 
 # Builds and simulator output
 *.ehpk
+*.png
 dist/
 build/
 .vite/

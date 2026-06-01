@@ -1,10 +1,11 @@
 # Even Realities Hardware Notes
 
-These notes capture hardware-specific implementation details and quirks observed while building and testing the Even G2 Telegram app. They are intentionally focused on real device behavior, not simulator-only behavior.
+These notes capture hardware-specific implementation details and quirks observed while building and testing G2 Tele. They are intentionally focused on real device behavior, not simulator-only behavior.
 
 ## Packaging And Runtime
 
 - The `.ehpk` package contains the frontend and `app.json` manifest only. The FastAPI backend is not packaged and must keep running somewhere reachable from the phone/glasses path.
+- Even Hub treats `package_id` as the app identity. Keep `package_id` stable across renamed builds; changing it from the originally installed package id can trigger manifest/package mismatch errors during install. The user-facing app name and `.ehpk` filename can change independently.
 - Start the backend with `scripts/start-backend.sh --reload` from the repo root, or `../scripts/start-backend.sh --reload` from `server/`. Do not use plain `uvicorn`; it can resolve from another active virtualenv and then fail with missing dependencies such as `ModuleNotFoundError: No module named 'telethon'`.
 - For local hardware testing, Tailscale has been the practical default route:
   - `npm run configure:tailscale --prefix web`

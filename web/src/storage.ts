@@ -15,8 +15,8 @@ export type FrontendConfig = {
 
 export const DEFAULT_FRONTEND_CONFIG: Omit<FrontendConfig, 'apiBaseUrl'> = {
   debugEventsEnabled: true,
-  chatPollMs: 5000,
-  messagePollMs: 3000,
+  chatPollMs: 10000,
+  messagePollMs: 8000,
   recordingMinDurationMs: 900,
 }
 

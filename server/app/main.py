@@ -36,7 +36,7 @@ def raise_telegram_http_error(exc: Exception) -> None:
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app_settings = settings or get_settings()
-    api = FastAPI(title="Even Telegram Backend")
+    api = FastAPI(title="G2 Tele Backend")
     debug_events: deque[dict] = deque(maxlen=100)
     api.add_middleware(
         CORSMiddleware,

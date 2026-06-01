@@ -1,6 +1,6 @@
-# Even Telegram
+# G2 Tele
 
-Even G2 glasses app for browsing recent Telegram chats/topics, reading message history, and sending short text replies from voice transcription.
+G2 Tele is an Even G2 glasses app for browsing recent Telegram chats/topics, reading message history, and sending short text replies from voice transcription.
 
 The implementation follows the project plan in [AGENTS.md](AGENTS.md).
 
@@ -54,7 +54,7 @@ Hardware package build:
 
 ```sh
 npm run build:tailscale --prefix web
-npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o even-telegram-<version>.ehpk
+npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o g2-tele-<version>.ehpk
 ```
 
 Hardware-specific implementation notes are maintained in [EVEN_REALITIES_HW.md](EVEN_REALITIES_HW.md). In particular, the G2 glasses display does not render text as a true monospace grid, so long-message blocks use native `TextContainerProperty` borders instead of text-drawn rectangles.

@@ -1,6 +1,6 @@
-# Even Telegram Backend
+# G2 Tele Backend
 
-FastAPI backend for the Even G2 Telegram app. It owns Telegram MTProto credentials,
+FastAPI backend for the G2 Tele app. It owns Telegram MTProto credentials,
 the Telethon session file, and local Whisper transcription so the glasses frontend
 only talks to normalized local API endpoints.
 

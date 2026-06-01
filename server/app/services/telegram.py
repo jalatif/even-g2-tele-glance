@@ -223,6 +223,7 @@ class TelethonTelegramService:
         self._qr_login_task: Optional[asyncio.Task] = None
         self._update_queues: set[asyncio.Queue[TelegramUpdate]] = set()
         self._updates_registered = False
+        self._entity_cache: dict[int, Any] = {}
 
     @property
     def configured(self) -> bool:
@@ -247,6 +248,15 @@ class TelethonTelegramService:
             await self._client.connect()
         await self._ensure_update_handler()
         return self._client
+
+    async def _get_entity(self, chat_id: int) -> Any:
+        cached = self._entity_cache.get(int(chat_id))
+        if cached is not None:
+            return cached
+        client = await self._get_client()
+        entity = await asyncio.wait_for(client.get_entity(chat_id), timeout=15)
+        self._entity_cache[int(chat_id)] = entity
+        return entity
 
     async def _ensure_update_handler(self) -> None:
         if self._updates_registered or self._client is None:
@@ -386,7 +396,7 @@ class TelethonTelegramService:
             raise TelegramServiceError("Telethon forum topic API is unavailable") from exc
 
         try:
-            entity = await asyncio.wait_for(client.get_entity(chat_id), timeout=15)
+            entity = await self._get_entity(chat_id)
             result = await asyncio.wait_for(
                 client(
                     GetForumTopicsRequest(
@@ -414,7 +424,7 @@ class TelethonTelegramService:
     ) -> list[MessageSummary]:
         client = await self._get_client()
         try:
-            entity = await asyncio.wait_for(client.get_entity(chat_id), timeout=15)
+            entity = await self._get_entity(chat_id)
             kwargs: dict[str, Any] = {"limit": limit}
             if before_id is not None:
                 kwargs["offset_id"] = before_id
@@ -458,7 +468,7 @@ class TelethonTelegramService:
     ) -> SendMessageResponse:
         client = await self._get_client()
         try:
-            entity = await asyncio.wait_for(client.get_entity(chat_id), timeout=15)
+            entity = await self._get_entity(chat_id)
             kwargs: dict[str, Any] = {}
             if topic_id is not None:
                 kwargs["reply_to"] = topic_id

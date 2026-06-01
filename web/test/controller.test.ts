@@ -325,6 +325,32 @@ describe('TelegramAppController', () => {
     })
   })
 
+  it('does not overlap slow message refreshes', async () => {
+    let resolveLatest: ((messages: Message[]) => void) | undefined
+    const latest = new Promise<Message[]>((resolve) => {
+      resolveLatest = resolve
+    })
+    const api = fakeApi({ authorized: true })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' })
+    const initialLatestCalls = latestMessageCallCount(api)
+    vi.mocked(api.listMessages).mockImplementation(async (_chatId, request) => {
+      if (request?.beforeId !== undefined) return []
+      return latest
+    })
+    const first = refreshVisibleMessages(controller)
+    const second = refreshVisibleMessages(controller)
+
+    expect(latestMessageCallCount(api)).toBe(initialLatestCalls + 1)
+    resolveLatest?.(reversedMessages)
+    await first
+    await second
+
+    expect(latestMessageCallCount(api)).toBe(initialLatestCalls + 1)
+  })
+
   it('refreshes root chats when a server update arrives on the chat list', async () => {
     let currentChats = chats
     const api = fakeApi({ authorized: true, chats: () => currentChats })
@@ -488,4 +514,8 @@ function refreshVisibleMessages(controller: TelegramAppController) {
 
 function refreshRootChats(controller: TelegramAppController) {
   return (controller as unknown as { refreshRootChats: () => Promise<void> }).refreshRootChats()
+}
+
+function latestMessageCallCount(api: TelegramApi) {
+  return vi.mocked(api.listMessages).mock.calls.filter(([, request]) => request?.beforeId === undefined).length
 }

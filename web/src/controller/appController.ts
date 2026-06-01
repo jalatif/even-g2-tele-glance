@@ -12,8 +12,7 @@ export interface GlassesBridge {
 }
 
 const MESSAGE_PAGE_LIMIT = 50
-const OLDER_PREFETCH_LOW_WATER = 35
-const OLDER_PREFETCH_TARGET_MESSAGES = 220
+const OLDER_PREFETCH_LOW_WATER = 4
 const CHAT_LIST_LIMIT = 20
 const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePressDelayMs: 260,
@@ -47,6 +46,8 @@ export class TelegramAppController {
       promise: Promise<boolean>
     }
     | undefined
+  private rootRefreshInFlight = false
+  private messageRefreshInFlight = false
 
   constructor(
     private readonly api: TelegramApi,
@@ -662,8 +663,8 @@ export class TelegramAppController {
     if (state.screen !== 'messages') return
     const maxOffset = maxScrollOffset(state.messages)
     const remainingLoadedScroll = maxOffset - (state.scrollOffset ?? 0)
-    if (remainingLoadedScroll > OLDER_PREFETCH_LOW_WATER && state.messages.length >= OLDER_PREFETCH_TARGET_MESSAGES) return
-    void this.prefetchOlderMessages(state, { chain: true }).catch(() => undefined)
+    if (remainingLoadedScroll > OLDER_PREFETCH_LOW_WATER) return
+    void this.prefetchOlderMessages(state).catch(() => undefined)
   }
 
   private async prefetchOlderMessages(state: Extract<AppState, { screen: 'messages' }>, options: { chain?: boolean } = {}) {
@@ -712,7 +713,9 @@ export class TelegramAppController {
   private continueOlderPrefetch(key: string) {
     const current = this.state
     if (current.screen !== 'messages' || messageThreadKey(current) !== key) return
-    if (current.messages.length >= OLDER_PREFETCH_TARGET_MESSAGES) return
+    const maxOffset = maxScrollOffset(current.messages)
+    const remainingLoadedScroll = maxOffset - (current.scrollOffset ?? 0)
+    if (remainingLoadedScroll > OLDER_PREFETCH_LOW_WATER) return
     void this.prefetchOlderMessages(current, { chain: true }).catch(() => undefined)
   }
 
@@ -799,32 +802,38 @@ export class TelegramAppController {
   }
 
   private async refreshRootChats() {
+    if (this.rootRefreshInFlight) return
     const state = this.state
     if (state.screen !== 'chats' && state.screen !== 'asleep' && state.screen !== 'newMessage') return
-    const chats = await this.api.listChats(CHAT_LIST_LIMIT).catch(() => undefined)
-    if (!chats) return
+    this.rootRefreshInFlight = true
+    try {
+      const chats = await this.api.listChats(CHAT_LIST_LIMIT).catch(() => undefined)
+      if (!chats) return
 
-    const activity = this.findNewChatActivity(chats)
-    this.rememberChats(chats)
+      const activity = this.findNewChatActivity(chats)
+      this.rememberChats(chats)
 
-    const current = this.state
-    if (current.screen !== 'chats' && current.screen !== 'asleep' && current.screen !== 'newMessage') return
+      const current = this.state
+      if (current.screen !== 'chats' && current.screen !== 'asleep' && current.screen !== 'newMessage') return
 
-    const selectedIndex = clamp(current.selectedIndex, 0, Math.max(0, chats.length - 1))
-    if (!activity) {
-      if (current.screen === 'chats') await this.setState({ ...current, chats, selectedIndex })
-      return
+      const selectedIndex = clamp(current.selectedIndex, 0, Math.max(0, chats.length - 1))
+      if (!activity) {
+        if (current.screen === 'chats') await this.setState({ ...current, chats, selectedIndex })
+        return
+      }
+
+      const topic = activity.chat.isForum ? await this.findUnreadTopic(activity.chat).catch(() => undefined) : undefined
+      await this.setState({
+        screen: 'newMessage',
+        chat: activity.chat,
+        topic,
+        message: activity.chat.lastMessage ?? '',
+        chats,
+        selectedIndex,
+      })
+    } finally {
+      this.rootRefreshInFlight = false
     }
-
-    const topic = activity.chat.isForum ? await this.findUnreadTopic(activity.chat).catch(() => undefined) : undefined
-    await this.setState({
-      screen: 'newMessage',
-      chat: activity.chat,
-      topic,
-      message: activity.chat.lastMessage ?? '',
-      chats,
-      selectedIndex,
-    })
   }
 
   private findNewChatActivity(chats: Chat[]) {
@@ -848,21 +857,27 @@ export class TelegramAppController {
   }
 
   private async refreshVisibleMessages() {
+    if (this.messageRefreshInFlight) return
     const state = this.state
     if (state.screen !== 'messages' && state.screen !== 'sent') return
-    const messages = await this.refreshLatestMessages(state).catch(() => undefined)
-    if (!messages || messages.length === 0) return
-    const current = this.state
-    if (current.screen !== 'messages' && current.screen !== 'sent') return
+    this.messageRefreshInFlight = true
+    try {
+      const messages = await this.refreshLatestMessages(state).catch(() => undefined)
+      if (!messages || messages.length === 0) return
+      const current = this.state
+      if (current.screen !== 'messages' && current.screen !== 'sent') return
 
-    const merged = normalizeMessagePage([...current.messages, ...messages])
-    if (!hasMessageChanges(current.messages, merged)) return
-    if (current.screen === 'messages') {
-      await this.setState({ ...current, messages: merged, cursor: oldestMessageId(merged), status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
-      this.maybePrefetchOlder()
-      return
+      const merged = normalizeMessagePage([...current.messages, ...messages])
+      if (!hasMessageChanges(current.messages, merged)) return
+      if (current.screen === 'messages') {
+        await this.setState({ ...current, messages: merged, cursor: oldestMessageId(merged), status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
+        this.maybePrefetchOlder()
+        return
+      }
+      await this.setState({ ...current, messages: merged, status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
+    } finally {
+      this.messageRefreshInFlight = false
     }
-    await this.setState({ ...current, messages: merged, status: hasIncomingChange(current.messages, merged) ? 'New reply' : undefined, newerPages: [], isNewestPage: true, scrollOffset: 0 })
   }
 }
 

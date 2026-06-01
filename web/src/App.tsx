@@ -11,13 +11,13 @@ function AppShell() {
   const { state, startupError } = useApp()
   const title = state.screen === 'messages'
     ? state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title
-    : 'Telegram'
+    : 'G2 Tele'
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div>
-          <p className="eyebrow">Even Telegram</p>
+          <p className="eyebrow">G2 Tele</p>
           <h1>{route === 'settings' ? 'Settings' : title}</h1>
         </div>
         <button className="icon-button" type="button" onClick={() => setRoute(route === 'settings' ? 'chat' : 'settings')} aria-label={route === 'settings' ? 'Back to chat' : 'Open settings'}>

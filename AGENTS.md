@@ -1,4 +1,4 @@
-# Even G2 Telegram Glasses App Plan
+# G2 Tele Glasses App Plan
 
 ## Summary
 
@@ -106,7 +106,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
   - `npm run typecheck --prefix web`
   - `npm test --prefix web`
   - `npm run build:tailscale --prefix web`
-  - `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o even-telegram-0.1.2.ehpk`
+- `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o g2-tele-0.1.2.ehpk`
 - Even Hub simulator smoke validation passes for startup rendering, automation health, screenshot capture, and click input. With no Telegram credentials configured, the expected QR-login error screen renders cleanly.
 - Telegram app credentials have been configured locally in ignored `server/.env`.
 - QR login now uses a backend pending-login state, background Telethon wait task, status endpoint, and local PNG QR endpoint. Simulator validation confirms the browser/debug view shows a scannable QR code.
@@ -127,7 +127,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Tailscale is the default device-test backend route. `TAILSCALE_ENABLED=true` enables CORS for Tailscale 100.64.0.0/10 origins, and `npm run configure:tailscale --prefix web` writes `web/.env.local` plus updates `app.json` with the detected backend origin.
 - Device input mapping now runs raw Even Hub events through the SDK parser and a fallback mapper that accepts proto-style keys, snake_case keys, numeric strings, and press/tap aliases. This is intended to handle real G2 payloads where list scrolling works but single-click selection is not shaped like the simulator event.
 - The app manifest version has been bumped to `0.1.2` so the packaged `.ehpk` metadata now matches the file name.
-- A hardware-test package has been built at `even-telegram-0.1.2.ehpk` after the device click-mapping fix.
+- A hardware-test package has been built at `g2-tele-0.1.2.ehpk` after the device click-mapping fix.
 - Real Telegram login has succeeded and `server/data/telegram.session` is present locally.
 - Real chat loading, forum topic listing, and forum topic message loading have been validated against the Akira Agents group. For Telethon 1.43, forum message history uses the forum `topic.id`, not `topMessageId`; `topMessageId` remains part of the DTO for display/debug context.
 - Frontend now ignores too-short/all-zero simulator audio recordings instead of invoking Whisper on silent audio.
@@ -153,7 +153,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 
 ## Pending Checklist
 
-- Validate `even-telegram-0.1.2.ehpk` on real G2 hardware to confirm the broader click-event mapper fixes chat/topic selection.
+- Validate `g2-tele-0.1.2.ehpk` on real G2 hardware to confirm the broader click-event mapper fixes chat/topic selection.
 - If hardware clicks still fail, add a temporary debug screen or backend log endpoint that displays the raw last Even Hub event payload on the glasses/browser.
 - Add real Telegram update subscriptions or a server-sent events/WebSocket stream for incoming messages and typing indicators. Current behavior is polling/checking status, not true live typing presence.
 - Add production-grade backend process management for device testing, such as a launch script, `uvicorn` service wrapper, health check, and clearer restart instructions.
