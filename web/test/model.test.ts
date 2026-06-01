@@ -73,6 +73,24 @@ describe('screenModel', () => {
     }
   })
 
+  it('shows loading text in the message panel while older history is loading', () => {
+    const state: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: 'current page' }],
+      status: 'Loading older messages...',
+    }
+
+    const model = screenModel(state)
+
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelBody).toBe('Loading older messages...')
+      expect(model.panelBox).toBeUndefined()
+    }
+  })
+
   it('keeps boxed long-message pages separate from adjacent short messages', () => {
     const state: AppState = {
       screen: 'sidebar', focus: 'messages',

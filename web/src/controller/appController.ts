@@ -14,6 +14,7 @@ export interface GlassesBridge {
 const MESSAGE_PAGE_LIMIT = 50
 const OLDER_PREFETCH_LOW_WATER = 4
 const CHAT_LIST_LIMIT = 20
+const LOADING_OLDER_STATUS = 'Loading older messages...'
 const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePressDelayMs: 260,
   messagePollMs: 3000,
@@ -819,14 +820,24 @@ export class TelegramAppController {
       return
     }
 
-    await this.run(async () => {
-      await this.prefetchOlderMessages(state)
-      const current = this.state
-      if (current.screen !== 'sidebar' || current.focus !== 'messages') return
-      const offset = Math.min((current.scrollOffset ?? 0) + 1, maxScrollOffset(current.messages))
-      await this.setState({ ...current, scrollOffset: offset, status: 'Older messages', isNewestPage: false })
-      this.maybePrefetchOlder()
-    }, state)
+    await this.setState({ ...state, status: LOADING_OLDER_STATUS, isNewestPage: false })
+    void this.loadOlderMessagesInBackground(state).catch(() => undefined)
+  }
+
+  private async loadOlderMessagesInBackground(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
+    const key = messageThreadKey(state)
+    const cursor = String(state.cursor ?? '')
+    await this.prefetchOlderMessages(state)
+    const current = this.state
+    if (current.screen !== 'sidebar' || current.focus !== 'messages' || messageThreadKey(current) !== key || String(current.cursor ?? '') === cursor) {
+      if (current.screen === 'sidebar' && current.focus === 'messages' && messageThreadKey(current) === key && current.status === LOADING_OLDER_STATUS) {
+        await this.setState({ ...current, status: 'No older messages' })
+      }
+      return
+    }
+    const offset = Math.min((current.scrollOffset ?? 0) + 1, maxScrollOffset(current.messages))
+    await this.setState({ ...current, scrollOffset: offset, status: 'Older messages', isNewestPage: false })
+    this.maybePrefetchOlder()
   }
 
   private async loadNewerMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {

@@ -149,6 +149,7 @@ export function screenModel(state: AppState): ScreenModel {
         }
         case 'messages': {
           const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
+          const loadingBody = loadingMessageBody(state.status)
           return {
             kind: 'sidebar',
             title: sanitizeGlassesText(state.topic ? state.topic.title.slice(0, 20) : state.chat.title.slice(0, 20)),
@@ -158,9 +159,9 @@ export function screenModel(state: AppState): ScreenModel {
               : state.chats.map(chatLabel),
             sidebarSelected: state.topic ? (state.selectedTopicIndex ?? 0) : state.selectedChatIndex,
             panelTitle: '',
-            panelBody: msg.box ? '' : msg.body,
+            panelBody: loadingBody ?? (msg.box ? '' : msg.body),
             panelFooter: footerText(state.status, 'Click record | Double click back'),
-            panelBox: msg.box,
+            panelBox: loadingBody ? undefined : msg.box,
             focus: 'panel',
           }
         }
@@ -280,6 +281,10 @@ function topicLabel(topic: Topic) {
 
 function footerText(status: string | undefined, controls: string) {
   return sanitizeGlassesText(status ? `${status} | ${controls}` : controls)
+}
+
+function loadingMessageBody(status: string | undefined) {
+  return status?.startsWith('Loading ') ? sanitizeGlassesText(status) : undefined
 }
 
 function formatMessages(messages: Message[], scrollOffset = 0) {

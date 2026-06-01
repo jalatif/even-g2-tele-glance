@@ -363,7 +363,8 @@ describe('TelegramAppController', () => {
 
   it('loads older messages into the same chronological buffer', async () => {
     const olderMessages: Message[] = [{ id: '80', sender: 'Alice', text: 'older page' }]
-    const api = fakeApi({ authorized: true, olderMessages })
+    const olderPage = deferred<Message[]>()
+    const api = fakeApi({ authorized: true, olderMessages: () => olderPage.promise })
     const controller = new TelegramAppController(api, fakeBridge())
 
     await controller.init()
@@ -371,6 +372,16 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'swipeUp' })
 
     expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      focus: 'messages',
+      messages,
+      status: 'Loading older messages...',
+    })
+
+    olderPage.resolve(olderMessages)
+    await flushAsync()
+
     expect(controller.snapshot).toMatchObject({
       screen: 'sidebar',
       focus: 'messages',
@@ -400,6 +411,7 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeUp' })
+    await flushAsync()
     await controller.dispatch({ type: 'swipeUp' })
     await controller.dispatch({ type: 'swipeUp' })
     await controller.dispatch({ type: 'swipeDown' })
@@ -423,6 +435,7 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeUp' })
+    await flushAsync()
     await controller.dispatch({ type: 'swipeUp' })
     await controller.dispatch({ type: 'swipeUp' })
     await refreshVisibleMessages(controller)
@@ -446,6 +459,7 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeUp' })
+    await flushAsync()
     latestMessages = [newReply, ...reversedMessages]
     await refreshVisibleMessages(controller)
 
@@ -641,9 +655,12 @@ describe('TelegramAppController', () => {
   })
 })
 
-function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[]); olderMessages?: Message[]; chats?: Chat[] | (() => Chat[]); topics?: Topic[] }): TelegramApi {
+function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[]); olderMessages?: Message[] | (() => Message[] | Promise<Message[]>); chats?: Chat[] | (() => Chat[]); topics?: Topic[] }): TelegramApi {
   const listMessages = vi.fn(async (_chatId, request) => {
-    if (request?.beforeId !== undefined) return options.olderMessages ?? []
+    if (request?.beforeId !== undefined) {
+      if (typeof options.olderMessages === 'function') return options.olderMessages()
+      return options.olderMessages ?? []
+    }
     if (typeof options.latestMessages === 'function') return options.latestMessages()
     return options.latestMessages ?? messages
   })
@@ -708,4 +725,14 @@ function latestMessageCallCount(api: TelegramApi) {
 
 function flushAsync() {
   return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
 }
