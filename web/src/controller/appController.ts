@@ -18,7 +18,9 @@ const OLDER_PREFETCH_LOW_WATER = 4
 const CHAT_LIST_LIMIT = 20
 const LOADING_OLDER_STATUS = 'Loading older messages...'
 const RENDER_DEFER_MS = 0
-const RENDER_COOLDOWN_MS = 50
+const RENDER_COOLDOWN_MS = 120
+const INPUT_QUIET_MS = 900
+const TOPIC_PREVIEW_IDLE_MS = 1000
 const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePressDelayMs: 260,
   messagePollMs: 3000,
@@ -56,9 +58,13 @@ export class TelegramAppController {
   private rootRefreshInFlight = false
   private messageRefreshInFlight = false
   private topicPreviewDebounce: ReturnType<typeof setTimeout> | undefined
+  private deferredRootRefreshTimer: ReturnType<typeof setTimeout> | undefined
+  private deferredMessageRefreshTimer: ReturnType<typeof setTimeout> | undefined
   private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
   private topicPreviewInFlight = new Set<string>()
   private readAckMaxIds = new Map<string, Id>()
+  private pendingReadAcks = new Map<string, { chat: Chat; topic?: Topic; maxId: Id }>()
+  private readAckFlushTimer: ReturnType<typeof setTimeout> | undefined
   private selectionOnlyPressReadyAt = 0
   private renderInFlight = false
   private pendingRenderState: AppState | undefined
@@ -66,6 +72,7 @@ export class TelegramAppController {
   private notifyTimer: ReturnType<typeof setTimeout> | undefined
   private notifyPending = false
   private openRequestId = 0
+  private inputQuietUntil = 0
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -137,6 +144,10 @@ export class TelegramAppController {
   }
 
   async handleTelegramUpdate(update: TelegramUpdate) {
+    if (this.isInputQuiet()) {
+      this.deferTelegramUpdate(update)
+      return
+    }
     const state = this.state
     if (state.screen === 'sidebar' && state.focus === 'chats' || state.screen === 'asleep' || state.screen === 'newMessage') {
       await this.refreshRootChats()
@@ -175,6 +186,7 @@ export class TelegramAppController {
   }
 
   async dispatch(input: AppInput) {
+    if (input.type !== 'audioChunk') this.noteUserInput()
     if (input.type === 'foreground') {
       this.cancelPendingMessagePress()
       if (this.state.screen === 'asleep') {
@@ -458,8 +470,12 @@ export class TelegramAppController {
     this.cancelTopicDebounce()
     this.topicPreviewDebounce = setTimeout(() => {
       this.topicPreviewDebounce = undefined
+      if (this.isInputQuiet()) {
+        this.debounceTopicPreviewFetch(chat, topics, selectedTopicIndex)
+        return
+      }
       void this.fetchTopicPreview(chat, topic).catch(() => undefined)
-    }, 300)
+    }, this.topicPreviewDelayMs())
     const maybeNodeTimeout = this.topicPreviewDebounce as unknown as { unref?: () => void }
     maybeNodeTimeout.unref?.()
   }
@@ -546,7 +562,6 @@ export class TelegramAppController {
     ctx: { chats: Chat[]; selectedChatIndex: number },
   ) {
     this.lastMessagePressAt = Date.now()
-    await this.bridge.setAudioEnabled(true)
     await this.setState({
       screen: 'sidebarRecording', focus: 'messages',
       chats: ctx.chats, selectedChatIndex: ctx.selectedChatIndex,
@@ -561,13 +576,14 @@ export class TelegramAppController {
       chunks: [],
       startedAt: this.lastMessagePressAt,
     })
+    void this.bridge.setAudioEnabled(true).catch(() => undefined)
   }
 
   private async handleSidebarRecording(
     state: Extract<AppState, { screen: 'sidebarRecording' }>, input: AppInput
   ) {
     if (input.type === 'doublePress') {
-      await this.bridge.setAudioEnabled(false)
+      void this.bridge.setAudioEnabled(false).catch(() => undefined)
       if (Date.now() - state.startedAt < this.runtimeConfig.recordingMinDurationMs) {
         await this.setState({
           screen: 'sidebar', focus: 'messages',
@@ -598,7 +614,6 @@ export class TelegramAppController {
       return
     }
     if (input.type !== 'press') return
-    await this.bridge.setAudioEnabled(false)
     await this.setState({
       screen: 'sidebarTranscribing', focus: 'messages',
       chats: state.chats, selectedChatIndex: state.selectedChatIndex,
@@ -611,6 +626,7 @@ export class TelegramAppController {
       isNewestPage: state.isNewestPage,
       scrollOffset: state.scrollOffset,
     })
+    void this.bridge.setAudioEnabled(false).catch(() => undefined)
     await this.run(async () => {
       if (!hasRecordableAudio(state.chunks)) {
         await this.setState({
@@ -803,7 +819,7 @@ export class TelegramAppController {
           chats, selectedChatIndex,
           chat, topics, selectedTopicIndex: 0,
         })
-        void this.fetchTopicPreview(chat, topics[0]).catch(() => undefined)
+        this.debounceTopicPreviewFetch(chat, topics, 0)
         return
       }
       await this.openMessages(chat, undefined, previous, requestId)
@@ -940,6 +956,7 @@ export class TelegramAppController {
   private maybePrefetchOlder() {
     const state = this.state
     if (state.screen !== 'sidebar' || state.focus !== 'messages') return
+    if (this.isInputQuiet()) return
     const maxOffset = maxScrollOffset(state.messages)
     const remainingLoadedScroll = maxOffset - (state.scrollOffset ?? 0)
     if (remainingLoadedScroll > OLDER_PREFETCH_LOW_WATER) return
@@ -1122,7 +1139,7 @@ export class TelegramAppController {
     }
     if (this.messagePoll) return
     this.messagePoll = setInterval(() => {
-      void this.refreshVisibleMessages()
+      void this.refreshVisibleMessages({ background: true })
     }, this.runtimeConfig.messagePollMs)
     const maybeNodeInterval = this.messagePoll as unknown as { unref?: () => void }
     maybeNodeInterval.unref?.()
@@ -1143,7 +1160,7 @@ export class TelegramAppController {
     }
     if (this.chatPoll) return
     this.chatPoll = setInterval(() => {
-      void this.refreshRootChats()
+      void this.refreshRootChats({ background: true })
     }, this.runtimeConfig.chatPollMs)
     const maybeNodeInterval = this.chatPoll as unknown as { unref?: () => void }
     maybeNodeInterval.unref?.()
@@ -1155,8 +1172,12 @@ export class TelegramAppController {
     this.chatPoll = undefined
   }
 
-  private async refreshRootChats() {
+  private async refreshRootChats(options: { background?: boolean } = {}) {
     if (this.rootRefreshInFlight) return
+    if (options.background && this.isInputQuiet()) {
+      this.deferRootRefresh()
+      return
+    }
     const state = this.state
     if ((state.screen !== 'sidebar' || state.focus !== 'chats') && state.screen !== 'asleep' && state.screen !== 'newMessage') return
     this.rootRefreshInFlight = true
@@ -1215,8 +1236,12 @@ export class TelegramAppController {
     return topics.find((topic) => (topic.unreadCount ?? 0) > 0) ?? topics[0]
   }
 
-  private async refreshVisibleMessages() {
+  private async refreshVisibleMessages(options: { background?: boolean } = {}) {
     if (this.messageRefreshInFlight) return
+    if (options.background && this.isInputQuiet()) {
+      this.deferMessageRefresh()
+      return
+    }
     const state = this.state
     if ((state.screen !== 'sidebar' || state.focus !== 'messages') && state.screen !== 'sidebarSent') return
     this.messageRefreshInFlight = true
@@ -1268,7 +1293,75 @@ export class TelegramAppController {
   private sendReadAck(chat: Chat, topic: Topic | undefined, maxId: Id) {
     const key = messageThreadKey({ chat, topic })
     this.readAckMaxIds.set(key, maxId)
-    void this.api.markRead(chat.id, { topicId: topicThreadId(topic), maxId }).catch(() => undefined)
+    this.pendingReadAcks.set(key, { chat, topic, maxId })
+    this.scheduleReadAckFlush()
+  }
+
+  isInputQuiet() {
+    return Date.now() < this.inputQuietUntil
+  }
+
+  private noteUserInput() {
+    this.inputQuietUntil = Math.max(this.inputQuietUntil, Date.now() + INPUT_QUIET_MS)
+  }
+
+  private msUntilQuiet() {
+    return Math.max(0, this.inputQuietUntil - Date.now())
+  }
+
+  private topicPreviewDelayMs() {
+    return Math.max(TOPIC_PREVIEW_IDLE_MS, this.msUntilQuiet() + TOPIC_PREVIEW_IDLE_MS)
+  }
+
+  private deferTelegramUpdate(update: TelegramUpdate) {
+    const state = this.state
+    if (state.screen === 'sidebar' && state.focus === 'messages' && updateMatchesThread(update, state)) {
+      this.deferMessageRefresh()
+      return
+    }
+    this.deferRootRefresh()
+  }
+
+  private deferRootRefresh() {
+    if (this.deferredRootRefreshTimer) return
+    this.deferredRootRefreshTimer = setTimeout(() => {
+      this.deferredRootRefreshTimer = undefined
+      void this.refreshRootChats()
+    }, this.msUntilQuiet())
+    const maybeNodeTimeout = this.deferredRootRefreshTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  }
+
+  private deferMessageRefresh() {
+    if (this.deferredMessageRefreshTimer) return
+    this.deferredMessageRefreshTimer = setTimeout(() => {
+      this.deferredMessageRefreshTimer = undefined
+      void this.refreshVisibleMessages()
+    }, this.msUntilQuiet())
+    const maybeNodeTimeout = this.deferredMessageRefreshTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  }
+
+  private scheduleReadAckFlush() {
+    if (this.readAckFlushTimer) return
+    this.readAckFlushTimer = setTimeout(() => {
+      this.readAckFlushTimer = undefined
+      this.flushReadAcks()
+    }, this.msUntilQuiet())
+    const maybeNodeTimeout = this.readAckFlushTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  }
+
+  private flushReadAcks() {
+    if (this.isInputQuiet()) {
+      this.scheduleReadAckFlush()
+      return
+    }
+    const pending = Array.from(this.pendingReadAcks.values())
+    this.pendingReadAcks.clear()
+    for (const ack of pending) {
+      void this.api.markRead(ack.chat.id, { topicId: topicThreadId(ack.topic), maxId: ack.maxId }).catch(() => undefined)
+    }
   }
 }
 

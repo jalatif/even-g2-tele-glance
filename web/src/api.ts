@@ -71,6 +71,7 @@ export class HttpTelegramApi implements TelegramApi {
   constructor(
     private readonly baseUrl = defaultApiBaseUrl(),
     private readonly authConfig: () => TelegramAuthConfig = () => ({}),
+    private readonly shouldDeferUpdateProcessing: () => boolean = () => false,
   ) {}
 
   async authStatus(): Promise<AuthStatus> {
@@ -204,6 +205,7 @@ export class HttpTelegramApi implements TelegramApi {
           .map((line) => line.slice(5).trimStart())
           .join('\n')
         if (!data) continue
+        await this.waitForUpdateProcessing(signal)
         const decodedData = await this.decryptEventData(data)
         if (eventName === 'message') {
           onUpdate(JSON.parse(decodedData) as TelegramUpdate)
@@ -264,6 +266,12 @@ export class HttpTelegramApi implements TelegramApi {
   private sttBaseUrl() {
     return this.authConfig().sttBaseUrl?.trim() || this.baseUrl
   }
+
+  private async waitForUpdateProcessing(signal: AbortSignal) {
+    while (!signal.aborted && this.shouldDeferUpdateProcessing()) {
+      await sleep(100)
+    }
+  }
 }
 
 function readableErrorText(status: number, text: string) {
@@ -275,4 +283,12 @@ function readableErrorText(status: number, text: string) {
     return text
   }
   return text
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, ms)
+    const maybeNodeTimeout = timeout as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  })
 }

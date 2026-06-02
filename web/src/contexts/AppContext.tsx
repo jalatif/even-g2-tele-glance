@@ -69,7 +69,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSettings(restoredSettings)
         saveFrontendConfig(restoredSettings)
         await saveFrontendConfigToAppStorage(appStorageRef.current, restoredSettings)
-        const api = new HttpTelegramApi(restoredSettings.apiBaseUrl, () => settingsRef.current)
+        const api = new HttpTelegramApi(
+          restoredSettings.apiBaseUrl,
+          () => settingsRef.current,
+          () => controllerRef.current?.isInputQuiet() ?? false,
+        )
         apiRef.current = api
         const controller = new TelegramAppController(
           api,

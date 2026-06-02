@@ -3,6 +3,7 @@ import type { TelegramAuthConfig } from './api'
 const AUTH_AAD = new TextEncoder().encode('teleglance-auth-v1')
 const AUTH_SALT = new TextEncoder().encode('TeleGlance encrypted auth v1')
 const AUTH_PBKDF2_ITERATIONS = 200000
+const derivedKeyCache = new Map<string, Promise<CryptoKey>>()
 
 export async function encryptedTelegramAuthHeader(config: TelegramAuthConfig): Promise<string | null> {
   const sharedSecret = config.backendSharedSecret?.trim()
@@ -63,6 +64,14 @@ async function deriveKeyOrThrow(sharedSecret: string) {
   if (!globalThis.crypto?.subtle) {
     throw new Error('Encrypted backend auth requires WebCrypto. Use the packaged app, localhost, HTTPS, or a browser with WebCrypto support.')
   }
+  const cached = derivedKeyCache.get(sharedSecret)
+  if (cached) return cached
+  const keyPromise = deriveKeyMaterial(sharedSecret)
+  derivedKeyCache.set(sharedSecret, keyPromise)
+  return keyPromise
+}
+
+async function deriveKeyMaterial(sharedSecret: string) {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(sharedSecret),

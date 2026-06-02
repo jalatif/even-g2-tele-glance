@@ -165,13 +165,18 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'topics', selectedTopicIndex: 0 })
   })
 
-  it('starts preview loading for the first topic immediately after opening a forum chat', async () => {
+  it('defers preview loading for the first topic while input is quiet', async () => {
     const api = fakeApi({ authorized: true })
     const controller = new TelegramAppController(api, fakeBridge())
 
     await controller.init()
     await controller.dispatch({ type: 'swipeDown' })
     await controller.dispatch({ type: 'press' })
+
+    expect(api.listMessages).not.toHaveBeenCalledWith('2', { topicId: '10', limit: 50 })
+
+    clearInputQuiet(controller)
+    await fetchTopicPreview(controller, chats[1], topics[0])
 
     expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', limit: 50 })
   })
@@ -330,6 +335,7 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     await flushAsync()
+    flushReadAcks(controller)
 
     expect(api.markRead).toHaveBeenCalledWith('1', { topicId: undefined, maxId: 100 })
     expect(controller.snapshot).toMatchObject({
@@ -348,7 +354,10 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'swipeDown' })
     await controller.dispatch({ type: 'press' })
+    clearInputQuiet(controller)
+    await fetchTopicPreview(controller, chats[1], unreadTopics[0])
     await flushAsync()
+    flushReadAcks(controller)
 
     expect(api.markRead).toHaveBeenCalledWith('2', { topicId: '10', maxId: 100 })
     expect(controller.snapshot).toMatchObject({
@@ -367,7 +376,10 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'swipeDown' })
     await controller.dispatch({ type: 'press' })
+    clearInputQuiet(controller)
+    await fetchTopicPreview(controller, chats[1], unreadTopics[0])
     await flushAsync()
+    flushReadAcks(controller)
 
     expect(api.markRead).toHaveBeenCalledWith('2', { topicId: '10', maxId: 100 })
     expect(controller.snapshot).toMatchObject({
@@ -478,7 +490,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'swipeDown' })
 
-    expect(api.listMessages).toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
+    expect(api.listMessages).not.toHaveBeenCalledWith('1', { topicId: undefined, beforeId: 100, limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', messages, isNewestPage: true })
   })
 
@@ -540,6 +552,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'swipeUp' })
     await flushAsync()
     latestMessages = [newReply, ...reversedMessages]
+    clearInputQuiet(controller)
     await refreshVisibleMessages(controller)
 
     expect(controller.snapshot).toMatchObject({
@@ -561,6 +574,7 @@ describe('TelegramAppController', () => {
     await controller.init()
     await controller.dispatch({ type: 'press' })
     latestMessages = [newReply, ...reversedMessages]
+    clearInputQuiet(controller)
     await controller.handleTelegramUpdate({ type: 'message', chatId: '1', message: newReply })
 
     expect(controller.snapshot).toMatchObject({
@@ -583,6 +597,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await controller.dispatch({ type: 'press' })
     latestMessages = [newReply, ...messages]
+    clearInputQuiet(controller)
     await controller.handleTelegramUpdate({ type: 'message', chatId: '2', topicId: '101', message: newReply })
 
     expect(controller.snapshot).toMatchObject({
@@ -603,6 +618,7 @@ describe('TelegramAppController', () => {
 
     await controller.init()
     await controller.dispatch({ type: 'press' })
+    clearInputQuiet(controller)
     const initialLatestCalls = latestMessageCallCount(api)
     vi.mocked(api.listMessages).mockImplementation(async (_chatId, request) => {
       if (request?.beforeId !== undefined) return []
@@ -626,6 +642,7 @@ describe('TelegramAppController', () => {
 
     await controller.init()
     currentChats = [{ ...chats[0], unreadCount: 1, lastMessage: 'streamed root' }, chats[1]]
+    clearInputQuiet(controller)
     await controller.handleTelegramUpdate({ type: 'message', chatId: '1', message: { id: '200', sender: 'Alice', text: 'streamed root' } })
 
     expect(controller.snapshot).toMatchObject({
@@ -806,6 +823,15 @@ function fetchTopicPreview(controller: TelegramAppController, chat: Chat, topic:
 
 function openMessages(controller: TelegramAppController, chat: Chat, topic: Topic | undefined, previous: unknown) {
   return (controller as unknown as { openMessages: (chat: Chat, topic: Topic | undefined, previous: unknown) => Promise<void> }).openMessages(chat, topic, previous)
+}
+
+function clearInputQuiet(controller: TelegramAppController) {
+  ;(controller as unknown as { inputQuietUntil: number }).inputQuietUntil = 0
+}
+
+function flushReadAcks(controller: TelegramAppController) {
+  clearInputQuiet(controller)
+  ;(controller as unknown as { flushReadAcks: () => void }).flushReadAcks()
 }
 
 function latestMessageCallCount(api: TelegramApi) {
