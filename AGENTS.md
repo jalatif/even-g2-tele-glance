@@ -154,11 +154,13 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Hardware input mapping now prefers fast raw-event parsing before the SDK normalizer. Debug event logging is default-off and throttled to one background event at a time so WebCrypto/fetch logging cannot flood the phone input path.
 - Hardware input dispatch and glasses rendering are separated from the SDK event callback. Controller state changes enqueue a deferred, coalesced render instead of calling `rebuildPageContainer` synchronously, and slow chat/topic opens keep the sidebar/message surface interactive while the right panel shows loading.
 - Controller state changes also defer React phone UI notifications and screen-model formatting. Sidebar-focus pages use a visible native Even Hub list so selection movement is firmware-local instead of requiring a text-container rebuild for every up/down input.
+- Even Hub bridge listeners are guarded by an active-listener token and disposed from `AppProvider` cleanup. This prevents React dev StrictMode or simulator SDK unsubscribe gaps from leaving stale listeners that consume the first input or duplicate subsequent inputs.
 - Glasses input now opens a short interaction quiet window. During that window, polling refreshes, update-stream processing, topic preview fetches, older-history prefetch, and read acknowledgements are deferred; audio start/stop and visible UI state changes do not await native bridge calls.
 - Startup now prefetches latest message pages for the first five visible chats, and for forum chats it prefetches the first five visible topics plus their latest message pages. Prefetches are cached, deduped, and paced with short yields so opening common threads is faster without making startup input synchronous.
 - Native list click/select events may include only the selected item name. Chat/topic opening now resolves missing-index events by matching the native item label, including unread-count suffix stripping, before falling back to controller state.
 - No-activity root chat refreshes and topic preview loads update controller/cache/read state without repainting the currently focused native list. This prevents delayed background work from resetting the glasses highlight to the first row after the user clicks or pauses.
 - Glasses text sanitization now strips unsupported emoji ranges after replacing known status-circle emoji, avoiding LVGL unsupported-glyph warnings observed in simulator runs.
+- Automated simulator fixture validation is implemented with `npm run test:simulator --prefix web`. It launches fixture-mode Vite plus `@evenrealities/evenhub-simulator@0.7.2`, drives chat indexes 1-3 and forum topics 1-3, validates deterministic message content, compares `web/test/simulator-goldens`, and writes report/video artifacts under `artifacts/simulator-flow/<timestamp>/`.
 
 ## Observed Issues and Learnings
 
@@ -166,6 +168,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Stable container IDs matter. Rebuilding from topic list to message view with different or stale IDs can make the browser/debug view look correct while the glasses display remains on the previous page.
 - Stable container IDs also apply to optional containers. If a sidebar page sometimes omits a previously used container such as `panel-box`, the device can retain stale native content. Keep the same container id present and hide it with an empty 1x1 container when unused.
 - The simulator and real G2 hardware can emit input events with different shapes. Scroll events can work while click events do not, so event mapping must accept normalized SDK objects and raw/protobuf-like payloads.
+- In Vite dev/React StrictMode, the simulator SDK may keep old Even Hub event listeners alive even after React cleanup. A stale listener can consume the first `down` event without updating the active controller, and duplicate active listeners can skip list rows. Guard event callbacks with an active token in addition to calling SDK unsubscribe.
 - The SDK can normalize `CLICK_EVENT` value `0` to `undefined` in some paths. Treat `undefined` event type on an event-capturing text/list container as single press.
 - Single-click and double-click cannot be handled as immediate independent events without coalescing. Single-click actions must wait briefly for the double-click window, otherwise double press is seen as two single presses.
 - List selection state should not trigger a full list rebuild on every swipe. Rebuilding can snap selection back to the first item and cause stale chat/topic openings.
@@ -197,6 +200,7 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Background Telegram work must not run during active glasses input. Treat polling, SSE decrypt/parse, topic previews, read acknowledgements, and speculative prefetches as noncritical; delay them briefly after any click/swipe so the phone WebView JS thread stays available for input handling.
 - Automated frontend tests need explicit native-list invariants, not only controller state transitions. Regressions to catch include no-render-on-selection movement, no-render-on-no-op background refresh, item-name-only native click payloads, and simulator-visible unsupported glyph warnings.
 - Simulator testing can validate startup rendering, click/scroll event mapping, and LVGL warnings, but it does not reproduce every phone/glasses hardware delay. Use simulator screenshots/logs as a required smoke check and still package/test on real G2 for input latency.
+- Simulator automation can perturb its own latency if the harness polls console or captures webview screenshots too aggressively. Keep polling/frame capture lightweight, filter shadow-timer/audio console spam, and treat generated `latency.json` as invalid if the harness is flooding the automation server.
 - WebCrypto PBKDF2 key derivation is expensive on phone hardware. Cache the derived AES key per backend shared secret while still generating fresh encrypted auth nonces for every request to satisfy backend replay protection.
 - For device testing, the backend is not packaged into `.ehpk`. The `.ehpk` contains the frontend and manifest; the FastAPI backend must stay running and reachable from the phone/glasses path.
 - Tailscale is a practical local device-test route, but the phone running the Even Realities app must be able to reach the Tailscale backend URL in `app.json` and the frontend's configured backend URL.
@@ -226,3 +230,17 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
 - Consider rate limiting or debounce on send/transcribe actions so accidental repeated taps do not duplicate Telegram sends.
 - Improve audio UX on real hardware after testing actual G2 microphone payloads, including minimum duration, empty transcript handling, and confirmation copy.
 - Add a private-build release checklist covering tests, packaging, backend reachability from phone, Telegram auth status, and a short real-message send/receive smoke test.
+
+## Validation Harness
+
+Every screen the app can show is documented in `docs/UI_INVARIANTS.md` and validated by `scripts/simulator-flow.mjs`. The harness is the source of truth for "does this still work?"; manual smoke tests on real G2 hardware are a follow-up, not a replacement.
+
+When adding a new screen or transition:
+1. Add a screen block to `docs/UI_INVARIANTS.md` and the matching entry to `docs/UI_INVARIANTS.json`. The block must include `state`, `render`, `left` (for sidebar-kind screens), `right`, `transitions`, `budgetMs`, and any `apiCalls`/`bridgeCalls`/`eventMustEmit` expectations.
+2. Add at least one step to the `steps` array in `UI_INVARIANTS.json` that exercises the new state.
+3. Add the corresponding `logTeleGlanceTest` event in `web/src/testMode.ts` if you need a new event type.
+4. If you add a new API call, wrap it in `InstrumentedTelegramApi` so the harness sees the latency.
+5. Run `npm test --prefix web` to validate the catalog; run `npm run test:simulator --prefix web` to drive the simulator flow.
+
+The harness enforces a 1 s latency budget on every state transition. If a step legitimately needs more time (e.g. `sidebarTranscribing` waiting on Whisper), update its `budgetMs` in the catalog and explain why.
+The current set of issues the harness is flagging but not yet fixed lives in `docs/harness-test-failures.md` (13 distinct issues across app bugs, simulator limitations, and harness completeness). When a fix lands, update the issue's status and flip its `[ ] Fixed` checkbox; the next harness run must show the failure gone from the new artifact's `latency.json` before the fix is considered complete.

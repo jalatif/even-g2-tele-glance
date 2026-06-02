@@ -3,6 +3,8 @@ import type { TelegramApi } from '../api'
 import type { Chat, Id, Message, TelegramUpdate, Topic } from '../types'
 import type { AppInput, AppState, RecoverableState, ScreenModel } from './model'
 import { messageScrollUnitCount, screenModel } from './model'
+import { isTeleGlanceFixtureMode, logLifecycleEvent, logRecordingEvent } from '../testMode'
+import { consumeInjectedAudioChunks } from '../fixtureApi'
 
 export interface GlassesBridge {
   render(model: ScreenModel): Promise<void>
@@ -204,8 +206,23 @@ export class TelegramAppController {
     if (input.type === 'audioChunk') {
       if (this.state.screen === 'sidebarRecording') {
         this.state = { ...this.state, chunks: [...this.state.chunks, input.pcm] }
+        if (isTeleGlanceFixtureMode()) {
+          const total = this.state.chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+          logRecordingEvent('audioChunk', { size: input.pcm.byteLength, totalBytes: total, chunks: this.state.chunks.length })
+        }
       }
       return
+    }
+
+    if (this.state.screen === 'sidebarRecording') {
+      const injected = consumeInjectedAudioChunks()
+      if (injected.length > 0) {
+        this.state = { ...this.state, chunks: [...this.state.chunks, ...injected] }
+        if (isTeleGlanceFixtureMode()) {
+          const total = this.state.chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+          logRecordingEvent('audioChunk', { size: injected.reduce((s, c) => s + c.byteLength, 0), totalBytes: total, chunks: this.state.chunks.length, injected: true })
+        }
+      }
     }
 
     const state = this.state
@@ -372,8 +389,10 @@ export class TelegramAppController {
   private async handleAsleep(state: Extract<AppState, { screen: 'asleep' }>, input: AppInput) {
     if (input.type !== 'doublePress') {
       await this.bridge.turnScreenOff?.()
+      if (isTeleGlanceFixtureMode()) logLifecycleEvent('asleep', { input: input.type, selectedChatIndex: state.selectedChatIndex })
       return
     }
+    if (isTeleGlanceFixtureMode()) logLifecycleEvent('wake', { selectedChatIndex: state.selectedChatIndex })
     await this.setState({ screen: 'sidebar', focus: 'chats', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
   }
 
@@ -585,6 +604,7 @@ export class TelegramAppController {
       startedAt: this.lastMessagePressAt,
     })
     void this.bridge.setAudioEnabled(true).catch(() => undefined)
+    if (isTeleGlanceFixtureMode()) logRecordingEvent('start', { chatId: state.chat.id, topicId: state.topic?.id ?? null })
   }
 
   private async handleSidebarRecording(
@@ -634,9 +654,15 @@ export class TelegramAppController {
       isNewestPage: state.isNewestPage,
       scrollOffset: state.scrollOffset,
     })
+    if (isTeleGlanceFixtureMode()) {
+      const total = state.chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+      logRecordingEvent('stop', { totalBytes: total, chunks: state.chunks.length })
+      logRecordingEvent('transcribe.start', { chunks: state.chunks.length })
+    }
     void this.bridge.setAudioEnabled(false).catch(() => undefined)
     await this.run(async () => {
       if (!hasRecordableAudio(state.chunks)) {
+        if (isTeleGlanceFixtureMode()) logRecordingEvent('transcribe.end', { transcript: '', rejected: true })
         await this.setState({
           screen: 'sidebar', focus: 'messages',
           chats: state.chats, selectedChatIndex: state.selectedChatIndex,
@@ -653,6 +679,7 @@ export class TelegramAppController {
       }
       const result = await this.api.transcribe(pcmChunksToWav(state.chunks))
       const transcript = result.text.trim()
+      if (isTeleGlanceFixtureMode()) logRecordingEvent('transcribe.end', { transcript: result.text.trim() })
       if (transcript.length === 0) {
         await this.setState({
           screen: 'sidebar', focus: 'messages',
@@ -738,6 +765,8 @@ export class TelegramAppController {
       isNewestPage: state.isNewestPage,
       scrollOffset: state.scrollOffset,
     })
+    if (isTeleGlanceFixtureMode()) logRecordingEvent('confirm', { selected: 'send', transcript: state.transcript })
+    if (isTeleGlanceFixtureMode()) logRecordingEvent('send.start', { chatId: state.chat.id, topicId: state.topic?.id ?? null, transcript: state.transcript })
     await this.run(async () => {
       const sent = await this.api.sendMessage(state.chat.id, {
         text: state.transcript,

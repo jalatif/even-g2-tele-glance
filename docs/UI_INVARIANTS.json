@@ -1,0 +1,1325 @@
+{
+  "version": 1,
+  "fixture": {
+    "chatCount": 5,
+    "forumCount": 1,
+    "topicCount": 4,
+    "forumChatId": "fixture-chat-1",
+    "chatIds": [
+      "fixture-chat-0",
+      "fixture-chat-1",
+      "fixture-chat-2",
+      "fixture-chat-3",
+      "fixture-chat-4"
+    ],
+    "topicIds": [
+      "fixture-topic-0",
+      "fixture-topic-1",
+      "fixture-topic-2",
+      "fixture-topic-3"
+    ],
+    "chatLabels": [
+      "Fixture Alpha",
+      "Fixture Forum (3)",
+      "Fixture Ops",
+      "Fixture Research",
+      "Fixture Archive"
+    ],
+    "topicLabels": [
+      "Fixture Topic Zero",
+      "Fixture Topic One (1)",
+      "Fixture Topic Two (1)",
+      "Fixture Topic Three (1)"
+    ]
+  },
+  "performance": {
+    "maxTransitionMs": 1000,
+    "maxApiCallMs": 300,
+    "maxMessageLoadMs": 1000,
+    "maxChatLoadMs": 1000,
+    "maxSendRoundtripMs": 2000,
+    "longRunningStates": [
+      "sidebarTranscribing",
+      "sidebarSending"
+    ]
+  },
+  "blankDetection": {
+    "maxUniqueColors": 5,
+    "borderGreenChannelR": 0,
+    "borderGreenChannelG": 255,
+    "borderGreenChannelB": 0,
+    "borderGreenMaxDistance": 30,
+    "webviewTextLikeMin": 200
+  },
+  "screens": {
+    "loading": {
+      "state": {
+        "screen": "loading"
+      },
+      "render": {
+        "kind": "text",
+        "title": "Telegram"
+      },
+      "body": {
+        "containsAny": [
+          [
+            "Checking Telegram session"
+          ],
+          [
+            "Starting"
+          ]
+        ]
+      },
+      "transitions": {
+        "press": "loading",
+        "foreground": "loading"
+      },
+      "budgetMs": 500,
+      "apiCalls": [
+        "authStatus"
+      ],
+      "eventMustEmit": [
+        {
+          "event": "lifecycle",
+          "kind": "start"
+        }
+      ]
+    },
+    "auth.needsSetup": {
+      "state": {
+        "screen": "auth",
+        "mode": "needsSetup"
+      },
+      "render": {
+        "kind": "text",
+        "title": "Telegram"
+      },
+      "body": {
+        "contains": [
+          "instructions",
+          "Settings"
+        ]
+      },
+      "transitions": {
+        "press": "auth.needsSetup"
+      },
+      "budgetMs": 500,
+      "apiCalls": [
+        "authStatus"
+      ]
+    },
+    "auth.signedOut": {
+      "state": {
+        "screen": "auth",
+        "mode": "signedOut"
+      },
+      "render": {
+        "kind": "text",
+        "title": "Telegram"
+      },
+      "body": {
+        "contains": [
+          "phone number"
+        ]
+      },
+      "transitions": {
+        "press": "auth.signedOut"
+      },
+      "budgetMs": 500,
+      "apiCalls": [
+        "authStatus"
+      ]
+    },
+    "auth.phonePending": {
+      "state": {
+        "screen": "auth",
+        "mode": "phonePending"
+      },
+      "render": {
+        "kind": "text",
+        "title": "Telegram Login"
+      },
+      "body": {
+        "contains": [
+          "code"
+        ]
+      },
+      "transitions": {
+        "press": "auth.phonePending"
+      },
+      "budgetMs": 500,
+      "apiCalls": [
+        "startPhoneAuth",
+        "verifyPhoneAuth"
+      ]
+    },
+    "sidebar.chats": {
+      "state": {
+        "screen": "sidebar",
+        "focus": "chats"
+      },
+      "render": {
+        "kind": "sidebar",
+        "title": "Telegram",
+        "focus": "sidebar"
+      },
+      "left": {
+        "sidebarTitle": "Chats",
+        "sidebarItemsExact": [
+          "Fixture Alpha",
+          "Fixture Forum (3)",
+          "Fixture Ops",
+          "Fixture Research",
+          "Fixture Archive"
+        ],
+        "markerAtFromState": "selectedChatIndex"
+      },
+      "right": {
+        "panelTitle": {
+          "fromState": "chats[selectedChatIndex].title",
+          "maxChars": 20
+        },
+        "panelBodyContains": {
+          "fromState": "chats[selectedChatIndex].lastMessage"
+        },
+        "panelFooterDefault": "Swipe chats | Press open",
+        "panelBox": null
+      },
+      "transitions": {
+        "press": "sidebar.messages",
+        "doublePress": "asleep",
+        "swipeUp": "sidebar.chats",
+        "swipeDown": "sidebar.chats"
+      },
+      "budgetMs": 1000,
+      "apiCalls": [
+        "listChats"
+      ]
+    },
+    "sidebar.topics.noPreview": {
+      "state": {
+        "screen": "sidebar",
+        "focus": "topics"
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "sidebar"
+      },
+      "left": {
+        "sidebarTitle": "Topics",
+        "sidebarItemsExact": [
+          "Fixture Topic Zero",
+          "Fixture Topic One (1)",
+          "Fixture Topic Two (1)",
+          "Fixture Topic Three (1)"
+        ],
+        "markerAtFromState": "selectedTopicIndex"
+      },
+      "right": {
+        "panelBodyContains": [
+          "Loading messages..."
+        ],
+        "panelFooterDefault": "Loading messages...",
+        "panelBox": null
+      },
+      "transitions": {
+        "press": "sidebar.messages.topic",
+        "doublePress": "sidebar.chats",
+        "swipeUp": "sidebar.topics.noPreview",
+        "swipeDown": "sidebar.topics.noPreview"
+      },
+      "budgetMs": 1000,
+      "apiCalls": [
+        "listTopics",
+        "listMessages"
+      ]
+    },
+    "sidebar.topics.preview": {
+      "state": {
+        "screen": "sidebar",
+        "focus": "topics"
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "sidebar"
+      },
+      "left": {
+        "sidebarTitle": "Topics",
+        "sidebarItemsExact": [
+          "Fixture Topic Zero",
+          "Fixture Topic One (1)",
+          "Fixture Topic Two (1)",
+          "Fixture Topic Three (1)"
+        ],
+        "markerAtFromState": "selectedTopicIndex"
+      },
+      "right": {
+        "panelBodyContains": {
+          "fromState": "previewMessages[*].text"
+        },
+        "panelFooterDefault": "Swipe topics | Press open"
+      },
+      "transitions": {
+        "press": "sidebar.messages.topic",
+        "doublePress": "sidebar.chats"
+      },
+      "budgetMs": 1000,
+      "apiCalls": [
+        "listTopics",
+        "listMessages"
+      ]
+    },
+    "sidebar.messages.normal": {
+      "state": {
+        "screen": "sidebar",
+        "focus": "messages"
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Chats",
+        "sidebarItemsFromState": "chats",
+        "markerAtFromState": "selectedChatIndex"
+      },
+      "right": {
+        "panelBodyContains": {
+          "fromState": "messages[*].text"
+        },
+        "panelFooterDefault": "Click record | Double click back"
+      },
+      "transitions": {
+        "press": "sidebarRecording",
+        "doublePress": "sidebar.chats",
+        "swipeUp": "sidebar.messages.normal",
+        "swipeDown": "sidebar.messages.normal"
+      },
+      "budgetMs": 1000,
+      "apiCalls": [
+        "listMessages",
+        "markRead"
+      ]
+    },
+    "sidebar.messages.topic": {
+      "state": {
+        "screen": "sidebar",
+        "focus": "messages"
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Topics",
+        "sidebarItemsFromState": "topics",
+        "markerAtFromState": "selectedTopicIndex"
+      },
+      "right": {
+        "panelBodyContains": {
+          "fromState": "messages[*].text"
+        },
+        "panelFooterDefault": "Click record | Double click back"
+      },
+      "transitions": {
+        "press": "sidebarRecording",
+        "doublePress": "sidebar.topics",
+        "swipeUp": "sidebar.messages.topic",
+        "swipeDown": "sidebar.messages.topic"
+      },
+      "budgetMs": 1000,
+      "apiCalls": [
+        "listMessages",
+        "markRead"
+      ]
+    },
+    "sidebar.messages.loading": {
+      "state": {
+        "screen": "sidebar",
+        "focus": "messages"
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Chats"
+      },
+      "right": {
+        "panelBodyContains": [
+          "Loading "
+        ],
+        "panelFooterContains": [
+          "Loading "
+        ],
+        "panelBox": null
+      },
+      "transitions": {
+        "auto": "sidebar.messages.normal"
+      },
+      "budgetMs": 1000
+    },
+    "sidebarRecording": {
+      "state": {
+        "screen": "sidebarRecording"
+      },
+      "render": {
+        "kind": "sidebar",
+        "title": "Recording reply",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Chats"
+      },
+      "right": {
+        "panelTitle": "Recording",
+        "panelFooterDefault": "Click stop | Double click cancel"
+      },
+      "transitions": {
+        "press": "sidebarTranscribing",
+        "doublePress": "sidebar.messages"
+      },
+      "budgetMs": 2000,
+      "eventMustEmit": [
+        {
+          "event": "recording",
+          "kind": "start"
+        },
+        {
+          "event": "recording",
+          "kind": "stop"
+        }
+      ]
+    },
+    "sidebarTranscribing": {
+      "state": {
+        "screen": "sidebarTranscribing"
+      },
+      "render": {
+        "kind": "sidebar",
+        "title": "Transcribing",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "",
+        "sidebarItemsExact": []
+      },
+      "right": {
+        "panelTitle": "Converting voice...",
+        "panelBody": "",
+        "panelFooter": ""
+      },
+      "transitions": {
+        "auto": "sidebarConfirm"
+      },
+      "budgetMs": 1000,
+      "apiCalls": [
+        "transcribe"
+      ],
+      "eventMustEmit": [
+        {
+          "event": "recording",
+          "kind": "transcribe.end"
+        }
+      ]
+    },
+    "sidebarConfirm.send": {
+      "state": {
+        "screen": "sidebarConfirm",
+        "selectedIndex": 0
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Chats"
+      },
+      "right": {
+        "panelBodyContains": [
+          "> Send",
+          "  Cancel"
+        ],
+        "panelBodyNotContains": [
+          "> Cancel"
+        ],
+        "panelFooterDefault": "Swipe select | Press confirm"
+      },
+      "transitions": {
+        "press": "sidebarSending",
+        "swipeUp": "sidebarConfirm.cancel",
+        "swipeDown": "sidebarConfirm.cancel",
+        "doublePress": "sidebar.messages"
+      },
+      "budgetMs": 2000,
+      "apiCalls": [
+        "sendMessage"
+      ]
+    },
+    "sidebarConfirm.cancel": {
+      "state": {
+        "screen": "sidebarConfirm",
+        "selectedIndex": 1
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Chats"
+      },
+      "right": {
+        "panelBodyContains": [
+          "> Cancel",
+          "  Send"
+        ],
+        "panelBodyNotContains": [
+          "> Send"
+        ]
+      },
+      "transitions": {
+        "press": "sidebar.messages",
+        "swipeUp": "sidebarConfirm.send",
+        "swipeDown": "sidebarConfirm.send"
+      },
+      "budgetMs": 500,
+      "apiCalls": []
+    },
+    "sidebarSending": {
+      "state": {
+        "screen": "sidebarSending"
+      },
+      "render": {
+        "kind": "sidebar",
+        "title": "Sending reply",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Chats"
+      },
+      "right": {
+        "panelTitle": "Sending...",
+        "panelBodyContains": {
+          "fromState": "transcript"
+        },
+        "panelFooter": ""
+      },
+      "transitions": {
+        "auto": "sidebar.messages"
+      },
+      "budgetMs": 2000,
+      "apiCalls": [
+        "sendMessage"
+      ]
+    },
+    "sidebarSent": {
+      "state": {
+        "screen": "sidebarSent"
+      },
+      "render": {
+        "kind": "sidebar",
+        "title": "Reply sent",
+        "focus": "panel"
+      },
+      "left": {
+        "sidebarTitle": "Chats"
+      },
+      "right": {
+        "panelFooterDefault": "Click record | Double click back"
+      },
+      "transitions": {
+        "press": "sidebarRecording",
+        "doublePress": "sidebar.messages"
+      },
+      "budgetMs": 500
+    },
+    "newMessage.normal": {
+      "state": {
+        "screen": "newMessage"
+      },
+      "render": {
+        "kind": "text",
+        "title": "New Telegram"
+      },
+      "body": {
+        "contains": [
+          "New message",
+          "Click to open"
+        ],
+        "containsFromState": "chat.title"
+      },
+      "footer": {
+        "contains": [
+          "Double click dismiss"
+        ]
+      },
+      "transitions": {
+        "press": "sidebar.messages.normal",
+        "doublePress": "asleep"
+      },
+      "budgetMs": 1000
+    },
+    "newMessage.topic": {
+      "state": {
+        "screen": "newMessage"
+      },
+      "render": {
+        "kind": "text",
+        "title": "New Telegram"
+      },
+      "body": {
+        "containsFromState": [
+          "chat.title",
+          "topic.title"
+        ]
+      },
+      "transitions": {
+        "press": "sidebar.messages.topic"
+      }
+    },
+    "asleep": {
+      "state": {
+        "screen": "asleep"
+      },
+      "render": {
+        "kind": "text",
+        "title": "",
+        "body": ""
+      },
+      "transitions": {
+        "press": "asleep",
+        "doublePress": "sidebar.chats",
+        "swipeUp": "asleep",
+        "swipeDown": "asleep"
+      },
+      "budgetMs": 500,
+      "eventMustEmit": [
+        {
+          "event": "lifecycle",
+          "kind": "asleep"
+        },
+        {
+          "event": "lifecycle",
+          "kind": "wake"
+        }
+      ],
+      "bridgeCalls": [
+        "turnScreenOff on every input"
+      ]
+    },
+    "error": {
+      "state": {
+        "screen": "error"
+      },
+      "render": {
+        "kind": "text",
+        "title": "Error"
+      },
+      "body": {
+        "contains": [
+          "Press to retry"
+        ],
+        "containsFromState": "message"
+      },
+      "transitions": {
+        "press": "loading",
+        "doublePress": "sidebar"
+      },
+      "budgetMs": 1000
+    }
+  },
+  "steps": [
+    {
+      "name": "00-startup-loading",
+      "input": null,
+      "target": "loading",
+      "expect": {
+        "kind": "text"
+      },
+      "apiCalls": [
+        "authStatus"
+      ],
+      "budgetMs": 500
+    },
+    {
+      "name": "01-chats-startup",
+      "input": null,
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 0
+        }
+      },
+      "apiCalls": [
+        "listChats"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "02-chats-swipe-down-1",
+      "input": "down",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 1
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "03-chats-swipe-down-2",
+      "input": "down",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 2
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "04-chats-swipe-down-3",
+      "input": "down",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 3
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "05-chats-swipe-up-1",
+      "input": "up",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 2
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "06-chats-swipe-up-2",
+      "input": "up",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 1
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "07-chats-swipe-up-3",
+      "input": "up",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 0
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "07a-burst-scroll-chats",
+      "input": "pressSequence:down,down,down,up,up",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "focus": "chats",
+          "selectedChatIndex": 1
+        },
+        "noRenderEvents": true,
+        "maxPerSwipeMs": 300
+      },
+      "budgetMs": 1500
+    },
+    {
+      "name": "08-chats-open-forum-topics",
+      "input": "pressSequence:down,click",
+      "target": "sidebar.topics.noPreview",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "topics",
+          "selectedChatIndex": 1
+        },
+        "renderBodyContains": [
+          "Loading messages..."
+        ]
+      },
+      "apiCalls": [
+        "listTopics"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "09-topics-preview-loaded",
+      "input": null,
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "renderBodyContains": [
+          "Topic zero warmup body"
+        ]
+      },
+      "apiCalls": [
+        "listMessages"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "10-topics-swipe-down-1",
+      "input": "down",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 1
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "11-topics-open-topic-one",
+      "input": "click",
+      "target": "sidebar.messages.topic",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "messages",
+          "selectedTopicIndex": 1
+        },
+        "renderBodyContains": [
+          "fixture-topic-one-body"
+        ]
+      },
+      "apiCalls": [
+        "listMessages",
+        "markRead"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "12-topic-messages-scroll-older",
+      "input": "up",
+      "target": "sidebar.messages.topic",
+      "expect": {
+        "state": {
+          "isNewestPage": false
+        },
+        "renderBodyContains": [
+          "Older fixture"
+        ]
+      },
+      "apiCalls": [
+        "listMessages"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "13-topic-messages-back",
+      "input": "double_click",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "topics"
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "14-topics-swipe-down-2",
+      "input": "down",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 2
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "15-topics-open-topic-two",
+      "input": "click",
+      "target": "sidebar.messages.topic",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 2
+        },
+        "apiCall": {
+          "call": "listMessages",
+          "args": {
+            "topicId": "fixture-topic-2"
+          }
+        }
+      },
+      "apiCalls": [
+        "listMessages"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "16-topic-two-back",
+      "input": "double_click",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "focus": "topics"
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "17-topics-swipe-down-3",
+      "input": "down",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 3
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "18-topics-open-topic-three",
+      "input": "pressSequence:click,up",
+      "target": "sidebar.messages.topic",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 3,
+          "isNewestPage": false,
+          "scrollOffset": 1
+        },
+        "renderBodyContains": [
+          "fixture-long-topic-body-anchor",
+          "Fixture topic long message body"
+        ]
+      },
+      "apiCalls": [
+        "listMessages"
+      ],
+      "budgetMs": 1500
+    },
+    {
+      "name": "18a-topic-long-message-verify",
+      "input": null,
+      "target": "sidebar.messages.topic",
+      "expect": {
+        "renderBodyContains": [
+          "fixture-long-topic-body-anchor"
+        ]
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "19-topic-three-back",
+      "input": "double_click",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "focus": "topics"
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "20-topics-double-back-to-chats",
+      "input": "double_click",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "focus": "chats",
+          "selectedChatIndex": 1
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "21-chats-open-alpha",
+      "input": "pressSequence:up,click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "selectedChatIndex": 0,
+          "focus": "messages"
+        },
+        "renderBodyContains": [
+          "fixture-alpha-body",
+          "Alpha outgoing marker"
+        ]
+      },
+      "apiCalls": [
+        "listMessages",
+        "markRead"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "21a-back-to-chats",
+      "input": "pressSequence:double_click",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "focus": "chats",
+          "selectedChatIndex": 0
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "21b-chats-swipe-to-archive",
+      "input": "pressSequence:down,down,down,down",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "focus": "chats",
+          "selectedChatIndex": 4
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "21c-archive-long-message",
+      "input": "pressSequence:click,up",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "focus": "messages",
+          "selectedChatIndex": 4,
+          "isNewestPage": false,
+          "scrollOffset": 1
+        },
+        "renderBodyContains": [
+          "fixture-long-alpha-body-anchor",
+          "deliberately long fixture message"
+        ]
+      },
+      "apiCalls": [
+        "listMessages",
+        "markRead"
+      ],
+      "budgetMs": 1500
+    },
+    {
+      "name": "21d-archive-paginate-older",
+      "input": "up",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "isNewestPage": false
+        },
+        "renderBodyContains": [
+          "Older fixture"
+        ]
+      },
+      "apiCalls": [
+        "listMessages with beforeId"
+      ],
+      "budgetMs": 1500
+    },
+    {
+      "name": "21e-back-from-archive",
+      "input": "pressSequence:double_click",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "focus": "chats"
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "22-chats-reopen-alpha",
+      "input": "pressSequence:up,up,up,up,click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "selectedChatIndex": 0,
+          "focus": "messages"
+        },
+        "renderBodyContains": [
+          "fixture-alpha-body"
+        ]
+      },
+      "apiCalls": [
+        "listMessages",
+        "markRead"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "23-alpha-record-start",
+      "input": "click",
+      "target": "sidebarRecording",
+      "expect": {
+        "bridgeCall": {
+          "method": "setAudioEnabled",
+          "args": [
+            true
+          ]
+        }
+      },
+      "budgetMs": 1000
+    },
+    {
+      "name": "24-alpha-record-audio-1",
+      "input": "audioChunk",
+      "target": "sidebarRecording",
+      "expect": {
+        "state": {
+          "chunksLength": 1
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "25-alpha-record-audio-2",
+      "input": "audioChunk",
+      "target": "sidebarRecording",
+      "expect": {
+        "state": {
+          "chunksLength": 2
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "26-alpha-record-audio-3",
+      "input": "audioChunk",
+      "target": "sidebarRecording",
+      "expect": {
+        "state": {
+          "chunksLength": 3
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "27-alpha-record-stop",
+      "input": "click",
+      "target": "sidebarTranscribing",
+      "expect": {
+        "bridgeCall": {
+          "method": "setAudioEnabled",
+          "args": [
+            false
+          ]
+        }
+      },
+      "budgetMs": 1000
+    },
+    {
+      "name": "28-alpha-transcribe-done",
+      "input": null,
+      "target": "sidebarConfirm.send",
+      "expect": {
+        "state": {
+          "transcript": "Fixture transcript",
+          "selectedIndex": 0
+        },
+        "renderBodyContains": [
+          "> Send"
+        ]
+      },
+      "apiCalls": [
+        "transcribe"
+      ],
+      "budgetMs": 2000
+    },
+    {
+      "name": "29-alpha-confirm-send",
+      "input": "click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "focus": "messages",
+          "status": "Sent"
+        },
+        "apiCall": {
+          "call": "sendMessage",
+          "args": {
+            "text": "Fixture transcript"
+          }
+        }
+      },
+      "apiCalls": [
+        "sendMessage"
+      ],
+      "budgetMs": 2000
+    },
+    {
+      "name": "30-chats-reload-ops",
+      "input": "pressSequence:double_click,down,down,click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "selectedChatIndex": 2,
+          "focus": "messages"
+        },
+        "renderBodyContains": [
+          "fixture-ops-body",
+          "Ops latency sample"
+        ]
+      },
+      "apiCalls": [
+        "listMessages",
+        "markRead"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "31-ops-record-cancel-doublepress",
+      "input": "pressSequence:click,click,double_click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "focus": "messages"
+        },
+        "apiCallNotPresent": "transcribe"
+      },
+      "budgetMs": 1000
+    },
+    {
+      "name": "32-ops-record-confirm-cancel",
+      "input": "pressSequence:click,click,down,click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "focus": "messages"
+        },
+        "apiCallNotPresent": "sendMessage"
+      },
+      "budgetMs": 2000
+    },
+    {
+      "name": "33-chats-back-to-forum",
+      "input": "pressSequence:double_click,down,double_click",
+      "target": "asleep",
+      "expect": {
+        "bridgeCall": {
+          "method": "turnScreenOff"
+        }
+      },
+      "eventMustEmit": [
+        {
+          "event": "lifecycle",
+          "kind": "asleep"
+        }
+      ],
+      "budgetMs": 2000
+    },
+    {
+      "name": "34-asleep-noop-press",
+      "input": "click",
+      "target": "asleep",
+      "expect": {
+        "state": {
+          "screen": "asleep"
+        },
+        "bridgeCall": {
+          "method": "turnScreenOff"
+        }
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "35-asleep-wake",
+      "input": "double_click",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "focus": "chats"
+        }
+      },
+      "eventMustEmit": [
+        {
+          "event": "lifecycle",
+          "kind": "wake"
+        }
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "36-newmessage-inject",
+      "input": "testNotify",
+      "target": "newMessage.normal",
+      "expect": {
+        "state": {
+          "screen": "newMessage"
+        },
+        "renderBodyContains": [
+          "New message",
+          "Fixture Alpha"
+        ]
+      },
+      "budgetMs": 1000
+    },
+    {
+      "name": "37-newmessage-open",
+      "input": "click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "focus": "messages"
+        },
+        "apiCalls": [
+          "listMessages"
+        ]
+      },
+      "budgetMs": 1000
+    },
+    {
+      "name": "38-error-inject",
+      "input": "testError",
+      "target": "error",
+      "expect": {
+        "state": {
+          "screen": "error"
+        },
+        "renderBodyContains": [
+          "Error",
+          "Press to retry"
+        ]
+      },
+      "budgetMs": 1000
+    },
+    {
+      "name": "39-error-retry",
+      "input": "click",
+      "target": "loading",
+      "expect": {
+        "apiCalls": [
+          "authStatus"
+        ]
+      },
+      "budgetMs": 2000
+    },
+    {
+      "name": "40-perf-budget-chat-list",
+      "input": "testSlowChat",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "focus": "chats"
+        }
+      },
+      "expectToFail": true,
+      "budgetMs": 1000
+    }
+  ]
+}

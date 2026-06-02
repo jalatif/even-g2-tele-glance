@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { HttpTelegramApi } from '../api'
+import { HttpTelegramApi, type TelegramApi } from '../api'
 import { EvenHubGlassesBridge } from '../bridge/evenBridge'
 import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge } from '../controller/appController'
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
+import { FixtureTelegramApi, bindFixtureApi } from '../fixtureApi'
+import { InstrumentedTelegramApi } from '../instrumentedApi'
 import {
   clearFrontendConfigFromAppStorage,
   loadFrontendConfig,
@@ -13,6 +15,7 @@ import {
   type AppStorageBridge,
   type FrontendConfig,
 } from '../storage'
+import { isTeleGlanceFixtureMode, logLifecycleEvent, logTeleGlanceTest, summarizeAppState } from '../testMode'
 
 type AppContextValue = {
   state: AppState
@@ -40,7 +43,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [startupError, setStartupError] = useState<string | null>(null)
   const settingsRef = useRef(settings)
   const controllerRef = useRef<TelegramAppController | null>(null)
-  const apiRef = useRef<HttpTelegramApi | null>(null)
+  const apiRef = useRef<TelegramApi | null>(null)
   const appStorageRef = useRef<AppStorageBridge | undefined>(undefined)
 
   settingsRef.current = settings
@@ -63,18 +66,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ).catch(() => fallbackBridge)
         if (!active) return
         appStorageRef.current = glasses
-        const restoredSettings = await loadFrontendConfigFromAppStorage(appStorageRef.current, settingsRef.current)
+        const fixtureMode = isTeleGlanceFixtureMode()
+        const restoredSettings = fixtureMode
+          ? fixtureSettings(settingsRef.current)
+          : await loadFrontendConfigFromAppStorage(appStorageRef.current, settingsRef.current)
         if (!active) return
         settingsRef.current = restoredSettings
         setSettings(restoredSettings)
-        saveFrontendConfig(restoredSettings)
-        await saveFrontendConfigToAppStorage(appStorageRef.current, restoredSettings)
-        const api = new HttpTelegramApi(
-          restoredSettings.apiBaseUrl,
-          () => settingsRef.current,
-          () => controllerRef.current?.isInputQuiet() ?? false,
-        )
+        if (!fixtureMode) {
+          saveFrontendConfig(restoredSettings)
+          await saveFrontendConfigToAppStorage(appStorageRef.current, restoredSettings)
+        }
+        const baseApi: TelegramApi = fixtureMode
+          ? new FixtureTelegramApi()
+          : new HttpTelegramApi(
+              restoredSettings.apiBaseUrl,
+              () => settingsRef.current,
+              () => controllerRef.current?.isInputQuiet() ?? false,
+            )
+        if (fixtureMode) bindFixtureApi(baseApi as FixtureTelegramApi)
+        const api = new InstrumentedTelegramApi(baseApi)
         apiRef.current = api
+        if (fixtureMode) logLifecycleEvent('start', {})
         const controller = new TelegramAppController(
           api,
           glasses,
@@ -86,10 +99,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             settingsRef.current = next
             if (active) setSettings(next)
           },
-          () => Boolean(settingsRef.current.backendSharedSecret.trim() && settingsRef.current.telegramApiId.trim() && settingsRef.current.telegramApiHash.trim()),
+          () => fixtureMode || Boolean(settingsRef.current.backendSharedSecret.trim() && settingsRef.current.telegramApiId.trim() && settingsRef.current.telegramApiHash.trim()),
         )
         controllerRef.current = controller
         unsubscribe = controller.subscribe((next) => {
+          logTeleGlanceTest('state', summarizeAppState(next))
           if (active) setState(next)
         })
         await controller.init()
@@ -178,6 +192,18 @@ export function useApp() {
   const context = useContext(AppContext)
   if (!context) throw new Error('useApp must be used inside AppProvider')
   return context
+}
+
+function fixtureSettings(current: FrontendConfig): FrontendConfig {
+  return {
+    ...current,
+    apiBaseUrl: current.apiBaseUrl.trim() || 'http://127.0.0.1:5174',
+    backendSharedSecret: current.backendSharedSecret.trim() || 'fixture-shared-secret',
+    telegramApiId: current.telegramApiId.trim() || '12345',
+    telegramApiHash: current.telegramApiHash.trim() || 'fixture-hash',
+    telegramSession: current.telegramSession.trim() || 'fixture-session',
+    debugEventsEnabled: false,
+  }
 }
 
 function runtimeConfig(config: FrontendConfig): Partial<ControllerRuntimeConfig> {

@@ -413,7 +413,7 @@ function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
       },
     })
   }
-  return pages
+  return pages.reverse()
 }
 
 function sanitizeGlassesText(value: string) {

@@ -191,6 +191,20 @@ npx @evenrealities/evenhub-simulator@0.7.2 http://localhost:5173
 
 Use the simulator to verify startup rendering, list navigation, message scrolling, phone-code login screens, and frontend settings before packaging.
 
+Automated fixture validation is available:
+
+```sh
+npm run test:simulator --prefix web
+```
+
+This starts a fixture-mode Vite app, launches `@evenrealities/evenhub-simulator@0.7.2` with its automation API, drives chat/topic up/down/click/double-click flows, validates deterministic message content, compares glasses screenshots against `web/test/simulator-goldens`, and writes video/report artifacts under `artifacts/simulator-flow/<timestamp>/`.
+
+After intentional visual changes, inspect the generated `report.md`, step screenshots, and `flow.mp4`, then update goldens with:
+
+```sh
+npm run test:simulator --prefix web -- --update-goldens
+```
+
 ## Package For G2
 
 ```sh

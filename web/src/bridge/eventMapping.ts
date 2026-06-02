@@ -33,7 +33,7 @@ export function createInputCoalescer(
   onInput: (input: AppInput) => void | Promise<void>,
   duplicateTapDebounceMs = 90,
   tapCooldownMs = 220,
-  duplicateSwipeDebounceMs = 40,
+  duplicateSwipeDebounceMs = 220,
 ) {
   let lastTapTime = 0
   let lastTapKind: 'press' | 'doublePress' | undefined

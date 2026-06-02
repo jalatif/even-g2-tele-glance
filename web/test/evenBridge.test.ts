@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { EvenHubGlassesBridge } from '../src/bridge/evenBridge'
 import type { ScreenModel } from '../src/controller/model'
 
@@ -167,5 +167,28 @@ describe('EvenHubGlassesBridge', () => {
     expect(output).toContain('Support')
     expect(output).toContain('"containerName":"event-overlay"')
     expect(output).not.toContain('"containerName":"sidebar-list"')
+  })
+
+  it('disposes the Even Hub event listener when available', () => {
+    const unsubscribe = vi.fn()
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer() {
+        return 0
+      },
+      async rebuildPageContainer() {
+        return true
+      },
+      async audioControl() {
+        return undefined
+      },
+      onEvenHubEvent() {
+        return unsubscribe
+      },
+    }, unsubscribe)
+
+    bridge.dispose()
+    bridge.dispose()
+
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
 })

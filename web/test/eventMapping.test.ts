@@ -119,13 +119,27 @@ describe('mapEvenHubEvent', () => {
     vi.useRealTimers()
   })
 
-  it('keeps normal repeated same-direction swipes with the default debounce', () => {
+  it('debounces bursty same-direction swipes with the default debounce', () => {
     vi.useFakeTimers()
     const onInput = vi.fn()
     const coalesce = createInputCoalescer(onInput)
 
     coalesce({ type: 'swipeDown' })
-    vi.advanceTimersByTime(50)
+    vi.advanceTimersByTime(150)
+    coalesce({ type: 'swipeDown' })
+
+    expect(onInput).toHaveBeenCalledTimes(1)
+    expect(onInput).toHaveBeenNthCalledWith(1, { type: 'swipeDown' })
+    vi.useRealTimers()
+  })
+
+  it('keeps deliberate repeated same-direction swipes with the default debounce', () => {
+    vi.useFakeTimers()
+    const onInput = vi.fn()
+    const coalesce = createInputCoalescer(onInput)
+
+    coalesce({ type: 'swipeDown' })
+    vi.advanceTimersByTime(221)
     coalesce({ type: 'swipeDown' })
 
     expect(onInput).toHaveBeenCalledTimes(2)

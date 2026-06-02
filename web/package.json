@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "build:tailscale": "npm run configure:tailscale && tsc && vite build",
     "test": "vitest run",
+    "test:simulator": "node ../scripts/simulator-flow.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

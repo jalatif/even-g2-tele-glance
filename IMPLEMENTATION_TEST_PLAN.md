@@ -39,9 +39,19 @@
 
 ## Simulator Validation
 
-- Start backend on `http://localhost:8787`.
-- Start Vite frontend on `http://localhost:5173`.
-- Run Even Hub simulator against the frontend URL.
+- Comprehensive invariant catalog: see `docs/UI_INVARIANTS.md` (human-readable) and `docs/UI_INVARIANTS.json` (machine-readable, consumed by the harness).
+- Automated fixture flow: `npm run test:simulator --prefix web`.
+- Golden update flow: `npm run test:simulator --prefix web -- --update-goldens`.
+- The automated flow starts Vite with `VITE_TELEGLANCE_FIXTURE=1`, launches `@evenrealities/evenhub-simulator@0.7.2` with `--automation-port`, drives glasses inputs, writes `artifacts/simulator-flow/<timestamp>/report.md`, `latency.json`, `console.json`, `fixture.json`, step screenshots, and `flow.mp4`.
+- The flow covers every state in `UI_INVARIANTS.md`: loading, auth, sidebar.chats, sidebar.topics (no preview, preview), sidebar.messages (normal, topic, loading), sidebarRecording, sidebarTranscribing, sidebarConfirm (send, cancel), sidebarSending, sidebarSent, asleep, newMessage, error. A 39th step (`39-perf-budget-chat-list`) intentionally exceeds the 1 s chat-load budget to prove the harness enforces it.
+- Each step asserts (a) the expected controller state, (b) the expected screen model content (`renderBodyContains` checks for both left and right side), (c) the expected API calls with the right arguments, (d) the expected bridge calls, (e) the 1 s latency budget.
+- The harness fails any step whose glasses screenshot is blank (only border-green pixels). When the simulator's `/api/screenshot/glasses` returns empty pixels, the harness falls back to the webview screenshot for content checks and emits a clear warning.
+- The saved glasses-frame goldens live in `web/test/simulator-goldens/*.glasses.png`; update them only after manually inspecting the generated report/video.
+- Detailed learnings from the most recent harness run, including per-step pass/fail status, performance budgets, and confirmed-broken behaviors, live in `docs/HARNESS_LEARNINGS.md`.
+- Manual fallback:
+  - Start backend on `http://localhost:8787`.
+  - Start Vite frontend on `http://localhost:5173`.
+  - Run Even Hub simulator against the frontend URL.
 - Validate all primary screens fit the 576x288 viewport:
   - Auth/setup
   - Chat list

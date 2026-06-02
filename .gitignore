@@ -28,8 +28,11 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Builds and simulator output
+artifacts/
 *.ehpk
 *.png
+!web/test/simulator-goldens/
+!web/test/simulator-goldens/*.png
 SECURITY_PRIVACY_FUTURE.md
 dist/
 build/

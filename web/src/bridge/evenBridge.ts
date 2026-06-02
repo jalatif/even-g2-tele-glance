@@ -10,6 +10,7 @@ import type { GlassesBridge } from '../controller/appController'
 import type { AppInput, ScreenModel } from '../controller/model'
 import { defaultApiBaseUrl, type TelegramAuthConfig } from '../api'
 import { encryptedTelegramAuthHeader, encryptJsonPayload } from '../secureAuth'
+import { logTeleGlanceTest, summarizeScreenModel } from '../testMode'
 import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
@@ -19,6 +20,8 @@ type EvenBridgeOptions = {
   debugEventsEnabled?: () => boolean
   authConfig?: () => TelegramAuthConfig
 }
+
+let activeEventListenerToken: symbol | undefined
 
 type EvenBridgeInstance = {
   createStartUpPageContainer(container: unknown): Promise<number>
@@ -35,16 +38,29 @@ type EvenBridgeInstance = {
 
 export class EvenHubGlassesBridge implements GlassesBridge {
   private hasRendered = false
+  private renderSequence = 0
 
-  constructor(private readonly sdk: EvenBridgeInstance) {}
+  constructor(
+    private readonly sdk: EvenBridgeInstance,
+    private unsubscribeEvents?: () => void,
+    private readonly listenerToken?: symbol,
+  ) {}
 
   static async create(onInput: (input: AppInput) => void | Promise<void>, options: EvenBridgeOptions = {}) {
     const sdk = (await waitForEvenAppBridge()) as unknown as EvenBridgeInstance
-    const adapter = new EvenHubGlassesBridge(sdk)
     const dispatchInput = createInputCoalescer(onInput)
     let debugLogInFlight = false
-    sdk.onEvenHubEvent((event) => {
+    const listenerToken = Symbol('even-hub-listener')
+    activeEventListenerToken = listenerToken
+    const unsubscribeEvents = sdk.onEvenHubEvent((event) => {
+      if (activeEventListenerToken !== listenerToken) return
       const input = mapEvenHubEvent(event as Parameters<typeof mapEvenHubEvent>[0])
+      if (input?.type !== 'audioChunk') {
+        logTeleGlanceTest('input', {
+          mapped: input ?? null,
+          raw: summarizeForDebug(event),
+        })
+      }
       if ((options.debugEventsEnabled?.() ?? false) && input?.type !== 'audioChunk' && !debugLogInFlight) {
         debugLogInFlight = true
         setTimeout(() => {
@@ -55,21 +71,29 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       }
       if (input) setTimeout(() => dispatchInput(input), 0)
     })
-    return adapter
+    return new EvenHubGlassesBridge(
+      sdk,
+      typeof unsubscribeEvents === 'function' ? unsubscribeEvents : undefined,
+      listenerToken,
+    )
   }
 
   async render(model: ScreenModel) {
+    const sequence = ++this.renderSequence
     if (this.hasRendered) {
       const container = buildPage(model, RebuildPageContainer)
       await this.sdk.rebuildPageContainer(container)
+      logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
       return
     }
     const container = buildPage(model, CreateStartUpPageContainer)
     await this.sdk.createStartUpPageContainer(container)
     this.hasRendered = true
+    logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
   }
 
   async setAudioEnabled(enabled: boolean) {
+    logTeleGlanceTest('bridge', { method: 'setAudioEnabled', args: { enabled } })
     await this.sdk.audioControl(enabled)
   }
 
@@ -82,15 +106,22 @@ export class EvenHubGlassesBridge implements GlassesBridge {
   }
 
   async turnScreenOff() {
-    if (typeof this.sdk.screenOff === 'function') {
-      await this.sdk.screenOff()
-      return
+    try {
+      if (typeof this.sdk.screenOff === 'function') {
+        await this.sdk.screenOff()
+        logTeleGlanceTest('bridge', { method: 'turnScreenOff', args: { via: 'screenOff' } })
+        return
+      }
+      if (typeof this.sdk.turnScreenOff === 'function') {
+        await this.sdk.turnScreenOff()
+        logTeleGlanceTest('bridge', { method: 'turnScreenOff', args: { via: 'turnScreenOff' } })
+        return
+      }
+      await this.sdk.callEvenApp?.('screenOff', {})
+      logTeleGlanceTest('bridge', { method: 'turnScreenOff', args: { via: 'callEvenApp' } })
+    } catch {
+      logTeleGlanceTest('bridge', { method: 'turnScreenOff', args: { error: 'not supported' } })
     }
-    if (typeof this.sdk.turnScreenOff === 'function') {
-      await this.sdk.turnScreenOff()
-      return
-    }
-    await this.sdk.callEvenApp?.('screenOff', {})
   }
 
   async getLocalStorage(key: string) {
@@ -99,6 +130,14 @@ export class EvenHubGlassesBridge implements GlassesBridge {
 
   async setLocalStorage(key: string, value: string) {
     return this.sdk.setLocalStorage?.(key, value) ?? false
+  }
+
+  dispose() {
+    if (this.listenerToken && activeEventListenerToken === this.listenerToken) {
+      activeEventListenerToken = undefined
+    }
+    this.unsubscribeEvents?.()
+    this.unsubscribeEvents = undefined
   }
 }
 
@@ -404,7 +443,7 @@ function buildListPage(model: Extract<ScreenModel, { kind: 'list' }>, Container:
 
 function hiddenListContainer() {
   return new ListContainerProperty({
-    containerID: 3,
+    containerID: 8,
     containerName: 'list',
     xPosition: 0,
     yPosition: 287,
@@ -426,7 +465,7 @@ function hiddenListContainer() {
 function sidebarListContainer(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
   const items = (model.sidebarItems.length ? model.sidebarItems : ['']).slice(0, 20).map((item) => trimForContainer(item, 64))
   return new ListContainerProperty({
-    containerID: 3,
+    containerID: 8,
     containerName: 'sidebar-list',
     xPosition: 2,
     yPosition: 38,
