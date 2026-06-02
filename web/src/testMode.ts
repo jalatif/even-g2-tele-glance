@@ -72,6 +72,25 @@ export function logApiEvent<T>(call: string, args: unknown, startedAt: number, e
   })
 }
 
+/**
+ * Real-mode timing-only API log. Unlike `logApiEvent`, this never includes raw message
+ * text, transcript, session strings, phone numbers, or login codes. It is safe to emit
+ * in any dev build (real or fixture) but is the default in real-mode harness runs where
+ * `InstrumentedTelegramApi` would otherwise emit no API timing at all.
+ */
+export function logApiTiming(call: string, args: unknown, startedAt: number, endedAt: number, ok: boolean, result?: unknown, error?: unknown) {
+  logTeleGlanceTest('api.timing', {
+    call,
+    args,
+    startedAt,
+    endedAt,
+    durationMs: endedAt - startedAt,
+    ok,
+    error: error ? String(error) : undefined,
+    result: ok ? result : undefined,
+  })
+}
+
 function previewApiResult(result: unknown): unknown {
   if (result === undefined || result === null) return result
   if (Array.isArray(result)) return { __array: true, length: result.length, first: result[0] }

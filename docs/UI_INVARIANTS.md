@@ -91,7 +91,8 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - Startup prefetching MUST NOT delay the first visible chat list render past `maxInitialRenderMs`
 - Background refreshes (polling, SSE updates) MUST NOT cause the native list selection to snap back to row 0
 - Async results from stale requests (previous chat open that was abandoned by backing out) MUST be discarded silently
-## 4. Per-screen invariants
+- Chat/topic list scroll MUST dispatch a sidebar panel partial render through `bridge.enqueueSidebarPanel` (NOT a full `bridge.render` or awaited `bridge.renderSidebarPanel`). The native list (container 8) MUST stay untouched so the firmware highlight cannot snap back to row 0. Rapid swipes MUST coalesce: only the most recent panel model ever reaches the glasses
+- The bridge exposes `render.partial.enqueue` and `render.partial.flush` events for the harness to verify coalescing. `getPartialRenderStats().dropped > 0` is expected during a swipe streak
 
 ### 4.1 `loading`
 - **state**: `{ screen: 'loading', message: 'Starting...' or 'Checking Telegram session...' }`

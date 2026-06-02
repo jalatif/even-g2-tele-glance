@@ -40,6 +40,17 @@ const fixtureApiCalls = []
 const fixtureLifecycle = []
 const fixtureRecording = []
 const fixturesSent = []
+// Real-mode harness state. The catalog is fixture-shaped, so in real mode we cannot
+// assert on chat titles, topic counts, or message text. Instead we track the latest
+// observed app state and decompose step latency into the four phases the user cares
+// about: input dispatch, state transition, native render, and capture.
+let currentScreen = 'unknown'
+let currentFocus = undefined
+const asleepNoOps = []
+const realModeApiTimings = []
+const realModePerInputLatencies = []
+const realModeRenderLatencies = []
+const realModeStateTransitions = []
 let catalog = null
 let testConsoleBridge = false
 
@@ -56,6 +67,7 @@ try {
   await waitForHttp(testUrl, 20_000)
 
   const simulator = startProcess('simulator', 'npx', [
+    '@evenrealities/evenhub-simulator@0.7.2',
     '--automation-port',
     String(automationPort),
     testUrl,
@@ -133,7 +145,15 @@ async function executeStep(step, _url) {
     await postInput('double_click', {})
   }
   if (step.input === 'click' || step.input === 'double_click' || step.input === 'up' || step.input === 'down') {
+    const dispatchStart = Date.now()
     await postInput(step.input, {})
+    const dispatchMs = Date.now() - dispatchStart
+    if (!isFixtureMode) {
+      realModePerInputLatencies.push({ name, action: step.input, ms: dispatchMs, screen: currentScreen })
+      if (currentScreen === 'asleep' && step.input !== 'double_click') {
+        asleepNoOps.push({ name, action: step.input, ts: Date.now() })
+      }
+    }
   }
   const perInputLatencies = []
   if (typeof step.input === 'string' && step.input.startsWith('pressSequence:')) {
@@ -143,18 +163,31 @@ async function executeStep(step, _url) {
       if (mapped) {
         const startedAt = Date.now()
         await postInput(mapped, {})
-        perInputLatencies.push({ action: mapped, ms: Date.now() - startedAt })
+        const dispatchMs = Date.now() - startedAt
+        perInputLatencies.push({ action: mapped, ms: dispatchMs })
+        if (!isFixtureMode) {
+          realModePerInputLatencies.push({ name, action: mapped, ms: dispatchMs, screen: currentScreen })
+          if (currentScreen === 'asleep' && mapped !== 'double_click') {
+            asleepNoOps.push({ name, action: mapped, ts: Date.now() })
+          }
+        }
       }
     }
   }
 
   const startedAt = Date.now()
   const eventStartIndex = testEvents.length
-  if (expect.state) {
+  if (expect.state && isFixtureMode) {
+    // Strict state predicates are fixture-shaped. In real mode, the catalog still
+    // emits them so a no-op can be detected, but we do not fail the run if a real
+    // chat/topic/message happens to be present.
     const predicate = makeStatePredicate(expect.state)
     await waitForTestEvent(name, predicate, budgetMs, eventStartIndex)
   }
-  if (expect.renderBodyContains) {
+  if (expect.renderBodyContains && isFixtureMode) {
+    // The catalog renderBodyContains strings reference fixture-only chat/topic titles
+    // and message bodies. Skipping in real mode keeps the harness useful for parity
+    // checks without false negatives from the user's real Telegram data.
     await waitForTestEvent(
       name,
       (event) => event.event === 'render' && expect.renderBodyContains.every((needle) => `${JSON.stringify(event.model ?? {})}`.includes(needle)),
@@ -374,9 +407,26 @@ async function pollConsole() {
     const event = parseTestEvent(entry.message)
     if (event) {
       testEvents.push(event)
-      if (event.event === 'api') fixtureApiCalls.push(event)
-      if (event.event === 'lifecycle') fixtureLifecycle.push(event)
-      if (event.event === 'recording') fixtureRecording.push(event)
+      if (event.event === 'api') {
+        fixtureApiCalls.push(event)
+      } else if (event.event === 'api.timing') {
+        realModeApiTimings.push(event)
+      } else if (event.event === 'lifecycle') {
+        fixtureLifecycle.push(event)
+      } else if (event.event === 'recording') {
+        fixtureRecording.push(event)
+      } else if (event.event === 'state') {
+        const previousScreen = currentScreen
+        currentScreen = typeof event.screen === 'string' ? event.screen : currentScreen
+        currentFocus = event.focus ?? undefined
+        if (!isFixtureMode && previousScreen !== 'unknown' && previousScreen !== currentScreen) {
+          realModeStateTransitions.push({ from: previousScreen, to: currentScreen, ts: event.ts ?? Date.now() })
+        }
+      } else if (event.event === 'render') {
+        if (!isFixtureMode && typeof event.durationMs === 'number') {
+          realModeRenderLatencies.push({ ts: event.ts ?? Date.now(), durationMs: event.durationMs, partial: Boolean(event.partial) })
+        }
+      }
     }
     const storedEntry = sanitizeConsoleEntry(entry)
     if (storedEntry) consoleEntries.push(storedEntry)
@@ -455,7 +505,14 @@ async function writeArtifacts() {
     warnings.push(`final console poll failed: ${error instanceof Error ? error.message : String(error)}`)
   })
   await writeFile(path.join(artifactRoot, 'console.json'), JSON.stringify({ entries: consoleEntries, testEvents }, null, 2))
-  await writeFile(path.join(artifactRoot, 'latency.json'), JSON.stringify({ latencies, warnings, failures }, null, 2))
+  await writeFile(path.join(artifactRoot, 'latency.json'), JSON.stringify({ latencies, warnings, failures, realMode: {
+    perInputLatencies: realModePerInputLatencies,
+    renderLatencies: realModeRenderLatencies,
+    apiTimings: realModeApiTimings,
+    stateTransitions: realModeStateTransitions,
+    asleepNoOps,
+    currentScreen,
+  } }, null, 2))
   await writeFile(path.join(artifactRoot, 'fixture.json'), JSON.stringify({ apiCalls: fixtureApiCalls, lifecycle: fixtureLifecycle, recording: fixtureRecording }, null, 2))
 }
 
@@ -474,6 +531,36 @@ async function writeReport() {
     '| Step | Total ms | Budget ms | Capture ms |',
     '| --- | ---: | ---: | ---: |',
     ...latencies.map((item) => `| ${item.name} | ${Math.round(item.totalMs)} | ${item.budgetMs} | ${Math.round(item.captureMs)} |`),
+    '',
+    ...(realModePerInputLatencies.length || realModeRenderLatencies.length ? [
+      '## Real-mode latency buckets',
+      '',
+      `- Final observed screen: ${currentScreen}${currentFocus ? ` (focus=${currentFocus})` : ''}`,
+      '',
+      '| Action | Dispatch ms | Screen |',
+      '| --- | ---: | --- |',
+      ...realModePerInputLatencies.slice(-50).map((item) => `| ${item.action} | ${Math.round(item.ms)} | ${item.screen} |`),
+      '',
+      '| Render (last 50) | Duration ms | Partial |',
+      '| --- | ---: | --- |',
+      ...realModeRenderLatencies.slice(-50).map((item, idx) => `| render#${idx} | ${Math.round(item.durationMs)} | ${item.partial ? 'yes' : 'no'} |`),
+    ] : []),
+    '',
+    ...(asleepNoOps.length ? [
+      '## Asleep no-op inputs',
+      '',
+      'Inputs sent while the screen was off that the controller is expected to drop. Real-mode only.',
+      '',
+      ...asleepNoOps.slice(-30).map((evt) => `- ${evt.name}: ${evt.action} at ${new Date(evt.ts).toISOString()}`),
+    ] : []),
+    '',
+    ...(realModeApiTimings.length ? [
+      '## Real-mode API timings',
+      '',
+      '`api.timing` events emitted by `InstrumentedTelegramApi` in real mode. No message text, no phone numbers, no session strings — only call name, ids, and durations.',
+      '',
+      ...realModeApiTimings.slice(-30).map((evt) => `- ${evt.call} ${JSON.stringify(evt.args ?? {})} (${evt.durationMs}ms, ok=${evt.ok})`),
+    ] : []),
     '',
     ...(isFixtureMode ? [
       '## Fixture API calls',

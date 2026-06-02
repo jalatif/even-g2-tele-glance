@@ -428,6 +428,9 @@ function sanitizeGlassesText(value: string) {
     .replace(/\u{1f534}/gu, '[red]')
     .replace(/\u{1f7e1}/gu, '[yellow]')
     .replace(/\u{1f7e2}/gu, '[green]')
+    // Heavy exclamation (U+2757) and warning sign (U+26A0) emit LVGL `glyph dsc. not found`
+    // warnings on the Even Hub simulator. Strip them rather than render unsupported glyphs.
+    .replace(/[\u{2757}\u{26a0}]/gu, '')
     .replace(/[\u{1f000}-\u{1faff}]/gu, '')
     .replace(/\ufe0f/g, '')
 }

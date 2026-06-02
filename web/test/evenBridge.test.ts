@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { EvenHubGlassesBridge } from '../src/bridge/evenBridge'
 import type { ScreenModel } from '../src/controller/model'
 
+function flushAsync(ms = 0) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
 describe('EvenHubGlassesBridge', () => {
   it('renders structured boxed text without sending ASCII box markers to the glasses box', async () => {
     let rendered: unknown
@@ -190,5 +194,62 @@ describe('EvenHubGlassesBridge', () => {
     bridge.dispose()
 
     expect(unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('coalesces rapid enqueueSidebarPanel calls into a single latest-wins render', async () => {
+    const upgrades: Array<{ id: number; content: string }> = []
+    let resolveNext: (() => void) | undefined
+    const blockRender = () => new Promise<void>((resolve) => { resolveNext = resolve })
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer() { return 0 },
+      async rebuildPageContainer() { return true },
+      async textContainerUpgrade(container: unknown) {
+        const c = container as { containerID: number; content: string }
+        upgrades.push({ id: c.containerID, content: c.content })
+        // Slow native render — must not stall the input handler.
+        await blockRender()
+        return true
+      },
+      async audioControl() { return undefined },
+      onEvenHubEvent() { return undefined },
+    })
+
+    const baseModel: Extract<ScreenModel, { kind: 'sidebar' }> = {
+      kind: 'sidebar',
+      title: 'Chats',
+      focus: 'sidebar',
+      sidebarTitle: 'Chats',
+      sidebarItems: ['Alice', 'Bob', 'Carol'],
+      sidebarSelected: 0,
+      panelTitle: 'Alice',
+      panelBody: 'preview',
+      panelFooter: 'Click open',
+    }
+    await bridge.render(baseModel)
+    upgrades.length = 0
+
+    // Three rapid enqueues while a render is in flight. The slow native render
+    // never resolves, so all three enqueues must be accepted and the second
+    // and third must be coalesced into the in-flight render slot.
+    bridge.enqueueSidebarPanel({ ...baseModel, sidebarSelected: 1, panelBody: 'bob' })
+    bridge.enqueueSidebarPanel({ ...baseModel, sidebarSelected: 2, panelBody: 'carol' })
+    bridge.enqueueSidebarPanel({ ...baseModel, sidebarSelected: 1, panelBody: 'bob-again' })
+    const stats = bridge.getPartialRenderStats()
+    expect(stats.dispatched).toBe(3)
+    expect(stats.dropped).toBe(2)
+
+    // The input handler must have returned by now (enqueue is synchronous).
+    // Let the in-flight render complete so the trailing render slot is freed.
+    resolveNext?.()
+    await flushAsync(0)
+
+    // After the in-flight render completes, the latest queued model must be flushed.
+    resolveNext?.()
+    await flushAsync(20)
+    // We expect at least one upgrade call per render cycle; the final content
+    // should be the latest panel body.
+    expect(upgrades.length).toBeGreaterThan(0)
+    const lastBody = upgrades.filter((u) => u.id === 6).at(-1)
+    expect(lastBody?.content).toContain('bob-again')
   })
 })

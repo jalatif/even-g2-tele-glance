@@ -256,6 +256,26 @@ describe('screenModel', () => {
     }
   })
 
+  it('strips U+2757 and U+26A0 that produce LVGL glyph-not-found warnings', () => {
+    const state: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: '❗ important ⚠ warning done' }],
+    }
+    const model = screenModel(state)
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      // Heavy exclamation and warning sign must not survive into the glasses panel
+      // because LVGL emits `glyph dsc. not found` warnings for them on the simulator.
+      expect(model.panelBody).not.toContain('\u2757')
+      expect(model.panelBody).not.toContain('\u26a0')
+      expect(model.panelBody).toContain('important')
+      expect(model.panelBody).toContain('warning')
+      expect(model.panelBody).toContain('done')
+    }
+  })
+
   it('renders every long-message scroll stop as a complete box', () => {
     const state: AppState = {
       screen: 'sidebar', focus: 'messages',

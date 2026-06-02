@@ -12,7 +12,7 @@ import type {
   TranscriptionResult,
 } from './types'
 import type { TelegramApi } from './api'
-import { isTeleGlanceFixtureMode, logApiEvent } from './testMode'
+import { isTeleGlanceFixtureMode, logApiEvent, logApiTiming } from './testMode'
 
 export class InstrumentedTelegramApi implements TelegramApi {
   constructor(private readonly inner: TelegramApi) {}
@@ -72,7 +72,19 @@ export class InstrumentedTelegramApi implements TelegramApi {
   }
 
   private async wrap<T>(call: string, args: unknown, fn: () => Promise<T>): Promise<T> {
-    if (!isTeleGlanceFixtureMode()) return fn()
+    if (!isTeleGlanceFixtureMode()) {
+      // Real-mode: log timing only. Never include phone, code, message text, or any
+      // sensitive payload. Chat/topic/message ids are public identifiers, not secrets.
+      const startedAt = Date.now()
+      try {
+        const result = await fn()
+        logApiTiming(call, sanitizeArgsForRealMode(args), startedAt, Date.now(), true, resultSummary(result))
+        return result
+      } catch (error) {
+        logApiTiming(call, sanitizeArgsForRealMode(args), startedAt, Date.now(), false, undefined, error)
+        throw error
+      }
+    }
     const startedAt = Date.now()
     try {
       const result = await fn()
@@ -83,4 +95,48 @@ export class InstrumentedTelegramApi implements TelegramApi {
       throw error
     }
   }
+}
+
+/**
+ * Strip sensitive arguments for real-mode harness logs. Phone numbers, login codes,
+ * session strings, and message text are all excluded; chat/topic ids and array sizes
+ * are kept so the harness can attribute latency to specific API calls and pagination.
+ */
+function sanitizeArgsForRealMode(args: unknown): unknown {
+  if (!args || typeof args !== 'object') return args
+  const source = args as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (key === 'phone' || key === 'code' || key === 'sessionString' || key === 'stringSession') {
+      out[key] = '[redacted]'
+      continue
+    }
+    if (key === 'request' && value && typeof value === 'object') {
+      const req = value as Record<string, unknown>
+      out.request = {
+        textLength: typeof req.text === 'string' ? req.text.length : undefined,
+        topicId: req.topicId,
+      }
+      continue
+    }
+    out[key] = value
+  }
+  return out
+}
+
+function resultSummary(result: unknown): unknown {
+  if (result === undefined || result === null) return result
+  if (Array.isArray(result)) return { __array: true, length: result.length }
+  if (typeof result === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(result as Record<string, unknown>)) {
+      if (key === 'text' || key === 'transcript' || key === 'sessionString' || key === 'stringSession') {
+        out[key] = '[redacted]'
+      } else {
+        out[key] = value
+      }
+    }
+    return out
+  }
+  return result
 }

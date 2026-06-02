@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { TelegramAppController, type GlassesBridge } from '../src/controller/appController'
 import type { TelegramApi } from '../src/api'
 import type { Chat, Message, Topic, TranscriptionResult } from '../src/types'
+import type { ScreenModel } from '../src/controller/model'
 
 const chats: Chat[] = [
   { id: '1', title: 'Alice', kind: 'user' },
@@ -70,8 +71,29 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'swipeDown' })
 
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 2 })
+    // The queued path is the production hot path: every list scroll must call
+    // `enqueueSidebarPanel` exactly once. The legacy `renderSidebarPanel` is the
+    // slow promise that must not be awaited by the input handler.
+    expect(bridge.enqueueSidebarPanel).toHaveBeenCalled()
+    const enqueueCalls = vi.mocked(bridge.enqueueSidebarPanel ?? (() => undefined)).mock.calls.length
+    expect(enqueueCalls).toBeGreaterThanOrEqual(2)
   })
 
+  it('enqueues a sidebar panel for each chat scroll without awaiting the native render', async () => {
+    const api = fakeApi({ authorized: true, chats: [chats[0], chats[1], { id: '3', title: 'Ops', kind: 'group' }] })
+    const bridge = recordingEnqueueBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await flushAsync()
+    const startCount = bridge.enqueueLog.length
+
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'swipeDown' })
+
+    expect(bridge.enqueueLog.length - startCount).toBe(2)
+    expect(bridge.enqueueLog[bridge.enqueueLog.length - 1].selected).toBe(2)
+  })
   it('does not repaint the native chat list for a no-activity background refresh', async () => {
     const api = fakeApi({ authorized: true })
     const bridge = fakeBridge()
@@ -844,15 +866,37 @@ function fakeBridge(): GlassesBridge {
     setAudioEnabled: vi.fn(async () => undefined),
     showExitConfirmation: vi.fn(async () => undefined),
     turnScreenOff: vi.fn(async () => undefined),
+    enqueueSidebarPanel: vi.fn(),
+    renderSidebarPanel: vi.fn(async () => undefined),
   }
 }
 
 function slowBridge(): GlassesBridge {
+  // `renderSidebarPanel` never resolves so the legacy partial-render path would hang.
+  // The list-scroll path now goes through `enqueueSidebarPanel` and must remain synchronous.
   return {
     render: vi.fn(() => new Promise<void>(() => undefined)),
     setAudioEnabled: vi.fn(async () => undefined),
     showExitConfirmation: vi.fn(async () => undefined),
     turnScreenOff: vi.fn(async () => undefined),
+    enqueueSidebarPanel: vi.fn(),
+    renderSidebarPanel: vi.fn(() => new Promise<void>(() => undefined)),
+  }
+}
+
+function recordingEnqueueBridge(): GlassesBridge & { enqueueLog: Array<{ ts: number; focus: string; selected: number }> } {
+  const enqueueLog: Array<{ ts: number; focus: string; selected: number }> = []
+  const enqueueSidebarPanel = vi.fn((model: Extract<ScreenModel, { kind: 'sidebar' }>) => {
+    enqueueLog.push({ ts: Date.now(), focus: model.focus, selected: model.sidebarSelected })
+  })
+  return {
+    render: vi.fn(async () => undefined),
+    setAudioEnabled: vi.fn(async () => undefined),
+    showExitConfirmation: vi.fn(async () => undefined),
+    turnScreenOff: vi.fn(async () => undefined),
+    enqueueSidebarPanel,
+    renderSidebarPanel: vi.fn(async () => undefined),
+    enqueueLog,
   }
 }
 

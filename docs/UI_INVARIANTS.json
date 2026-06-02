@@ -43,6 +43,40 @@
       "sidebarSending"
     ]
   },
+  "nonBlocking": {
+    "rules": [
+      "Chat/topic list scroll MUST update selectedIndex within maxSwipeSelectionMs without triggering a full bridge.render.",
+      "Chat/topic list scroll MUST dispatch a sidebar panel partial render through bridge.enqueueSidebarPanel, NOT a full bridge.render or awaited bridge.renderSidebarPanel.",
+      "The native list (container 8) MUST stay untouched during list scroll so the firmware highlight cannot snap back to row 0.",
+      "Rapid list swipes MUST coalesce: only the most recent panel model ever reaches the glasses. getPartialRenderStats().dropped > 0 is expected during a swipe streak.",
+      "Background refreshes (polling, SSE updates) MUST NOT cause the native list selection to snap back to row 0.",
+      "Async results from stale requests (previous chat open that was abandoned) MUST be discarded silently."
+    ],
+    "events": [
+      "render.partial.enqueue",
+      "render.partial.flush"
+    ]
+  },
+  "realMode": {
+    "skipExpectations": [
+      "expect.state",
+      "expect.renderBodyContains"
+    ],
+    "trackedFields": [
+      "currentScreen",
+      "currentFocus",
+      "asleepNoOps",
+      "realModePerInputLatencies",
+      "realModeRenderLatencies",
+      "realModeApiTimings",
+      "realModeStateTransitions"
+    ],
+    "reportSections": [
+      "Real-mode latency buckets",
+      "Asleep no-op inputs",
+      "Real-mode API timings"
+    ]
+  },
   "blankDetection": {
     "maxUniqueColors": 5,
     "borderGreenChannelR": 0,
@@ -1331,6 +1365,17 @@
         }
       },
       "expectToFail": true,
+      "budgetMs": 1000
+    },
+    {
+      "name": "41-partial-render-coalesce",
+      "input": "pressSequence:down,down,down,down,down",
+      "target": "sidebar.chats",
+      "expect": {
+        "apiCalls": [],
+        "noRenderEvents": true,
+        "maxPerSwipeMs": 50
+      },
       "budgetMs": 1000
     }
   ]

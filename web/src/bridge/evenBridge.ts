@@ -41,6 +41,17 @@ type EvenBridgeInstance = {
 export class EvenHubGlassesBridge implements GlassesBridge {
   private hasRendered = false
   private renderSequence = 0
+  private pendingPanelModel: Extract<ScreenModel, { kind: 'sidebar' }> | undefined
+  private panelRenderInFlight = false
+  private panelRenderQueuedAfter = false
+  private partialRenderDispatched = 0
+  private partialRenderDropped = 0
+  private panelRenderTimer: ReturnType<typeof setTimeout> | undefined
+  // `panelRenderIdleMs` is a small coalescing window for the partial-render queue.
+  // Rapid list swipes post multiple `enqueueSidebarPanel` calls within a few ms; a 0ms
+  // queue tick still drops everything but the latest model, while making the queue
+  // start on a microtask boundary so the input handler never awaits a native render.
+  private readonly panelRenderIdleMs = 0
 
   constructor(
     private readonly sdk: EvenBridgeInstance,
@@ -116,6 +127,117 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     logTeleGlanceTest('render', { sequence, partial: true, model: summarizeScreenModel(model) })
   }
 
+  /**
+   * Fire-and-forget, latest-wins partial render for chat/topic list scrolls.
+   *
+   * The list-scroll input handler must return to the user as fast as possible. Awaiting
+   * `textContainerUpgrade` calls here would couple native render latency to the input path
+   * and would queue stale panel updates behind slow ones on real G2 hardware.
+   *
+   * Instead, this method:
+   *   1. Stores the latest model in `pendingPanelModel`, overwriting any earlier queued model.
+   *   2. Schedules a microtask flush if none is pending.
+   *   3. While a flush is in flight, marks `panelRenderQueuedAfter` so the next idle tick
+   *      re-renders once the in-flight call resolves.
+   *   4. Counts both `partialRenderDispatched` and `partialRenderDropped` so the test
+   *      harness can verify coalescing.
+   *
+   * The returned promise resolves when the queue has accepted the model, NOT when the
+   * native render finishes. Callers must not `await` this for synchronous input handling.
+   */
+  enqueueSidebarPanel(model: Extract<ScreenModel, { kind: 'sidebar' }>): void {
+    this.partialRenderDispatched += 1
+    const previous = this.pendingPanelModel
+    this.pendingPanelModel = model
+    if (previous) this.partialRenderDropped += 1
+    if (this.panelRenderInFlight) {
+      this.panelRenderQueuedAfter = true
+      logTeleGlanceTest('render.partial.enqueue', {
+        dropped: previous ? 1 : 0,
+        coalesced: previous ? 1 : 0,
+        inFlight: true,
+      })
+      return
+    }
+    if (this.panelRenderTimer) {
+      logTeleGlanceTest('render.partial.enqueue', {
+        dropped: previous ? 1 : 0,
+        coalesced: previous ? 1 : 0,
+        inFlight: false,
+      })
+      return
+    }
+    this.panelRenderTimer = setTimeout(() => {
+      this.panelRenderTimer = undefined
+      void this.flushPanelQueue()
+    }, this.panelRenderIdleMs)
+    const maybeNodeTimeout = this.panelRenderTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+    logTeleGlanceTest('render.partial.enqueue', {
+      dropped: previous ? 1 : 0,
+      coalesced: previous ? 1 : 0,
+      inFlight: false,
+    })
+  }
+
+  /**
+   * Drain the latest queued panel model through the partial-render path. If a newer model
+   * arrives while we are rendering, the trailing flag is set so the queue re-renders once.
+   */
+  private async flushPanelQueue(): Promise<void> {
+    if (this.panelRenderInFlight) return
+    const model = this.pendingPanelModel
+    if (!model) return
+    this.pendingPanelModel = undefined
+    this.panelRenderInFlight = true
+    this.panelRenderQueuedAfter = false
+    const startedAt = Date.now()
+    try {
+      await this.renderSidebarPanel(model)
+    } catch {
+      // Rendering failures must not stall the queue.
+    } finally {
+      const durationMs = Date.now() - startedAt
+      logTeleGlanceTest('render.partial.flush', { durationMs })
+      this.panelRenderInFlight = false
+      if (this.pendingPanelModel) {
+        this.panelRenderQueuedAfter = false
+        this.panelRenderTimer = setTimeout(() => {
+          this.panelRenderTimer = undefined
+          void this.flushPanelQueue()
+        }, this.panelRenderIdleMs)
+        const maybeNodeTimeout = this.panelRenderTimer as unknown as { unref?: () => void }
+        maybeNodeTimeout.unref?.()
+      } else if (this.panelRenderQueuedAfter) {
+        // Trailing flag with no fresh model means a stale coalesced drop was tracked but no
+        // new data arrived. We deliberately do nothing here; the next enqueue will start fresh.
+        this.panelRenderQueuedAfter = false
+      }
+    }
+  }
+
+  dispose() {
+    if (this.listenerToken && activeEventListenerToken === this.listenerToken) {
+      activeEventListenerToken = undefined
+    }
+    if (this.panelRenderTimer) {
+      clearTimeout(this.panelRenderTimer)
+      this.panelRenderTimer = undefined
+    }
+    this.pendingPanelModel = undefined
+    this.panelRenderInFlight = false
+    this.panelRenderQueuedAfter = false
+    this.unsubscribeEvents?.()
+    this.unsubscribeEvents = undefined
+  }
+
+  /** Test/debug introspection: returns counters of queued partial render activity. */
+  getPartialRenderStats() {
+    return {
+      dispatched: this.partialRenderDispatched,
+      dropped: this.partialRenderDropped,
+    }
+  }
   async setAudioEnabled(enabled: boolean) {
     logTeleGlanceTest('bridge', { method: 'setAudioEnabled', args: { enabled } })
     await this.sdk.audioControl(enabled)
@@ -154,14 +276,6 @@ export class EvenHubGlassesBridge implements GlassesBridge {
 
   async setLocalStorage(key: string, value: string) {
     return this.sdk.setLocalStorage?.(key, value) ?? false
-  }
-
-  dispose() {
-    if (this.listenerToken && activeEventListenerToken === this.listenerToken) {
-      activeEventListenerToken = undefined
-    }
-    this.unsubscribeEvents?.()
-    this.unsubscribeEvents = undefined
   }
 }
 

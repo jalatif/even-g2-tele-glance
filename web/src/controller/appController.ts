@@ -9,6 +9,13 @@ import { consumeInjectedAudioChunks } from '../fixtureApi'
 export interface GlassesBridge {
   render(model: ScreenModel): Promise<void>
   renderSidebarPanel?(model: Extract<ScreenModel, { kind: 'sidebar' }>): Promise<void>
+  /**
+   * Fire-and-forget partial-render for chat/topic list scrolls. The bridge coalesces
+   * rapid enqueues into a single latest-wins native render so the input handler returns
+   * immediately without awaiting `textContainerUpgrade` calls. Implementations that lack
+   * partial-render support may fall back to a queued full `render` call.
+   */
+  enqueueSidebarPanel?(model: Extract<ScreenModel, { kind: 'sidebar' }>): void
   setAudioEnabled(enabled: boolean): Promise<void>
   getLocalStorage?(key: string): Promise<string>
   setLocalStorage?(key: string, value: string): Promise<boolean>
@@ -1649,16 +1656,33 @@ export class TelegramAppController {
   }
 
   /**
-   * Apply a chat/topic-list scroll state and emit a partial render so the right panel
+   * Apply a chat/topic-list scroll state and emit a *partial* render so the right panel
    * follows the highlighted row. This is the bridge between the synchronous cache lookup
    * in `handleSidebarChats`/`handleSidebarTopics` and the glasses UI: the controller state
    * is updated immediately, and the right panel is refreshed in place without rebuilding
    * the native list.
+   *
+   * The native render is fire-and-forget through `bridge.enqueueSidebarPanel`. The bridge
+   * coalesces rapid list scrolls into a single latest-wins `textContainerUpgrade` chain so
+   * the input handler does not block on slow native renders. Older models are dropped, not
+   * queued, so a long swipe never falls behind. The native list (container ID 8) is left
+   * untouched so the firmware highlight cannot snap back to row 0.
+   *
+   * If the bridge does not implement `enqueueSidebarPanel`, we fall back to awaiting a
+   * direct `renderSidebarPanel` so simpler test doubles still work.
    */
-  private async setStateForListScroll(state: AppState) {
+  private setStateForListScroll(state: AppState) {
     this.applyState(state, true)
-    if (this.bridge.renderSidebarPanel && state.screen === 'sidebar') {
-      await this.bridge.renderSidebarPanel(screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>)
+    if (state.screen !== 'sidebar') return
+    const sidebarModel = screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>
+    if (this.bridge.enqueueSidebarPanel) {
+      this.bridge.enqueueSidebarPanel(sidebarModel)
+      return
+    }
+    if (this.bridge.renderSidebarPanel) {
+      // Test doubles may not implement the queued path. Awaiting here is safe because
+      // fake bridges resolve synchronously; production bridges always provide enqueue.
+      void this.bridge.renderSidebarPanel(sidebarModel)
       return
     }
     this.enqueueRender(state)

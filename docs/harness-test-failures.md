@@ -151,4 +151,33 @@ Last harness run: `artifacts/simulator-flow/2026-06-02T09-16-59-134Z` (48 steps)
   - The most recent simulator run (`artifacts/simulator-flow/2026-06-02T19-22-58-721Z`) shows step 01 with `contentMatches: true` and `panelBody: "Fixture Alpha: Alpha message page contains fixture-alpha-body for startup testing. Me: Alpha ou..."` — proof that the right panel now renders the cached messages, not the `lastMessage` fallback.
   - The remaining per-render "timed out" failures on rapid chat/topic swipes are a simulator limitation: `@evenrealities/evenhub-simulator@0.7.2` does not implement `textContainerUpgrade`, so the partial path falls back to `rebuildPageContainer`, which the simulator handles slowly for the sidebar page. On real G2 hardware the partial path is the primary one and the list selection never snaps.
   - `npm run typecheck` and `npm test` both pass (90/90 unit tests).
- [x] Fixed
+  - `npm run typecheck` and `npm test` both pass (90/90 unit tests).
+- [x] Fixed
+
+### A5. LVGL `glyph dsc. not found` warnings for U+2757 and U+26A0
+- **Status**: fixed
+- **Severity**: harness (console warning noise that can mask real errors in real-mode runs)
+- **Root cause**: `sanitizeGlassesText` in `web/src/controller/model.ts` stripped `1F534..1FAFF` but left `U+2757` (heavy exclamation) and `U+26A0` (warning sign) in the text, producing LVGL "glyph dsc. not found" warnings on the simulator.
+- **Fix**: Added the two codepoints to the existing strip pattern in `sanitizeGlassesText`. Added a unit test that verifies the characters are removed while surrounding text survives.
+- [x] Fixed
+
+### C8. Harness has no real-mode content/profile split
+- **Status**: fixed
+- **Severity**: harness (real-mode runs failed at every `renderBodyContains` and `state` predicate, hiding real issues)
+- **Root cause**: `simulator-flow.mjs` ran the same `expect.renderBodyContains` and `expect.state` predicates in real mode, but the catalog is fixture-shaped (it asserts on titles like `fixture-alpha-body` and chat names from the seeded fixture dataset). Real-mode runs immediately failed every step.
+- **Fix**:
+  - `simulator-flow.mjs` now skips `expect.state` and `expect.renderBodyContains` predicates when `runMode !== 'fixture'`. API-call and bridge-call expectations still run in both modes.
+  - Real-mode runs now track the latest `screen`/`focus` from `state` events, the latest per-input dispatch latency, asleep no-op inputs, partial-render timings, and a `api.timing` log of timing-only API calls.
+  - `latency.json` artifact now includes a `realMode` block with `perInputLatencies`, `renderLatencies`, `apiTimings`, `stateTransitions`, `asleepNoOps`, and the final observed `currentScreen`.
+  - Report includes new sections: "Real-mode latency buckets", "Asleep no-op inputs", and "Real-mode API timings".
+- [x] Fixed
+
+### C9. Real-mode API timing is invisible
+- **Status**: fixed
+- **Severity**: harness
+- **Root cause**: `InstrumentedTelegramApi.wrap()` short-circuited in non-fixture mode with no logging. Backend latency, hang behavior, and error rates were invisible to the harness in real mode.
+- **Fix**: New `logApiTiming` event in `testMode.ts` and a new `wrap()` branch in `InstrumentedTelegramApi` that emits `api.timing` events in real mode. Sensitive fields (phone numbers, login codes, session strings, message text) are redacted; chat/topic/message ids and array lengths are kept so the harness can attribute latency to specific calls. `args.request.textLength` is recorded instead of `args.request.text`.
+- [x] Fixed
+
+### E. Iteration log (continued)
+- 2026-06-02 — Fixing round 6: **D6. Fire-and-forget list scroll** + **A5. U+2757/U+26A0 sanitization** + **C8. Real-mode harness profile** + **C9. Real-mode API timing**. `npm run typecheck` and `npm test` pass (93/93 unit tests, up from 90).
