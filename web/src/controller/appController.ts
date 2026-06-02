@@ -23,6 +23,7 @@ const RENDER_DEFER_MS = 0
 const RENDER_COOLDOWN_MS = 120
 const INPUT_QUIET_MS = 900
 const TOPIC_PREVIEW_IDLE_MS = 1000
+const CHAT_PREVIEW_IDLE_MS = 800
 const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePressDelayMs: 260,
   messagePollMs: 3000,
@@ -64,6 +65,9 @@ export class TelegramAppController {
   private deferredMessageRefreshTimer: ReturnType<typeof setTimeout> | undefined
   private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
   private topicPreviewInFlight = new Set<string>()
+  private chatPreviewDebounce: ReturnType<typeof setTimeout> | undefined
+  private chatPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
+  private chatPreviewInFlight = new Set<string>()
   private topicsCache = new Map<string, Topic[]>()
   private topicsPrefetchInFlight = new Map<string, Promise<Topic[]>>()
   private messageCache = new Map<string, { messages: Message[]; cursor?: Id }>()
@@ -72,6 +76,7 @@ export class TelegramAppController {
   private pendingReadAcks = new Map<string, { chat: Chat; topic?: Topic; maxId: Id }>()
   private readAckFlushTimer: ReturnType<typeof setTimeout> | undefined
   private selectionOnlyPressReadyAt = 0
+  private lastSelectIndexPressAt = 0
   private renderInFlight = false
   private pendingRenderState: AppState | undefined
   private renderTimer: ReturnType<typeof setTimeout> | undefined
@@ -232,6 +237,9 @@ export class TelegramAppController {
         : selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
       const currentIndex = state.focus === 'chats' ? state.selectedChatIndex : state.selectedTopicIndex
       if (idx === currentIndex && Date.now() >= this.selectionOnlyPressReadyAt) {
+        const now = Date.now()
+        if (now - this.lastSelectIndexPressAt < 400) return
+        this.lastSelectIndexPressAt = now
         await this.dispatch({ type: 'press', index: idx, itemName: input.itemName })
         return
       }
@@ -357,28 +365,40 @@ export class TelegramAppController {
   ) {
     if (input.type === 'doublePress') {
       this.rememberChats(state.chats)
+      this.cancelChatDebounce()
       await this.setState({ screen: 'asleep', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
       await this.bridge.turnScreenOff?.()
       return
     }
     if (input.type === 'swipeUp') {
       this.openRequestId += 1
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, -1), status: undefined })
+      this.cancelChatDebounce()
+      const newIndex = moveSelection(state.selectedChatIndex, state.chats.length, -1)
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: newIndex, status: undefined, ...emptyChatPreview() })
+      this.debounceChatPreviewFetch(state.chats, newIndex)
       return
     }
     if (input.type === 'swipeDown') {
       this.openRequestId += 1
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: moveSelection(state.selectedChatIndex, state.chats.length, 1), status: undefined })
+      this.cancelChatDebounce()
+      const newIndex = moveSelection(state.selectedChatIndex, state.chats.length, 1)
+      await this.setStateWithoutRender({ ...state, selectedChatIndex: newIndex, status: undefined, ...emptyChatPreview() })
+      this.debounceChatPreviewFetch(state.chats, newIndex)
       return
     }
     if (input.type === 'selectIndex') {
       const selectedChatIndex = selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
-      if (selectedChatIndex !== state.selectedChatIndex) this.openRequestId += 1
-      await this.setStateWithoutRender({ ...state, selectedChatIndex, status: undefined })
+      if (selectedChatIndex !== state.selectedChatIndex) {
+        this.openRequestId += 1
+        this.cancelChatDebounce()
+      }
+      await this.setStateWithoutRender({ ...state, selectedChatIndex, status: undefined, ...emptyChatPreview() })
+      this.debounceChatPreviewFetch(state.chats, selectedChatIndex)
       return
     }
     if (input.type !== 'press') return
 
+    this.cancelChatDebounce()
     const selectedChatIndex = selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
     const selectedState = { ...state, selectedChatIndex }
     const chat = selectedState.chats[selectedChatIndex]
@@ -556,6 +576,71 @@ export class TelegramAppController {
     }
   }
 
+  private debounceChatPreviewFetch(chats: Chat[], selectedChatIndex: number) {
+    const chat = chats[selectedChatIndex]
+    if (!chat) return
+    this.cancelChatDebounce()
+    this.chatPreviewDebounce = setTimeout(() => {
+      this.chatPreviewDebounce = undefined
+      if (this.isInputQuiet()) {
+        this.debounceChatPreviewFetch(chats, selectedChatIndex)
+        return
+      }
+      void this.fetchChatPreview(chat).catch(() => undefined)
+    }, this.chatPreviewDelayMs())
+    const maybeNodeTimeout = this.chatPreviewDebounce as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  }
+
+  private cancelChatDebounce() {
+    if (!this.chatPreviewDebounce) return
+    clearTimeout(this.chatPreviewDebounce)
+    this.chatPreviewDebounce = undefined
+  }
+
+  private async fetchChatPreview(chat: Chat) {
+    const cacheKey = String(chat.id)
+    const cached = this.chatPreviewCache.get(cacheKey)
+    if (cached) {
+      const state = this.state
+      if (state.screen !== 'sidebar' || state.focus !== 'chats') return
+      if (!chatMatchesSelection(state, chat)) return
+      await this.setStateWithVisibleRead({
+        ...state,
+        status: undefined,
+        previewMessages: cached.messages,
+        previewCursor: cached.cursor,
+        previewScrollOffset: 0,
+        previewIsNewestPage: true,
+      }, chat, undefined, cached.messages, { render: false })
+      return
+    }
+
+    if (this.chatPreviewInFlight.has(cacheKey)) return
+    this.chatPreviewInFlight.add(cacheKey)
+    try {
+      const messages = await this.api.listMessages(chat.id, { limit: MESSAGE_PAGE_LIMIT })
+      const normalized = normalizeMessagePage(messages)
+      this.chatPreviewCache.set(cacheKey, { messages: normalized, cursor: oldestMessageId(normalized) })
+      const state = this.state
+      if (state.screen !== 'sidebar' || state.focus !== 'chats') return
+      if (!chatMatchesSelection(state, chat)) return
+      await this.setStateWithVisibleRead({
+        ...state,
+        status: undefined,
+        previewMessages: normalized,
+        previewCursor: oldestMessageId(normalized),
+        previewScrollOffset: 0,
+        previewIsNewestPage: true,
+      }, chat, undefined, normalized, { render: false })
+    } finally {
+      this.chatPreviewInFlight.delete(cacheKey)
+    }
+  }
+
+  private chatPreviewDelayMs() {
+    return Math.max(CHAT_PREVIEW_IDLE_MS, this.msUntilQuiet() + CHAT_PREVIEW_IDLE_MS)
+  }
 
   private async scheduleMessagePress(
     state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }> | Extract<AppState, { screen: 'sidebarSent' }>
@@ -1713,6 +1798,20 @@ function emptyTopicPreview() {
 
 function topicMatchesSelection(state: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }>, topic: Topic) {
   return String(state.topics[state.selectedTopicIndex]?.id ?? '') === String(topic.id)
+}
+
+function emptyChatPreview() {
+  return {
+    previewMessages: undefined,
+    previewCursor: undefined,
+    previewScrollOffset: undefined,
+    previewNewerPages: undefined,
+    previewIsNewestPage: undefined,
+  }
+}
+
+function chatMatchesSelection(state: Extract<AppState, { screen: 'sidebar'; focus: 'chats' }>, chat: Chat) {
+  return String(state.chats[state.selectedChatIndex]?.id ?? '') === String(chat.id)
 }
 
 function clearUnreadForThread(state: AppState, chat: Chat, topic: Topic | undefined): AppState {
