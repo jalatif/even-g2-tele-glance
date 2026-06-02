@@ -238,12 +238,12 @@ describe('screenModel', () => {
     }
   })
 
-  it('replaces colored circle emoji that LVGL cannot render on glasses', () => {
+  it('replaces unsupported emoji that LVGL cannot render on glasses', () => {
     const state: AppState = {
       screen: 'sidebar', focus: 'messages',
       chats: [], selectedChatIndex: 0,
       chat: { id: '1', title: 'Project', kind: 'group' },
-      messages: [{ id: '1', sender: 'Alice', text: '🔴 important 🟡 note 🟢 ok' }],
+      messages: [{ id: '1', sender: 'Alice', text: '🔴 important 🟡 note 🟢 ok 🎯 target' }],
     }
     const model = screenModel(state)
     expect(model.kind).toBe('sidebar')
@@ -251,6 +251,8 @@ describe('screenModel', () => {
       expect(model.panelBody).not.toContain('🔴')
       expect(model.panelBody).not.toContain('🟡')
       expect(model.panelBody).not.toContain('🟢')
+      expect(model.panelBody).not.toContain('🎯')
+      expect(model.panelBody).toContain('target')
     }
   })
 

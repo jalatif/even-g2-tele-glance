@@ -62,6 +62,10 @@ export class TelegramAppController {
   private deferredMessageRefreshTimer: ReturnType<typeof setTimeout> | undefined
   private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
   private topicPreviewInFlight = new Set<string>()
+  private topicsCache = new Map<string, Topic[]>()
+  private topicsPrefetchInFlight = new Map<string, Promise<Topic[]>>()
+  private messageCache = new Map<string, { messages: Message[]; cursor?: Id }>()
+  private messagePrefetchInFlight = new Map<string, Promise<Message[]>>()
   private readAckMaxIds = new Map<string, Id>()
   private pendingReadAcks = new Map<string, { chat: Chat; topic?: Topic; maxId: Id }>()
   private readAckFlushTimer: ReturnType<typeof setTimeout> | undefined
@@ -206,9 +210,12 @@ export class TelegramAppController {
 
     const state = this.state
     if (state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics') && input.type === 'selectIndex') {
-      const idx = state.focus === 'chats' ? state.selectedChatIndex : state.selectedTopicIndex
-      if (input.index === idx && Date.now() >= this.selectionOnlyPressReadyAt) {
-        await this.dispatch({ type: 'press', index: input.index })
+      const idx = state.focus === 'chats'
+        ? selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
+        : selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
+      const currentIndex = state.focus === 'chats' ? state.selectedChatIndex : state.selectedTopicIndex
+      if (idx === currentIndex && Date.now() >= this.selectionOnlyPressReadyAt) {
+        await this.dispatch({ type: 'press', index: idx, itemName: input.itemName })
         return
       }
     }
@@ -348,13 +355,14 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'selectIndex') {
-      if (input.index !== state.selectedChatIndex) this.openRequestId += 1
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: clamp(input.index, 0, state.chats.length - 1), status: undefined })
+      const selectedChatIndex = selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
+      if (selectedChatIndex !== state.selectedChatIndex) this.openRequestId += 1
+      await this.setStateWithoutRender({ ...state, selectedChatIndex, status: undefined })
       return
     }
     if (input.type !== 'press') return
 
-    const selectedChatIndex = selectedInputIndex(input, state.selectedChatIndex, state.chats.length)
+    const selectedChatIndex = selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
     const selectedState = { ...state, selectedChatIndex }
     const chat = selectedState.chats[selectedChatIndex]
     if (!chat) return
@@ -404,8 +412,8 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'selectIndex') {
-      if (input.index !== state.selectedTopicIndex) this.openRequestId += 1
-      const newIndex = clamp(input.index, 0, state.topics.length - 1)
+      const newIndex = selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
+      if (newIndex !== state.selectedTopicIndex) this.openRequestId += 1
       await this.setStateWithoutRender({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
       this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
@@ -413,7 +421,7 @@ export class TelegramAppController {
     if (input.type !== 'press') return
 
     this.cancelTopicDebounce()
-    const selectedIndex = selectedInputIndex(input, state.selectedTopicIndex, state.topics.length)
+    const selectedIndex = selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
     const topic = state.topics[selectedIndex]
     if (!topic) return
     const selectedState: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }> = { ...state, selectedTopicIndex: selectedIndex }
@@ -500,7 +508,7 @@ export class TelegramAppController {
         previewCursor: cached.cursor,
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      }, chat, topic, cached.messages)
+      }, chat, topic, cached.messages, { render: false })
       return
     }
 
@@ -523,7 +531,7 @@ export class TelegramAppController {
         previewCursor: oldestMessageId(normalized),
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      }, chat, topic, normalized)
+      }, chat, topic, normalized, { render: false })
     } finally {
       this.topicPreviewInFlight.delete(cacheKey)
     }
@@ -794,6 +802,7 @@ export class TelegramAppController {
       const chats = await this.api.listChats(CHAT_LIST_LIMIT)
       this.rememberChats(chats)
       await this.setState({ screen: 'sidebar', focus: 'chats', chats, selectedChatIndex: 0 })
+      this.prefetchVisibleChats(chats)
     }, previous)
   }
 
@@ -806,13 +815,22 @@ export class TelegramAppController {
         await this.openMessages(chat, undefined, previous, requestId)
         return
       }
-      await this.setState({
-        screen: 'sidebar', focus: 'chats',
-        chats, selectedChatIndex,
-        status: `Opening ${chat.title}...`,
-      })
-      const topics = chat.isForum ? await this.api.listTopics(chat.id) : []
-      if (requestId !== this.openRequestId || !this.isStillOpeningChat(chat, selectedChatIndex)) return
+      const cachedTopics = this.topicsCache.get(String(chat.id))
+      if (!cachedTopics) {
+        await this.setState({
+          screen: 'sidebar', focus: 'messages',
+          chats, selectedChatIndex,
+          chat,
+          messages: [],
+          back: previous,
+          status: `Loading ${chat.title} topics...`,
+          newerPages: [],
+          isNewestPage: true,
+          scrollOffset: 0,
+        })
+      }
+      const topics = cachedTopics ?? await this.prefetchTopics(chat)
+      if (requestId !== this.openRequestId) return
       if (topics.length > 0) {
         await this.setState({
           screen: 'sidebar', focus: 'topics',
@@ -832,6 +850,25 @@ export class TelegramAppController {
     const topics = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.topics : undefined
     const selectedTopicIndex = topic && previous.screen === 'sidebar' && previous.focus === 'topics' ? previous.selectedTopicIndex : undefined
     await this.run(async () => {
+      const cached = this.messageCache.get(messageThreadKey({ chat, topic }))
+      if (cached) {
+        await this.setStateWithVisibleRead({
+          screen: 'sidebar', focus: 'messages',
+          chats, selectedChatIndex,
+          chat, topic,
+          messages: cached.messages,
+          cursor: cached.cursor,
+          back: messageBackTarget(previous),
+          newerPages: [],
+          isNewestPage: true,
+          scrollOffset: 0,
+          topics,
+          selectedTopicIndex,
+        }, chat, topic, cached.messages)
+        void this.refreshOpenMessagesInBackground(chat, topic, requestId)
+        return
+      }
+
       await this.setState({
         screen: 'sidebar', focus: 'messages',
         chats, selectedChatIndex,
@@ -845,7 +882,7 @@ export class TelegramAppController {
         topics,
         selectedTopicIndex,
       })
-      const messages = await this.api.listMessages(chat.id, { topicId: topicThreadId(topic), limit: MESSAGE_PAGE_LIMIT })
+      const messages = await this.prefetchMessages(chat, topic)
       if (requestId !== this.openRequestId || !this.isStillOpeningMessages(chat, topic, requestId)) return
       const normalized = normalizeMessagePage(messages)
       await this.setStateWithVisibleRead({
@@ -863,6 +900,24 @@ export class TelegramAppController {
       }, chat, topic, normalized)
       this.maybePrefetchOlder()
     }, previous)
+  }
+
+  private async refreshOpenMessagesInBackground(chat: Chat, topic: Topic | undefined, requestId: number) {
+    const messages = normalizeMessagePage(await this.api.listMessages(chat.id, { topicId: topicThreadId(topic), limit: MESSAGE_PAGE_LIMIT }))
+    this.cacheMessages(chat, topic, messages)
+    if (requestId !== this.openRequestId || !this.isStillOpeningMessages(chat, topic, requestId)) return
+    const state = this.state
+    if (state.screen !== 'sidebar' || state.focus !== 'messages') return
+    if (!hasMessageChanges(state.messages, messages)) return
+    await this.setStateWithVisibleRead({
+      ...state,
+      messages,
+      cursor: oldestMessageId(messages),
+      newerPages: [],
+      isNewestPage: true,
+      scrollOffset: 0,
+    }, chat, topic, messages)
+    this.maybePrefetchOlder()
   }
 
   private async loadOlderMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
@@ -912,7 +967,9 @@ export class TelegramAppController {
   }
 
   private async refreshLatestMessages(state: { chat: Chat; topic?: Topic }) {
-    return normalizeMessagePage(await this.api.listMessages(state.chat.id, { topicId: topicThreadId(state.topic), limit: MESSAGE_PAGE_LIMIT }))
+    const messages = normalizeMessagePage(await this.api.listMessages(state.chat.id, { topicId: topicThreadId(state.topic), limit: MESSAGE_PAGE_LIMIT }))
+    this.cacheMessages(state.chat, state.topic, messages)
+    return messages
   }
 
   private async refreshAfterSend(state: Extract<AppState, { screen: 'sidebarConfirm' }>, sent: Message) {
@@ -961,6 +1018,69 @@ export class TelegramAppController {
     const remainingLoadedScroll = maxOffset - (state.scrollOffset ?? 0)
     if (remainingLoadedScroll > OLDER_PREFETCH_LOW_WATER) return
     void this.prefetchOlderMessages(state).catch(() => undefined)
+  }
+
+  private prefetchVisibleChats(chats: Chat[]) {
+    void this.prefetchVisibleChatsInBackground(chats.slice(0, 5)).catch(() => undefined)
+  }
+
+  private async prefetchVisibleChatsInBackground(chats: Chat[]) {
+    for (const chat of chats) {
+      if (chat.isForum) {
+        const topics = await this.prefetchTopics(chat).catch(() => [])
+        for (const topic of topics.slice(0, 5)) {
+          await this.prefetchMessages(chat, topic).catch(() => [])
+          await sleep(25)
+        }
+      } else {
+        await this.prefetchMessages(chat, undefined).catch(() => [])
+      }
+      await sleep(25)
+    }
+  }
+
+  private async prefetchTopics(chat: Chat): Promise<Topic[]> {
+    const key = String(chat.id)
+    const cached = this.topicsCache.get(key)
+    if (cached) return cached
+    const inFlight = this.topicsPrefetchInFlight.get(key)
+    if (inFlight) return inFlight
+    const promise = this.api.listTopics(chat.id)
+      .then((topics) => {
+        this.topicsCache.set(key, topics)
+        return topics
+      })
+      .finally(() => {
+        this.topicsPrefetchInFlight.delete(key)
+      })
+    this.topicsPrefetchInFlight.set(key, promise)
+    return promise
+  }
+
+  private async prefetchMessages(chat: Chat, topic: Topic | undefined): Promise<Message[]> {
+    const key = messageThreadKey({ chat, topic })
+    const cached = this.messageCache.get(key)
+    if (cached) return cached.messages
+    const inFlight = this.messagePrefetchInFlight.get(key)
+    if (inFlight) return inFlight
+    const promise = this.api.listMessages(chat.id, { topicId: topicThreadId(topic), limit: MESSAGE_PAGE_LIMIT })
+      .then((messages) => {
+        const normalized = normalizeMessagePage(messages)
+        this.cacheMessages(chat, topic, normalized)
+        return normalized
+      })
+      .finally(() => {
+        this.messagePrefetchInFlight.delete(key)
+      })
+    this.messagePrefetchInFlight.set(key, promise)
+    return promise
+  }
+
+  private cacheMessages(chat: Chat, topic: Topic | undefined, messages: Message[]) {
+    this.messageCache.set(messageThreadKey({ chat, topic }), {
+      messages,
+      cursor: oldestMessageId(messages),
+    })
   }
 
   private async prefetchOlderMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, options: { chain?: boolean } = {}) {
@@ -1046,14 +1166,6 @@ export class TelegramAppController {
         previous,
       })
     }
-  }
-
-  private isStillOpeningChat(chat: Chat, selectedChatIndex: number) {
-    const current = this.state
-    return current.screen === 'sidebar'
-      && current.focus === 'chats'
-      && current.selectedChatIndex === selectedChatIndex
-      && String(current.chats[selectedChatIndex]?.id) === String(chat.id)
   }
 
   private isStillOpeningMessages(chat: Chat, topic: Topic | undefined, requestId: number) {
@@ -1197,7 +1309,7 @@ export class TelegramAppController {
       )
       if (!activity) {
         if (current.screen === 'sidebar' && current.focus === 'chats') {
-          await this.setState({ ...current, chats, selectedChatIndex })
+          await this.setStateWithoutRender({ ...current, chats, selectedChatIndex })
         }
         return
       }
@@ -1270,17 +1382,25 @@ export class TelegramAppController {
     chat: Chat,
     topic: Topic | undefined,
     messages: Message[],
-    options: { forceAck?: boolean } = {},
+    options: { forceAck?: boolean; render?: boolean } = {},
   ) {
     const maxId = newestMessageId(messages)
     if (maxId === undefined) {
-      await this.setState(state)
+      if (options.render === false) {
+        await this.setStateWithoutRender(state)
+      } else {
+        await this.setState(state)
+      }
       return
     }
     const hasUnread = hasUnreadForThread(state, chat, topic)
     const next = hasUnread ? clearUnreadForThread(state, chat, topic) : state
     const shouldAck = (hasUnread || options.forceAck === true) && this.shouldSendReadAck(chat, topic, maxId)
-    await this.setState(next)
+    if (options.render === false) {
+      await this.setStateWithoutRender(next)
+    } else {
+      await this.setState(next)
+    }
     if (shouldAck) this.sendReadAck(chat, topic, maxId)
   }
 
@@ -1373,6 +1493,44 @@ function moveSelection(index: number, count: number, delta: number) {
 function selectedInputIndex(input: { index?: number }, currentIndex: number, count: number) {
   if (typeof input.index !== 'number') return currentIndex
   return clamp(input.index, 0, count - 1)
+}
+
+function selectedChatInputIndex(input: { index?: number; itemName?: string }, currentIndex: number, chats: Chat[]) {
+  const byIndex = selectedInputIndex(input, currentIndex, chats.length)
+  if (typeof input.index === 'number') return byIndex
+  return selectedNamedIndex(input.itemName, currentIndex, chats, chatSelectionLabel)
+}
+
+function selectedTopicInputIndex(input: { index?: number; itemName?: string }, currentIndex: number, topics: Topic[]) {
+  const byIndex = selectedInputIndex(input, currentIndex, topics.length)
+  if (typeof input.index === 'number') return byIndex
+  return selectedNamedIndex(input.itemName, currentIndex, topics, topicSelectionLabel)
+}
+
+function selectedNamedIndex<T>(itemName: string | undefined, currentIndex: number, items: T[], label: (item: T) => string) {
+  if (!itemName) return currentIndex
+  const normalizedName = normalizeSelectionLabel(itemName)
+  const exact = items.findIndex((item) => normalizeSelectionLabel(label(item)) === normalizedName)
+  if (exact >= 0) return exact
+  const loose = items.findIndex((item) => {
+    const itemLabel = normalizeSelectionLabel(label(item))
+    return itemLabel.includes(normalizedName) || normalizedName.includes(itemLabel)
+  })
+  return loose >= 0 ? loose : currentIndex
+}
+
+function chatSelectionLabel(chat: Chat) {
+  const unread = chat.unreadCount ? ` (${chat.unreadCount})` : ''
+  return `${chat.title}${unread}`
+}
+
+function topicSelectionLabel(topic: Topic) {
+  const unread = topic.unreadCount ? ` (${topic.unreadCount})` : ''
+  return `${topic.title}${unread}`
+}
+
+function normalizeSelectionLabel(value: string) {
+  return value.replace(/\s+\(\d+\)$/, '').trim().toLowerCase()
 }
 
 function hasMessageChanges(current: Message[], next: Message[]) {

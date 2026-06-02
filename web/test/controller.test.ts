@@ -73,6 +73,22 @@ describe('TelegramAppController', () => {
     expect(bridge.render).toHaveBeenCalledTimes(1)
   })
 
+  it('does not repaint the native chat list for a no-activity background refresh', async () => {
+    const api = fakeApi({ authorized: true })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await flushAsync()
+    const renderCount = vi.mocked(bridge.render).mock.calls.length
+    await controller.dispatch({ type: 'swipeDown' })
+    clearInputQuiet(controller)
+    await refreshRootChats(controller)
+
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 1 })
+    expect(bridge.render).toHaveBeenCalledTimes(renderCount)
+  })
+
   it('turns the screen off on double press from the chat list', async () => {
     const api = fakeApi({ authorized: true })
     const bridge = fakeBridge()
@@ -181,6 +197,23 @@ describe('TelegramAppController', () => {
     expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', limit: 50 })
   })
 
+  it('does not repaint the native topic list after loading a preview', async () => {
+    const api = fakeApi({ authorized: true })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    await flushAsync()
+    const renderCount = vi.mocked(bridge.render).mock.calls.length
+    clearInputQuiet(controller)
+    await fetchTopicPreview(controller, chats[1], topics[0])
+
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'topics', previewTopic: topics[0] })
+    expect(bridge.render).toHaveBeenCalledTimes(renderCount)
+  })
+
   it('opens selected forum topic messages and renders a message screen', async () => {
     const api = fakeApi({ authorized: true })
     const bridge = fakeBridge()
@@ -192,7 +225,7 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'press' })
     await flushAsync()
 
-    expect(api.listMessages).toHaveBeenNthCalledWith(1, '2', { topicId: '10', limit: 50 })
+    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[0] })
     expect(bridge.render).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -235,10 +268,10 @@ describe('TelegramAppController', () => {
     const controller = new TelegramAppController(api, fakeBridge())
 
     await controller.init()
+    const topicCalls = vi.mocked(api.listTopics).mock.calls.length
     await controller.dispatch({ type: 'selectIndex', index: 0 })
 
-    expect(api.listTopics).not.toHaveBeenCalled()
-    expect(api.listMessages).not.toHaveBeenCalled()
+    expect(api.listTopics).toHaveBeenCalledTimes(topicCalls)
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0 })
   })
 
@@ -251,6 +284,21 @@ describe('TelegramAppController', () => {
 
     expect(api.listMessages).toHaveBeenNthCalledWith(1, '1', { topicId: undefined, limit: 50 })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+  })
+
+  it('opens the chat named by the native list event when the index is missing', async () => {
+    const api = fakeApi({ authorized: true, chats: [chats[0], chats[1], { id: '3', title: 'Ops', kind: 'group' }] })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'press', itemName: 'Project' })
+
+    expect(api.listTopics).toHaveBeenCalledWith('2')
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar',
+      selectedChatIndex: 1,
+      chat: expect.objectContaining({ id: '2' }),
+    })
   })
 
   it('opens messages directly for normal chats', async () => {
@@ -315,16 +363,17 @@ describe('TelegramAppController', () => {
 
     expect(controller.snapshot).toMatchObject({
       screen: 'sidebar',
-      focus: 'chats',
-      status: 'Opening Project...',
+      focus: 'messages',
+      status: 'Loading Project topics...',
+      selectedChatIndex: 1,
     })
-    await controller.dispatch({ type: 'swipeUp' })
-    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0, status: undefined })
+    await controller.dispatch({ type: 'doublePress' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 1, status: undefined })
 
     topicPage.resolve(topics)
     await opening
 
-    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0, status: undefined })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 1, status: undefined })
   })
 
   it('marks normal chat messages read and clears the local unread badge when viewed', async () => {

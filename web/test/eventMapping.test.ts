@@ -14,6 +14,8 @@ describe('mapEvenHubEvent', () => {
     expect(mapEvenHubEvent({ listEvent: { currentSelectItemIndex: 2 } })).toEqual({ type: 'selectIndex', index: 2 })
     expect(mapEvenHubEvent({ listEvent: { eventType: 0, currentSelectItemIndex: 2 } })).toEqual({ type: 'press', index: 2 })
     expect(mapEvenHubEvent({ listEvent: { eventType: 3, currentSelectItemIndex: 2 } })).toEqual({ type: 'doublePress', index: 2 })
+    expect(mapEvenHubEvent({ listEvent: { currentSelectItemName: 'Project' } })).toEqual({ type: 'selectIndex', itemName: 'Project' })
+    expect(mapEvenHubEvent({ listEvent: { eventType: 0, currentSelectItemName: 'Project' } })).toEqual({ type: 'press', itemName: 'Project' })
     expect(mapEvenHubEvent({ audioEvent: { audioPcm: [1, 2, 3] } })).toEqual({
       type: 'audioChunk',
       pcm: new Uint8Array([1, 2, 3]),
@@ -27,6 +29,12 @@ describe('mapEvenHubEvent', () => {
         jsonData: { Event_Type: 'PRESS', CurrentSelect_ItemIndex: '3' },
       }),
     ).toEqual({ type: 'press', index: 3 })
+    expect(
+      mapEvenHubEvent({
+        type: 'list_event',
+        jsonData: { Event_Type: 'PRESS', CurrentSelect_ItemName: 'Project' },
+      }),
+    ).toEqual({ type: 'press', itemName: 'Project' })
     expect(
       mapEvenHubEvent({
         type: 'listEvent',

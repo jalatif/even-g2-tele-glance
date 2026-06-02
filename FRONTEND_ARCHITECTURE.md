@@ -96,6 +96,10 @@ The browser/debug pane and glasses display are not interchangeable for layout va
 
 Hardware input can emit duplicate same-direction swipes. Event mapping debounces those bursts so one physical gesture advances one message page.
 
+Native list input can also arrive with only a selected item name. The controller resolves item-name events against the visible chat/topic labels before falling back to stored selection state, and background refreshes avoid repainting the focused native list unless there is visible new activity.
+
+The controller prefetches the first visible chat/topic message pages after startup in display order. These fetches are cached, deduped, and paced so common opens can render from cache while the input path stays responsive.
+
 ## Validation
 
 Required checks:

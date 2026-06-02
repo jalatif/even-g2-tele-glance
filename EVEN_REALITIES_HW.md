@@ -72,6 +72,7 @@ These notes capture hardware-specific implementation details and quirks observed
 - The SDK can normalize `CLICK_EVENT` value `0` to `undefined` in some paths. Treat missing `eventType` on an event-capturing text/list container as a single press.
 - Double-click can surface as a `sysEvent` rather than a `textEvent`/`listEvent` depending on the active container/layout. Match Caduceus/even-toolkit behavior by mapping gestures from `listEvent ?? textEvent ?? sysEvent`.
 - The SDK parser may produce `sysEvent` with `eventSource` but without `eventType`, while raw `jsonData.eventType` still contains the real value. Preserve raw `jsonData.eventType`; otherwise captured hardware payloads such as `{ eventType: 3, eventSource: 2 }` can incorrectly fall through to single press.
+- Native list events can identify the selected row by item name instead of index. Preserve `currentSelectItemName`/`CurrentSelect_ItemName`/`current_select_item_name` and resolve it against visible chat/topic labels, stripping unread-count suffixes before matching.
 - During the double-click investigation, hardware logs showed the actual double-click payload as:
   - raw `jsonData`: `{ "eventType": 3, "eventSource": 2 }`
   - normalized `sysEvent`: sometimes `{ "eventType": 3, "eventSource": 2 }`, sometimes only `{ "eventSource": 2 }`
@@ -96,6 +97,8 @@ These notes capture hardware-specific implementation details and quirks observed
   - tap cooldown around `220ms`
 - Scroll events may also duplicate on hardware. Caduceus suppresses repeated same-direction scrolls for a short window and suppresses spurious scrolls shortly after text updates.
 - Same-direction swipe bursts should be debounced before reaching the controller. Without this, a single physical Up gesture can emit multiple `swipeUp` inputs and skip through all pages of a long boxed message.
+- Background state refreshes can reset native list selection even when they are not caused by direct user input. No-activity chat polling, topic previews, and read-badge bookkeeping should update controller/cache state without repainting the focused native list.
+- Startup prefetch should warm the first visible chats/topics in display order, but it must be deduped and paced with small yields so the phone WebView input thread remains responsive while Telegram responses decrypt and parse.
 
 ## Audio
 
@@ -153,7 +156,7 @@ These notes capture hardware-specific implementation details and quirks observed
 - The glasses text renderer has a narrower practical line width than the browser/debug pane. A 44-character Unicode box can look correct in the browser but wrap badly on the glasses display; use ASCII borders and keep boxed message lines around 30 characters total so the right border stays on the same rendered row. Normal trailing spaces can be collapsed or ignored before a right border, so boxed rows use non-breaking space padding.
 - Text-drawn rectangles still do not visually align on G2 because the glasses renderer is not a true monospace grid; hyphens and letters have different pixel widths. For long-message pages, prefer native `TextContainerProperty` borders and put the message text inside the bordered container instead of drawing borders with text.
 - The browser/debug pane and glasses display are not interchangeable for final layout QA. The browser can make text-drawn boxes look correct while the glasses pane exposes proportional glyph widths, collapsed spacing, or firmware wrapping. Treat the glasses pane or real G2 as the source of truth.
-- LVGL can warn on unsupported Telegram glyphs, especially colored-circle emoji such as red/yellow/green circles. Sanitize those before rendering to glasses text containers to avoid repeated `glyph dsc. not found` warnings.
+- LVGL can warn on unsupported Telegram glyphs, including colored-circle emoji and other pictographic emoji seen in real messages. Replace known status circles with text labels and strip unsupported emoji ranges before rendering to glasses text containers to avoid repeated `glyph dsc. not found` warnings.
 - Compact message rows should wrap on word boundaries just like boxed long-message rows. Character-based wrapping makes ordinary messages split words mid-letter on the G2 display.
 
 ## Current Known Good Input Pattern

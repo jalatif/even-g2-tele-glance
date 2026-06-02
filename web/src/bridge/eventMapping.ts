@@ -90,11 +90,12 @@ export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | u
   const rawEventType = readRawEventType(event)
   const rawRecord = readRawRecord(event)
   const rawIndex = readSelectedIndex(rawRecord)
+  const rawItemName = readSelectedName(rawRecord)
   if (eventTypeEquals(rawEventType, EvenEventType.foregroundEnter, EvenEventTypeName.foregroundEnter)) {
     return { type: 'foreground' }
   }
-  if (eventTypeEquals(rawEventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalIndex('doublePress', rawIndex)
-  if (eventTypeEquals(rawEventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalIndex('press', rawIndex)
+  if (eventTypeEquals(rawEventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalSelection('doublePress', rawIndex, rawItemName)
+  if (eventTypeEquals(rawEventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalSelection('press', rawIndex, rawItemName)
   if (eventTypeEquals(rawEventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return { type: 'swipeUp' }
   if (eventTypeEquals(rawEventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return { type: 'swipeDown' }
 
@@ -112,12 +113,13 @@ export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | u
   const eventRecord = listEvent ?? normalized.textEvent ?? normalized.sysEvent
   const eventType = readEventType(eventRecord) ?? rawEventType
   const index = readSelectedIndex(listEvent)
-  if (index !== undefined && eventType === undefined) {
-    return { type: 'selectIndex', index }
+  const itemName = readSelectedName(listEvent)
+  if ((index !== undefined || itemName !== undefined) && eventType === undefined) {
+    return withOptionalSelection('selectIndex', index, itemName)
   }
 
-  if (eventTypeEquals(eventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalIndex('doublePress', index)
-  if (eventType === undefined || eventTypeEquals(eventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalIndex('press', index)
+  if (eventTypeEquals(eventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalSelection('doublePress', index, itemName)
+  if (eventType === undefined || eventTypeEquals(eventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalSelection('press', index, itemName)
   if (eventTypeEquals(eventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return { type: 'swipeUp' }
   if (eventTypeEquals(eventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return { type: 'swipeDown' }
   return undefined
@@ -209,6 +211,18 @@ function readSelectedIndex(record: EventRecord | undefined): number | undefined 
   return undefined
 }
 
+function readSelectedName(record: EventRecord | undefined): string | undefined {
+  const value = pickValue(record, [
+    'currentSelectItemName',
+    'CurrentSelect_ItemName',
+    'current_select_item_name',
+    'selectedItemName',
+    'itemName',
+    'name',
+  ])
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
+
 function eventTypeEquals(value: number | string | undefined, numeric: number, name: string) {
   if (value === numeric) return true
   if (typeof value === 'string') {
@@ -222,8 +236,12 @@ function eventTypeEquals(value: number | string | undefined, numeric: number, na
   return false
 }
 
-function withOptionalIndex(type: 'press' | 'doublePress', index: number | undefined): AppInput {
-  return index === undefined ? { type } : { type, index }
+function withOptionalSelection(type: 'press' | 'doublePress' | 'selectIndex', index: number | undefined, itemName: string | undefined): AppInput {
+  return {
+    type,
+    ...(index === undefined ? {} : { index }),
+    ...(itemName === undefined ? {} : { itemName }),
+  } as AppInput
 }
 
 function eventTypeAliases(numeric: number) {

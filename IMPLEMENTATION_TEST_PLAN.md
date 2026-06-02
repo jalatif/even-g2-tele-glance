@@ -27,6 +27,9 @@
 - Chat list loads last five threads and handles empty/error states.
 - Selecting a chat with topics opens topic selection.
 - Selecting a chat without topics opens messages directly.
+- Native list selection movement and no-op background refreshes do not repaint the active list, so the hardware highlight cannot snap back to the first item.
+- Native list press/select events resolve both selected indexes and selected item names, including unread-count suffix handling.
+- Startup prefetch warms the first visible chats/topics without blocking input, and cached opens render immediately while freshness fetches continue in the background.
 - Message screen keeps a latest-message pointer, prefetches older history, and paginates long messages as complete chunks.
 - Long message pages render with native Even Hub text-container borders on glasses instead of text-drawn boxes, because the G2 renderer is not a true monospace grid.
 - Single press starts recording; second single press stops and transcribes.
@@ -48,6 +51,8 @@
   - Send/cancel confirmation
   - Error/retry
 - Verify simulator input events map to app transitions.
+- Drive simulator click/scroll flows on chat and topic lists, then confirm the glasses pane remains consistent with the selected row and does not briefly duplicate the left list in the right pane.
+- Watch simulator logs for LVGL unsupported-glyph warnings while rendering message text; add sanitization regressions for any glyph class that appears.
 - Verify the display is nonblank and text does not overflow critical controls.
 
 ## Hardware Validation

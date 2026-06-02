@@ -13,11 +13,11 @@ const encoder = new TextEncoder()
 const messagePageCache = new WeakMap<Message[], MessageDisplayPage[]>()
 
 export type AppInput =
-  | { type: 'press'; index?: number }
-  | { type: 'doublePress'; index?: number }
+  | { type: 'press'; index?: number; itemName?: string }
+  | { type: 'doublePress'; index?: number; itemName?: string }
   | { type: 'swipeUp' }
   | { type: 'swipeDown' }
-  | { type: 'selectIndex'; index: number }
+  | { type: 'selectIndex'; index?: number; itemName?: string }
   | { type: 'audioChunk'; pcm: Uint8Array }
   | { type: 'foreground' }
 
@@ -421,6 +421,7 @@ function sanitizeGlassesText(value: string) {
     .replace(/\u{1f534}/gu, '[red]')
     .replace(/\u{1f7e1}/gu, '[yellow]')
     .replace(/\u{1f7e2}/gu, '[green]')
+    .replace(/[\u{1f000}-\u{1faff}]/gu, '')
     .replace(/\ufe0f/g, '')
 }
 
