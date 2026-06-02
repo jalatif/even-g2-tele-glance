@@ -291,7 +291,7 @@ function startCommandPolling(api: FixtureTelegramApi) {
   if (commandPollTimer) return
   commandPollTimer = setInterval(async () => {
     try {
-      const response = await fetch('/api/test/fixture/commands')
+      const response = await fetch('/api/test/fixture-commands')
       if (!response.ok) return
       const data = await response.json() as { commands: Array<{ kind: string } & Record<string, unknown>> }
       if (!data.commands?.length) return

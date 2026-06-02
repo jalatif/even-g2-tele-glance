@@ -210,6 +210,7 @@ async function executeStep(step, _url) {
   const captureMs = Date.now() - captureStartedAt
   latencies.push({ name, totalMs, captureMs, budgetMs, perInputLatencies })
   if (step.expectToFail) {
+    if (totalMs > budgetMs) {
       console.log(`[flow] EXPECTED FAIL: ${name} exceeded ${budgetMs}ms (actual ${totalMs}ms)`)
     } else {
       failures.push(`${name}: expected to exceed ${budgetMs}ms but only took ${totalMs}ms (the latency-budget negative test is broken)`)
@@ -261,6 +262,7 @@ async function sendTestCommand(command) {
 
 async function captureStep(name, expectations, extras = {}) {
   const eventStartIndex = extras.eventStartIndex ?? 0
+  const glassesPath = path.join(stepDir, `${name}.glasses.png`)
   const webviewPath = path.join(stepDir, `${name}.webview.png`)
   await downloadWithRetry(`${simUrl}/api/screenshot/glasses`, glassesPath, 5)
   const webviewCaptured = await downloadWithRetry(`${simUrl}/api/screenshot/webview`, webviewPath, 5).catch((error) => {
@@ -282,7 +284,6 @@ async function captureStep(name, expectations, extras = {}) {
   }
   if (expectations.renderBodyContains && !contentMatches) {
     failures.push(`${name}: expected render body content not found`)
-  }
   }
   await writeFile(path.join(stepDir, `${name}.json`), JSON.stringify({
     name,

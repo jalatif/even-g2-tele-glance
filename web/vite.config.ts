@@ -38,6 +38,12 @@ function teleGlanceFixtureBridge(): Plugin {
       )
     },
     configureServer(server) {
+      server.middlewares.use('/api/test/fixture-commands', (_req, res) => {
+        const commands = [...pendingFixtureCommands]
+        pendingFixtureCommands = []
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ commands }))
+      })
       server.middlewares.use('/api/test/fixture', (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405
@@ -61,12 +67,6 @@ function teleGlanceFixtureBridge(): Plugin {
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ ok: true, command: command.kind }))
         })
-      })
-      server.middlewares.use('/api/test/fixture/commands', (_req, res) => {
-        const commands = [...pendingFixtureCommands]
-        pendingFixtureCommands = []
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ commands }))
       })
       server.middlewares.use('/api/test/console-marker', (_req, res) => {
         res.setHeader('Content-Type', 'application/json')
