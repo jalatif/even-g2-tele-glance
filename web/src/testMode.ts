@@ -49,8 +49,13 @@ export function getFixtureTestOverrides(): {
   }
 }
 
+function isTestLoggingEnabled() {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.PROD) return false
+  return true
+}
+
 export function logTeleGlanceTest(event: string, payload: Record<string, unknown>) {
-  if (!isTeleGlanceFixtureMode()) return
+  if (!isTestLoggingEnabled()) return
   console.log(`${TELEGLANCE_TEST_LOG_PREFIX} ${JSON.stringify({ event, ts: Date.now(), ...payload })}`)
 }
 

@@ -10,19 +10,21 @@ import zlib from 'node:zlib'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const webRoot = path.join(repoRoot, 'web')
 const args = parseArgs(process.argv.slice(2))
-const vitePort = Number(args['vite-port'] ?? 5174)
+const vitePort = Number(args['vite-port'] ?? process.env.VITE_PORT ?? 5173)
 const automationPort = Number(args['automation-port'] ?? 9898)
+const testHost = process.env.TELEGLANCE_TEST_HOST ?? 'localhost'
 const updateGoldens = Boolean(args['update-goldens'])
 const fastMode = Boolean(args['fast'])
 const skipLatencyCheck = Boolean(args['skip-latency-check'])
-const isFixtureMode = (args['mode'] ?? 'fixture') === 'fixture'
+const runMode = args['mode'] ?? 'fixture'
+const isFixtureMode = runMode === 'fixture'
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 const artifactRoot = path.join(repoRoot, 'artifacts', 'simulator-flow', timestamp)
 const framesDir = path.join(artifactRoot, 'frames')
 const stepDir = path.join(artifactRoot, 'steps')
 const goldenRoot = path.join(webRoot, 'test', 'simulator-goldens')
-const testUrl = `http://127.0.0.1:${vitePort}/${isFixtureMode ? '?teleGlanceFixture=1' : ''}`
-const simUrl = `http://127.0.0.1:${automationPort}`
+const testUrl = `http://${testHost}:${vitePort}/${isFixtureMode ? '?teleGlanceFixture=1' : ''}`
+const simUrl = `http://${testHost}:${automationPort}`
 const children = []
 let frameIndex = 0
 let recording = true
@@ -47,14 +49,13 @@ await mkdir(goldenRoot, { recursive: true })
 catalog = await loadCatalog()
 testConsoleBridge = true
 try {
-  const vite = startProcess('vite', 'npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(vitePort)], {
+  const vite = startProcess('vite', 'npm', ['run', 'dev', '--', '--host', testHost, '--port', String(vitePort)], {
     cwd: webRoot,
     env: { ...process.env, ...(isFixtureMode ? { VITE_TELEGLANCE_FIXTURE: '1' } : {}) },
   })
   await waitForHttp(testUrl, 20_000)
 
   const simulator = startProcess('simulator', 'npx', [
-    '@evenrealities/evenhub-simulator@0.7.2',
     '--automation-port',
     String(automationPort),
     testUrl,
@@ -253,7 +254,7 @@ async function postInput(action, payload) {
 }
 
 async function sendTestCommand(command) {
-  const response = await fetchWithTimeout(`${vitePort ? `http://127.0.0.1:${vitePort}` : ''}/api/test/fixture`, {
+  const response = await fetchWithTimeout(`${vitePort ? `http://${testHost}:${vitePort}` : ''}/api/test/fixture`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(command),

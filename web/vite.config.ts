@@ -48,17 +48,20 @@ const seedBootScript = `
   const seed = window.__teleGlanceSeedCredentials
   if (seed && typeof seed === 'object') {
     try {
-      const apply = (key, value) => {
-        if (typeof value === 'string' && value) {
-          try { window.localStorage.setItem(key, value) } catch { /* localStorage unavailable */ }
-        }
+      const applyIfEmpty = (key, value) => {
+        if (typeof value !== 'string' || !value) return
+        try {
+          if (window.localStorage.getItem(key) === null) {
+            window.localStorage.setItem(key, value)
+          }
+        } catch { /* localStorage unavailable */ }
       }
       if (window.localStorage.getItem('teleGlance.seedCredentialsApplied') !== '1') {
-        if (typeof seed.apiBaseUrl === 'string') apply('teleGlance.apiBaseUrl', seed.apiBaseUrl)
-        if (typeof seed.backendSharedSecret === 'string') apply('teleGlance.backendSharedSecret', seed.backendSharedSecret)
-        if (typeof seed.telegramApiId === 'string') apply('teleGlance.telegramApiId', seed.telegramApiId)
-        if (typeof seed.telegramApiHash === 'string') apply('teleGlance.telegramApiHash', seed.telegramApiHash)
-        if (typeof seed.telegramSession === 'string') apply('teleGlance.telegramSession', seed.telegramSession)
+        applyIfEmpty('teleGlance.apiBaseUrl', seed.apiBaseUrl)
+        applyIfEmpty('teleGlance.backendSharedSecret', seed.backendSharedSecret)
+        applyIfEmpty('teleGlance.telegramApiId', seed.telegramApiId)
+        applyIfEmpty('teleGlance.telegramApiHash', seed.telegramApiHash)
+        applyIfEmpty('teleGlance.telegramSession', seed.telegramSession)
         try { window.localStorage.setItem('teleGlance.seedCredentialsApplied', '1') } catch { /* ignore */ }
       }
     } catch { /* ignore */ }

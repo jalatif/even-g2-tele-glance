@@ -24,14 +24,15 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const webRoot = path.join(repoRoot, 'web')
 const args = parseArgs(process.argv.slice(2))
 const iterations = Math.max(1, Math.min(1000, Number(process.argv[2] ?? 100) || 100))
-const vitePort = Number(args['vite-port'] ?? 5175)
+const vitePort = Number(args['vite-port'] ?? process.env.VITE_PORT ?? 5173)
 const automationPort = Number(args['automation-port'] ?? 9899)
 const runMode = args['mode'] ?? 'fixture'
 const isFixtureMode = runMode === 'fixture'
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 const artifactRoot = path.join(repoRoot, 'artifacts', 'fuzzy-test', timestamp)
-const testUrl = `http://127.0.0.1:${vitePort}/${isFixtureMode ? '?teleGlanceFixture=1' : ''}`
-const simUrl = `http://127.0.0.1:${automationPort}`
+const testHost = process.env.TELEGLANCE_TEST_HOST ?? 'localhost'
+const testUrl = `http://${testHost}:${vitePort}/${isFixtureMode ? '?teleGlanceFixture=1' : ''}`
+const simUrl = `http://${testHost}:${automationPort}`
 const INPUT_TYPES = ['up', 'down', 'click', 'double_click']
 
 const children = []
@@ -248,9 +249,9 @@ async function main() {
   console.log(`    Iterations: ${iterations}`)
   console.log(`    Mode:       ${runMode}\n`)
 
-  console.log(`[fuzzy] Starting Vite on port ${vitePort}...`)
+  console.log(`[fuzzy] Starting Vite on ${testHost}:${vitePort}...`)
   const vite = startProcess('vite', 'npm', [
-    'run', 'dev', '--', '--host', '127.0.0.1', '--port', String(vitePort),
+    'run', 'dev', '--', '--host', testHost, '--port', String(vitePort),
   ], {
     cwd: webRoot,
     env: { ...process.env, ...(isFixtureMode ? { VITE_TELEGLANCE_FIXTURE: '1' } : {}) },
