@@ -15,12 +15,13 @@ const automationPort = Number(args['automation-port'] ?? 9898)
 const updateGoldens = Boolean(args['update-goldens'])
 const fastMode = Boolean(args['fast'])
 const skipLatencyCheck = Boolean(args['skip-latency-check'])
+const isFixtureMode = (args['mode'] ?? 'fixture') === 'fixture'
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 const artifactRoot = path.join(repoRoot, 'artifacts', 'simulator-flow', timestamp)
 const framesDir = path.join(artifactRoot, 'frames')
 const stepDir = path.join(artifactRoot, 'steps')
 const goldenRoot = path.join(webRoot, 'test', 'simulator-goldens')
-const testUrl = `http://127.0.0.1:${vitePort}/?teleGlanceFixture=1`
+const testUrl = `http://127.0.0.1:${vitePort}/${isFixtureMode ? '?teleGlanceFixture=1' : ''}`
 const simUrl = `http://127.0.0.1:${automationPort}`
 const children = []
 let frameIndex = 0
@@ -48,7 +49,7 @@ testConsoleBridge = true
 try {
   const vite = startProcess('vite', 'npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(vitePort)], {
     cwd: webRoot,
-    env: { ...process.env, VITE_TELEGLANCE_FIXTURE: '1' },
+    env: { ...process.env, ...(isFixtureMode ? { VITE_TELEGLANCE_FIXTURE: '1' } : {}) },
   })
   await waitForHttp(testUrl, 20_000)
 
@@ -462,8 +463,8 @@ async function writeReport() {
     '# TeleGlance Simulator Flow',
     '',
     `- URL: ${testUrl}`,
-    `- Fixture mode: enabled`,
-    `- Goldens updated: ${updateGoldens ? 'yes' : 'no'}`,
+    `- Mode: ${runMode}`,
+    `- Fixture mode: ${isFixtureMode ? 'enabled' : 'disabled'}`,
     `- Failures: ${failures.length}`,
     `- Warnings: ${warnings.length}`,
     '',
@@ -473,9 +474,11 @@ async function writeReport() {
     '| --- | ---: | ---: | ---: |',
     ...latencies.map((item) => `| ${item.name} | ${Math.round(item.totalMs)} | ${item.budgetMs} | ${Math.round(item.captureMs)} |`),
     '',
-    '## Fixture API calls',
-    '',
-    ...(fixtureApiCalls.length ? fixtureApiCalls.slice(-30).map((call) => `- ${call.call} ${JSON.stringify(call.args ?? {})} (${call.durationMs}ms, ok=${call.ok})`) : ['- None']),
+    ...(isFixtureMode ? [
+      '## Fixture API calls',
+      '',
+      ...(fixtureApiCalls.length ? fixtureApiCalls.slice(-30).map((call) => `- ${call.call} ${JSON.stringify(call.args ?? {})} (${call.durationMs}ms, ok=${call.ok})`) : ['- None']),
+    ] : ['## Mode', '', `- Real data mode: no fixture API calls tracked`]),
     '',
     '## Lifecycle events',
     '',

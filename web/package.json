@@ -11,6 +11,12 @@
     "build:tailscale": "npm run configure:tailscale && tsc && vite build",
     "test": "vitest run",
     "test:simulator": "node ../scripts/simulator-flow.mjs",
+    "test:simulator:real": "node ../scripts/simulator-flow.mjs --mode real --skip-latency-check",
+    "test:fuzzy": "node ../scripts/fuzzy-test.mjs 100",
+    "test:fuzzy:200": "node ../scripts/fuzzy-test.mjs 200",
+    "test:fuzzy:500": "node ../scripts/fuzzy-test.mjs 500",
+    "test:fuzzy:run": "node ../scripts/fuzzy-test.mjs",
+    "test:fuzzy:real": "node ../scripts/fuzzy-test.mjs 100 --mode real",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
