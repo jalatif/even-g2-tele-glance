@@ -44,6 +44,10 @@ export const API_BASE_URL_STORAGE_KEY = 'teleGlance.apiBaseUrl'
 export const G2_TELE_API_BASE_URL_STORAGE_KEY = 'g2Tele.apiBaseUrl'
 export const LEGACY_API_BASE_URL_STORAGE_KEY = 'evenTelegram.apiBaseUrl'
 export const BACKEND_UNREACHABLE_MESSAGE = 'Backend is not reachable. Fill Backend URL in Settings and make sure the backend server is running.'
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
+function REQUEST_TIMEOUT_MESSAGE(ms: number) {
+  return `Backend request timed out after ${Math.round(ms / 1000)}s. The server may be unreachable or stuck. Try again or check the backend.`
+}
 
 function localApiBaseUrl() {
   if (typeof window === 'undefined') return undefined
@@ -157,14 +161,23 @@ export class HttpTelegramApi implements TelegramApi {
   private async request<T>(path: string, init: RequestInit, baseUrl = this.baseUrl, includeTelegramAuth = true): Promise<T> {
     const headers = await this.withTelegramHeaders(init.headers, includeTelegramAuth)
     const requestInit = await this.withEncryptedJsonBody(init, headers, includeTelegramAuth)
+    const controller = new AbortController()
+    const timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     let response: Response
     try {
       response = await fetch(`${baseUrl}${path}`, {
         ...requestInit,
         headers,
+        signal: controller.signal,
       })
     } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(REQUEST_TIMEOUT_MESSAGE(timeoutMs))
+      }
       throw new Error(BACKEND_UNREACHABLE_MESSAGE)
+    } finally {
+      clearTimeout(timer)
     }
     const text = await this.responseText(response, includeTelegramAuth)
     if (!response.ok) throw new Error(readableErrorText(response.status, text))
