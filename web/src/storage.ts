@@ -286,26 +286,3 @@ function numberValue(value: unknown) {
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(Math.round(value), min), max)
 }
-
-const SEED_CREDENTIALS_FLAG = 'teleGlance.seedCredentialsApplied'
-
-export type SeedCredentials = {
-  apiBaseUrl?: string
-  telegramApiId?: string
-  telegramApiHash?: string
-  telegramSession?: string
-  backendSharedSecret?: string
-}
-
-export function applySeedCredentials(seed: SeedCredentials | null | undefined) {
-  if (typeof window === 'undefined' || !seed) return false
-  if (window.localStorage.getItem(SEED_CREDENTIALS_FLAG) === '1') return false
-
-  if (seed.apiBaseUrl?.trim()) writeString(API_BASE_URL_STORAGE_KEY, seed.apiBaseUrl)
-  if (seed.telegramApiId?.trim()) writeSensitiveString(TELEGRAM_API_ID_STORAGE_KEY, seed.telegramApiId)
-  if (seed.telegramApiHash?.trim()) writeSensitiveString(TELEGRAM_API_HASH_STORAGE_KEY, seed.telegramApiHash)
-  if (seed.telegramSession?.trim()) writeSensitiveString(TELEGRAM_SESSION_STORAGE_KEY, seed.telegramSession)
-  if (seed.backendSharedSecret?.trim()) writeSensitiveString(BACKEND_SHARED_SECRET_STORAGE_KEY, seed.backendSharedSecret)
-  window.localStorage.setItem(SEED_CREDENTIALS_FLAG, '1')
-  return true
-}

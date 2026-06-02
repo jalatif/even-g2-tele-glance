@@ -102,22 +102,13 @@ Drives the 48-step catalog from `docs/UI_INVARIANTS.json` through a fixture-back
 Drives 100+ random input sequences (up/down/click/double_click) and validates structural invariants after each input. Content-agnostic; works in either mode.
 
 ### 4. Real-data mode (`--mode real`)
-
-`npm run test:simulator:real` and `npm run test:fuzzy:real` run against the actual backend and your real Telegram session. The simulator opens a WebView with its own `localStorage`, separate from your browser. The seed-credentials mechanism copies credentials from `web/test/seed-credentials.local.json` into the WebView's `localStorage` at page load, so no re-entry or re-verification is needed.
-
-#### One-time setup for real-data mode
-
-1. Run `npm run dev --prefix web` and load the page in your browser.
-2. Open Settings, fill in your real Telegram API ID, API hash, backend URL, and backend shared secret, then complete phone-code login.
-3. Open browser DevTools → Application → Local Storage → `http://localhost:5173` and copy the values of these keys into a new file `web/test/seed-credentials.local.json` (gitignored):
-   - `teleGlance.apiBaseUrl`
-   - `teleGlance.backendSharedSecret`
-   - `teleGlance.telegramApiId`
-   - `teleGlance.telegramApiHash`
-   - `teleGlance.telegramSession` (the StringSession)
-4. Run `npm run test:fuzzy:real`. The Vite plugin reads the JSON file and injects the values into the page at load time; the frontend's boot script copies them into the WebView's `localStorage`. The frontend's existing `init()` then calls the backend with the session already populated — no phone-code re-verification is required.
-
-The `seed-credentials.local.json` file is gitignored so credentials never enter the repo. The Vite plugin also serves them at `/api/test/seed-credentials` (only accessible in dev mode) for verification.
+`npm run test:simulator:real` and `npm run test:fuzzy:real` run against the actual backend and your real Telegram session. The simulator's WebView shares `localStorage` per-origin with the URL it was opened with. The harness uses the same origin (default `http://localhost:5173/`) as the manually-run simulator, so the session you have already populated is reused directly — no re-entry, no phone-code re-verification.
+Requirements:
+1. The backend must be running (default `http://localhost:8787/`) and reachable from the same host as the simulator.
+2. The simulator must have been opened at least once at `http://localhost:5173` with valid Telegram credentials saved to its `localStorage` (run `npm run dev --prefix web`, then `npx @evenrealities/evenhub-simulator@0.7.2 http://localhost:5173`, then complete the Settings page and phone-code login once).
+3. The harness uses the same origin. Override with `VITE_PORT` and `TELEGLANCE_TEST_HOST` env vars if you use different ports or `127.0.0.1` instead of `localhost`.
+`logTeleGlanceTest` emits structured `[TeleGlanceTest]` console events that the harness parses to detect state transitions. These are enabled in any dev mode and disabled in production builds.
+## Assumptions
 
 ## Assumptions
 
