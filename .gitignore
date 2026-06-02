@@ -6,7 +6,6 @@
 !.env.example
 server/.env
 server/.env.*
-.graphiq/
 
 # Test seed credentials (real Telegram session, never commit)
 
@@ -44,3 +43,7 @@ web/test/seed-credentials.local.json
 web/test/seed-credentials.json
 .vite/
 coverage/
+
+# Others
+.graphiq/
+web/test/simulator-goldens/

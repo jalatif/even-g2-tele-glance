@@ -650,7 +650,10 @@
           "screen": "sidebar",
           "focus": "chats",
           "selectedChatIndex": 0
-        }
+        },
+        "renderBodyContains": [
+          "fixture-alpha-body"
+        ]
       },
       "apiCalls": [
         "listChats"
@@ -679,7 +682,10 @@
           "screen": "sidebar",
           "focus": "chats",
           "selectedChatIndex": 2
-        }
+        },
+        "renderBodyContains": [
+          "fixture-ops-body"
+        ]
       },
       "budgetMs": 500
     },
@@ -789,7 +795,10 @@
       "expect": {
         "state": {
           "selectedTopicIndex": 1
-        }
+        },
+        "renderBodyContains": [
+          "fixture-topic-one-body"
+        ]
       },
       "budgetMs": 500
     },
@@ -849,7 +858,10 @@
       "expect": {
         "state": {
           "selectedTopicIndex": 2
-        }
+        },
+        "renderBodyContains": [
+          "fixture-topic-two-body"
+        ]
       },
       "budgetMs": 500
     },

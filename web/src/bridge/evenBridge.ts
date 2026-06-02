@@ -4,6 +4,7 @@ import {
   ListItemContainerProperty,
   RebuildPageContainer,
   TextContainerProperty,
+  TextContainerUpgrade,
   waitForEvenAppBridge,
 } from '@evenrealities/even_hub_sdk'
 import type { GlassesBridge } from '../controller/appController'
@@ -26,6 +27,7 @@ let activeEventListenerToken: symbol | undefined
 type EvenBridgeInstance = {
   createStartUpPageContainer(container: unknown): Promise<number>
   rebuildPageContainer(container: unknown): Promise<boolean>
+  textContainerUpgrade?(container: unknown): Promise<boolean>
   audioControl(enabled: boolean): Promise<unknown>
   shutDownPageContainer?(exitMode?: number): Promise<boolean>
   callEvenApp?(method: string, payload: unknown): Promise<boolean>
@@ -77,7 +79,6 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       listenerToken,
     )
   }
-
   async render(model: ScreenModel) {
     const sequence = ++this.renderSequence
     if (this.hasRendered) {
@@ -90,6 +91,29 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     await this.sdk.createStartUpPageContainer(container)
     this.hasRendered = true
     logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
+  }
+
+  /**
+   * Partial render that updates only the right-panel text containers (title, body, box, footer)
+   * without rebuilding the native list container. This is the key to updating the right panel
+   * after a chat/topic swipe without snapping the list selection back to row 0.
+   *
+   * The native list (container ID 8) is firmware-managed, so we leave it alone and only push
+   * fresh text into the right-side containers. If `hasRendered` is false (first render) or the
+   * SDK does not support `textContainerUpgrade`, we fall back to a full rebuild.
+   */
+  async renderSidebarPanel(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
+    const sequence = ++this.renderSequence
+    if (!this.hasRendered || typeof this.sdk.textContainerUpgrade !== 'function') {
+      // Fall back to a full render on first paint or when the SDK lacks partial updates.
+      await this.render(model)
+      return
+    }
+    const updates = buildSidebarPanelUpdates(model)
+    for (const update of updates) {
+      await this.sdk.textContainerUpgrade(update)
+    }
+    logTeleGlanceTest('render', { sequence, partial: true, model: summarizeScreenModel(model) })
   }
 
   async setAudioEnabled(enabled: boolean) {
@@ -290,6 +314,49 @@ function formatSidebarItems(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
       return `${prefix}${item}`
     })
     .join('\n')
+}
+
+/**
+ * Build the right-panel `TextContainerUpgrade` payloads that the partial-render path
+ * sends to the glasses. We mirror the trim rules used by `buildSidebarPage` so the
+ * partial update looks identical to a full rebuild, but we never touch the native
+ * list (container ID 8) or the left-side text containers (IDs 0/2/3/5) — the SDK
+ * is instructed to keep them stable so the list selection does not snap.
+ */
+function buildSidebarPanelUpdates(model: Extract<ScreenModel, { kind: 'sidebar' }>): TextContainerUpgrade[] {
+  const updates: TextContainerUpgrade[] = []
+  updates.push(new TextContainerUpgrade({
+    containerID: 1,
+    containerName: 'title',
+    content: trimForContainer(model.title, 100),
+    contentOffset: 0,
+    contentLength: trimForContainer(model.title, 100).length,
+  }))
+  updates.push(new TextContainerUpgrade({
+    containerID: 6,
+    containerName: 'panel-body',
+    content: trimForContainer(fillToContainer(model.panelBody || ' '), 999),
+    contentOffset: 0,
+    contentLength: trimForContainer(fillToContainer(model.panelBody || ' '), 999).length,
+  }))
+  const boxContent = model.panelBox
+    ? trimForContainer(formatBoxContent(model.panelBox), 999)
+    : ''
+  updates.push(new TextContainerUpgrade({
+    containerID: 7,
+    containerName: 'panel-box',
+    content: boxContent,
+    contentOffset: 0,
+    contentLength: boxContent.length,
+  }))
+  updates.push(new TextContainerUpgrade({
+    containerID: 4,
+    containerName: 'footer',
+    content: trimForContainer(model.panelFooter, 120),
+    contentOffset: 0,
+    contentLength: trimForContainer(model.panelFooter, 120).length,
+  }))
+  return updates
 }
 function buildTextPage(model: Extract<ScreenModel, { kind: 'text' }>, Container: PageContainerClass) {
   if (model.box && model.footer) return buildBoxedTextPage(model, model.box, Container)

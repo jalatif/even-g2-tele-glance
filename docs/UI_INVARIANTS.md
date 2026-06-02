@@ -134,10 +134,9 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
   - `sidebarItems.exact`: `['Fixture Alpha', 'Fixture Forum (3)', 'Fixture Ops', 'Fixture Research', 'Fixture Archive']`
   - `sidebarItems.markerAt`: equals `state.selectedChatIndex`
   - The native list `ListContainerProperty` must include `isItemSelectBorderEn: 1`
-- **right**:
   - `panelTitle`: `state.chats[selectedChatIndex].title` truncated to 20 chars
-  - `panelBody.contains`: `state.chats[selectedChatIndex].lastMessage`
-  - `panelBody.notContains`: stale `lastMessage` from any other chat
+  - `panelBody.contains`: `state.chats[selectedChatIndex].lastMessage` (fallback) OR the cached messages of `state.chats[selectedChatIndex]` (e.g. `fixture-ops-body` for `fixture-chat-2`). The startup prefetch MUST populate the right panel for the first five chats so the initial render never shows the `lastMessage` fallback alone.
+  - `panelBody.notContains`: stale messages from any non-selected chat, AND the `lastMessage` of any other chat while the selected chat has cached messages. This is the regression that hid D2 — the right panel was stuck on the first chat's messages while the user scrolled.
   - `panelFooter`: `'Swipe chats | Press open'`
   - `panelBox`: `null`
 - **transitions**:
@@ -175,6 +174,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **right**:
   - `panelBody.contains`: first message text of selected topic preview
   - `panelBody.contains`: second message text when present
+  - `panelBody.notContains`: stale messages from any other topic (e.g. `fixture-topic-one-body` must not survive a swipe to topic 2). The right panel MUST reflect the currently selected topic after every swipe, using the prefetched cache when available and falling back to a single `api.listMessages` call when it is not.
   - `panelFooter`: `'Swipe topics | Press open'`
   - `panelBox`: optional; when present, `panelBody` must be empty
 - **transitions**: same as `noPreview`

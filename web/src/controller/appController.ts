@@ -8,6 +8,7 @@ import { consumeInjectedAudioChunks } from '../fixtureApi'
 
 export interface GlassesBridge {
   render(model: ScreenModel): Promise<void>
+  renderSidebarPanel?(model: Extract<ScreenModel, { kind: 'sidebar' }>): Promise<void>
   setAudioEnabled(enabled: boolean): Promise<void>
   getLocalStorage?(key: string): Promise<string>
   setLocalStorage?(key: string, value: string): Promise<boolean>
@@ -15,15 +16,15 @@ export interface GlassesBridge {
   turnScreenOff?(): Promise<void>
 }
 
-const MESSAGE_PAGE_LIMIT = 50
+const MESSAGE_PAGE_LIMIT = 8
 const OLDER_PREFETCH_LOW_WATER = 4
 const CHAT_LIST_LIMIT = 20
 const LOADING_OLDER_STATUS = 'Loading older messages...'
 const RENDER_DEFER_MS = 0
-const RENDER_COOLDOWN_MS = 120
+const RENDER_COOLDOWN_MS = 60
 const INPUT_QUIET_MS = 900
-const TOPIC_PREVIEW_IDLE_MS = 1000
-const CHAT_PREVIEW_IDLE_MS = 800
+const TOPIC_PREVIEW_IDLE_MS = 200
+const CHAT_PREVIEW_IDLE_MS = 150
 const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePressDelayMs: 260,
   messagePollMs: 3000,
@@ -63,14 +64,19 @@ export class TelegramAppController {
   private topicPreviewDebounce: ReturnType<typeof setTimeout> | undefined
   private deferredRootRefreshTimer: ReturnType<typeof setTimeout> | undefined
   private deferredMessageRefreshTimer: ReturnType<typeof setTimeout> | undefined
-  private topicPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
+  // `messageCache` is the single source of truth for the latest messages of a chat/topic.
+  // It is populated by `prefetchVisibleChats` on startup, by `prefetchTopics`/`prefetchMessages`
+  // on demand, and by background refreshes. The legacy `chatPreviewCache`/`topicPreviewCache`
+  // are kept for backwards compatibility (and for cache-write observability) but reads always
+  // fall through to `messageCache` so the startup prefetch is reused for previews.
+  private messageCache = new Map<string, { messages: Message[]; cursor?: Id }>()
+  private topicPreviewCache = this.messageCache
+  private chatPreviewCache = this.messageCache
   private topicPreviewInFlight = new Set<string>()
   private chatPreviewDebounce: ReturnType<typeof setTimeout> | undefined
-  private chatPreviewCache = new Map<string, { messages: Message[]; cursor?: Id }>()
   private chatPreviewInFlight = new Set<string>()
   private topicsCache = new Map<string, Topic[]>()
   private topicsPrefetchInFlight = new Map<string, Promise<Topic[]>>()
-  private messageCache = new Map<string, { messages: Message[]; cursor?: Id }>()
   private messagePrefetchInFlight = new Map<string, Promise<Message[]>>()
   private readAckMaxIds = new Map<string, Id>()
   private pendingReadAcks = new Map<string, { chat: Chat; topic?: Topic; maxId: Id }>()
@@ -374,16 +380,34 @@ export class TelegramAppController {
       this.openRequestId += 1
       this.cancelChatDebounce()
       const newIndex = moveSelection(state.selectedChatIndex, state.chats.length, -1)
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: newIndex, status: undefined, ...emptyChatPreview() })
-      this.debounceChatPreviewFetch(state.chats, newIndex)
+      const nextChat = state.chats[newIndex]
+      const cached = nextChat ? this.getChatPreviewCached(nextChat) : undefined
+      await this.setStateForListScroll({
+        ...state,
+        selectedChatIndex: newIndex,
+        status: undefined,
+        ...(cached
+          ? { previewMessages: cached.messages, previewCursor: cached.cursor, previewScrollOffset: 0, previewIsNewestPage: true }
+          : emptyChatPreview()),
+      })
+      if (nextChat && !cached) this.debounceChatPreviewFetch(state.chats, newIndex)
       return
     }
     if (input.type === 'swipeDown') {
       this.openRequestId += 1
       this.cancelChatDebounce()
       const newIndex = moveSelection(state.selectedChatIndex, state.chats.length, 1)
-      await this.setStateWithoutRender({ ...state, selectedChatIndex: newIndex, status: undefined, ...emptyChatPreview() })
-      this.debounceChatPreviewFetch(state.chats, newIndex)
+      const nextChat = state.chats[newIndex]
+      const cached = nextChat ? this.getChatPreviewCached(nextChat) : undefined
+      await this.setStateForListScroll({
+        ...state,
+        selectedChatIndex: newIndex,
+        status: undefined,
+        ...(cached
+          ? { previewMessages: cached.messages, previewCursor: cached.cursor, previewScrollOffset: 0, previewIsNewestPage: true }
+          : emptyChatPreview()),
+      })
+      if (nextChat && !cached) this.debounceChatPreviewFetch(state.chats, newIndex)
       return
     }
     if (input.type === 'selectIndex') {
@@ -392,8 +416,17 @@ export class TelegramAppController {
         this.openRequestId += 1
         this.cancelChatDebounce()
       }
-      await this.setStateWithoutRender({ ...state, selectedChatIndex, status: undefined, ...emptyChatPreview() })
-      this.debounceChatPreviewFetch(state.chats, selectedChatIndex)
+      const nextChat = state.chats[selectedChatIndex]
+      const cached = nextChat ? this.getChatPreviewCached(nextChat) : undefined
+      await this.setStateForListScroll({
+        ...state,
+        selectedChatIndex,
+        status: undefined,
+        ...(cached
+          ? { previewMessages: cached.messages, previewCursor: cached.cursor, previewScrollOffset: 0, previewIsNewestPage: true }
+          : emptyChatPreview()),
+      })
+      if (nextChat && !cached) this.debounceChatPreviewFetch(state.chats, selectedChatIndex)
       return
     }
     if (input.type !== 'press') return
@@ -446,15 +479,55 @@ export class TelegramAppController {
       this.openRequestId += 1
       const delta = input.type === 'swipeUp' ? -1 : 1
       const newIndex = moveSelection(state.selectedTopicIndex, state.topics.length, delta)
-      await this.setStateWithoutRender({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
-      this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
+      const nextTopic = state.topics[newIndex]
+      const cached = nextTopic ? this.getTopicPreviewCached(state.chat, nextTopic) : undefined
+      const isFreshSelection = nextTopic && (
+        !state.previewTopic
+        || String(state.previewTopic.id) !== String(nextTopic.id)
+      )
+      await this.setStateForListScroll({
+        ...state,
+        selectedTopicIndex: newIndex,
+        ...(cached
+          ? {
+              previewTopic: nextTopic,
+              previewMessages: cached.messages,
+              previewCursor: cached.cursor,
+              previewScrollOffset: 0,
+              previewIsNewestPage: true,
+            }
+          : isFreshSelection
+            ? emptyTopicPreview()
+            : {}),
+      })
+      if (nextTopic && !cached) this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
     if (input.type === 'selectIndex') {
       const newIndex = selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
       if (newIndex !== state.selectedTopicIndex) this.openRequestId += 1
-      await this.setStateWithoutRender({ ...state, selectedTopicIndex: newIndex, ...emptyTopicPreview() })
-      this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
+      const nextTopic = state.topics[newIndex]
+      const cached = nextTopic ? this.getTopicPreviewCached(state.chat, nextTopic) : undefined
+      const isFreshSelection = nextTopic && (
+        !state.previewTopic
+        || String(state.previewTopic.id) !== String(nextTopic.id)
+      )
+      await this.setStateForListScroll({
+        ...state,
+        selectedTopicIndex: newIndex,
+        ...(cached
+          ? {
+              previewTopic: nextTopic,
+              previewMessages: cached.messages,
+              previewCursor: cached.cursor,
+              previewScrollOffset: 0,
+              previewIsNewestPage: true,
+            }
+          : isFreshSelection
+            ? emptyTopicPreview()
+            : {}),
+      })
+      if (nextTopic && !cached) this.debounceTopicPreviewFetch(state.chat, state.topics, newIndex)
       return
     }
     if (input.type !== 'press') return
@@ -534,20 +607,20 @@ export class TelegramAppController {
   }
 
   private async fetchTopicPreview(chat: Chat, topic: Topic) {
-    const cacheKey = `${String(chat.id)}:${String(topic.id)}`
+    const cacheKey = messageThreadKey({ chat, topic })
     const cached = this.topicPreviewCache.get(cacheKey)
     if (cached) {
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'topics') return
       if (!topicMatchesSelection(state, topic)) return
-      await this.setStateWithVisibleRead({
+      await this.setStateWithPartialRender({
         ...state,
         previewTopic: topic,
         previewMessages: cached.messages,
         previewCursor: cached.cursor,
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      }, chat, topic, cached.messages, { render: false })
+      }, chat, topic, cached.messages)
       return
     }
 
@@ -563,14 +636,14 @@ export class TelegramAppController {
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'topics') return
       if (!topicMatchesSelection(state, topic)) return
-      await this.setStateWithVisibleRead({
+      await this.setStateWithPartialRender({
         ...state,
         previewTopic: topic,
         previewMessages: normalized,
         previewCursor: oldestMessageId(normalized),
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      }, chat, topic, normalized, { render: false })
+      }, chat, topic, normalized)
     } finally {
       this.topicPreviewInFlight.delete(cacheKey)
     }
@@ -598,21 +671,40 @@ export class TelegramAppController {
     this.chatPreviewDebounce = undefined
   }
 
+  /**
+   * Synchronous cache lookup for the chat preview path. Prefers the legacy `chatPreviewCache`
+   * (which is now an alias of `messageCache`) and falls through to the same map with the
+   * `messageThreadKey` shape that `prefetchVisibleChats` populates on startup. This is the
+   * single source of truth that lets the right panel update from cache on every swipe.
+   */
+  private getChatPreviewCached(chat: Chat) {
+    return this.chatPreviewCache.get(String(chat.id))
+      ?? this.messageCache.get(messageThreadKey({ chat, topic: undefined }))
+  }
+
+  /**
+   * Synchronous cache lookup for the topic preview path.
+   */
+  private getTopicPreviewCached(chat: Chat, topic: Topic) {
+    return this.topicPreviewCache.get(messageThreadKey({ chat, topic }))
+  }
+
   private async fetchChatPreview(chat: Chat) {
     const cacheKey = String(chat.id)
-    const cached = this.chatPreviewCache.get(cacheKey)
+    const threadKey = messageThreadKey({ chat, topic: undefined })
+    const cached = this.chatPreviewCache.get(cacheKey) ?? this.messageCache.get(threadKey)
     if (cached) {
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'chats') return
       if (!chatMatchesSelection(state, chat)) return
-      await this.setStateWithVisibleRead({
+      await this.setStateWithPartialRender({
         ...state,
         status: undefined,
         previewMessages: cached.messages,
         previewCursor: cached.cursor,
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      }, chat, undefined, cached.messages, { render: false })
+      }, chat, undefined, cached.messages)
       return
     }
 
@@ -622,24 +714,25 @@ export class TelegramAppController {
       const messages = await this.api.listMessages(chat.id, { limit: MESSAGE_PAGE_LIMIT })
       const normalized = normalizeMessagePage(messages)
       this.chatPreviewCache.set(cacheKey, { messages: normalized, cursor: oldestMessageId(normalized) })
+      this.messageCache.set(threadKey, { messages: normalized, cursor: oldestMessageId(normalized) })
       const state = this.state
       if (state.screen !== 'sidebar' || state.focus !== 'chats') return
       if (!chatMatchesSelection(state, chat)) return
-      await this.setStateWithVisibleRead({
+      await this.setStateWithPartialRender({
         ...state,
         status: undefined,
         previewMessages: normalized,
         previewCursor: oldestMessageId(normalized),
         previewScrollOffset: 0,
         previewIsNewestPage: true,
-      }, chat, undefined, normalized, { render: false })
+      }, chat, undefined, normalized)
     } finally {
       this.chatPreviewInFlight.delete(cacheKey)
     }
   }
 
   private chatPreviewDelayMs() {
-    return Math.max(CHAT_PREVIEW_IDLE_MS, this.msUntilQuiet() + CHAT_PREVIEW_IDLE_MS)
+    return Math.max(CHAT_PREVIEW_IDLE_MS, this.msUntilQuiet())
   }
 
   private async scheduleMessagePress(
@@ -917,6 +1010,12 @@ export class TelegramAppController {
       this.rememberChats(chats)
       await this.setState({ screen: 'sidebar', focus: 'chats', chats, selectedChatIndex: 0 })
       this.prefetchVisibleChats(chats)
+      // Kick off the first chat's preview fetch so the right panel shows the cached
+      // messages on the first paint once the prefetch completes. The first paint still
+      // uses the `lastMessage` fallback (no cache yet), but the debounced fetch closes
+      // the gap as soon as the prefetched page arrives — the partial-render path
+      // refreshes the right panel without snapping the list.
+      this.debounceChatPreviewFetch(chats, 0)
     }, previous)
   }
 
@@ -1518,6 +1617,53 @@ export class TelegramAppController {
     if (shouldAck) this.sendReadAck(chat, topic, maxId)
   }
 
+  /**
+   * Apply state and emit a *partial* render that updates only the right-side text containers
+   * (title, panelBody, panelBox, panelFooter). The native list (container ID 8) and the
+   * left-side text containers (0/2/3/5) are never touched, so the list selection cannot
+   * snap back to row 0. This is the path used by chat/topic preview updates so the right
+   * panel actually changes after every swipe instead of staying on the previous row.
+   */
+  private async setStateWithPartialRender(
+    state: AppState,
+    chat: Chat,
+    topic: Topic | undefined,
+    messages: Message[],
+    options: { forceAck?: boolean } = {},
+  ) {
+    const maxId = newestMessageId(messages)
+    const hasUnread = maxId !== undefined && hasUnreadForThread(state, chat, topic)
+    const next = hasUnread ? clearUnreadForThread(state, chat, topic) : state
+    this.applyState(next, false)
+    if (this.bridge.renderSidebarPanel) {
+      await this.bridge.renderSidebarPanel(screenModel(next) as Extract<ScreenModel, { kind: 'sidebar' }>)
+    } else {
+      // Bridge doesn't support partial updates — fall back to a queued full render so the
+      // right panel still updates, even if the list selection may snap on real hardware.
+      this.enqueueRender(next)
+    }
+    if (maxId !== undefined) {
+      const shouldAck = (hasUnread || options.forceAck === true) && this.shouldSendReadAck(chat, topic, maxId)
+      if (shouldAck) this.sendReadAck(chat, topic, maxId)
+    }
+  }
+
+  /**
+   * Apply a chat/topic-list scroll state and emit a partial render so the right panel
+   * follows the highlighted row. This is the bridge between the synchronous cache lookup
+   * in `handleSidebarChats`/`handleSidebarTopics` and the glasses UI: the controller state
+   * is updated immediately, and the right panel is refreshed in place without rebuilding
+   * the native list.
+   */
+  private async setStateForListScroll(state: AppState) {
+    this.applyState(state, true)
+    if (this.bridge.renderSidebarPanel && state.screen === 'sidebar') {
+      await this.bridge.renderSidebarPanel(screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>)
+      return
+    }
+    this.enqueueRender(state)
+  }
+
   private shouldSendReadAck(chat: Chat, topic: Topic | undefined, maxId: Id) {
     const key = messageThreadKey({ chat, topic })
     const previous = this.readAckMaxIds.get(key)
@@ -1544,7 +1690,7 @@ export class TelegramAppController {
   }
 
   private topicPreviewDelayMs() {
-    return Math.max(TOPIC_PREVIEW_IDLE_MS, this.msUntilQuiet() + TOPIC_PREVIEW_IDLE_MS)
+    return Math.max(TOPIC_PREVIEW_IDLE_MS, this.msUntilQuiet())
   }
 
   private deferTelegramUpdate(update: TelegramUpdate) {
