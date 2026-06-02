@@ -8,6 +8,8 @@ server/.env
 server/.env.*
 .graphiq/
 
+# Test seed credentials (real Telegram session, never commit)
+
 # Python
 __pycache__/
 .pycache/
@@ -37,6 +39,8 @@ artifacts/
 SECURITY_PRIVACY_FUTURE.md
 dist/
 build/
+.evenhub/
+web/test/seed-credentials.local.json
+web/test/seed-credentials.json
 .vite/
 coverage/
-.evenhub/

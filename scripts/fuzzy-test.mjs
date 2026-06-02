@@ -278,8 +278,11 @@ async function main() {
   }
 
   if (!firstState) {
-    failures.push('App did not reach non-loading state in 10s')
-    return
+    failures.push('App did not reach non-loading state in 10s (likely auth not configured or backend unreachable)')
+    console.log(`[fuzzy] Startup timeout - no non-loading state within 10s`)
+    console.log(`[fuzzy] Common causes: (1) seed-credentials.local.json not populated, (2) backend not running, (3) backend shared secret mismatch`)
+    for (const child of children.reverse()) stopProcessTree(child)
+    process.exit(1)
   }
 
   testEvents.length = 0

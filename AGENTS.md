@@ -86,6 +86,38 @@ Use MTProto rather than a Telegram bot because v1 needs access to the user's rea
   - Verify nonblank 576x288 screens.
   - Verify list navigation, message scrolling, recording state, and confirmation flow.
   - Test on real G2 hardware before packaging because simulator input and scrolling can differ.
+## Testing Infrastructure
+Three test surfaces, each with a different scope:
+
+### 1. Unit tests (`npm test --prefix web`)
+
+Vitest tests for pure logic: model, event mapping, storage, controller state machine, evenBridge. No Vite, no simulator, no backend. Fast (~400ms total).
+
+### 2. Simulator fixture harness (`npm run test:simulator --prefix web`)
+
+Drives the 48-step catalog from `docs/UI_INVARIANTS.json` through a fixture-backed instance of the app. The Vite plugin sets `VITE_TELEGLANCE_FIXTURE=1` so the frontend uses deterministic fixture data instead of real Telegram. This validates the full UI flow without a backend or real session.
+
+### 3. Fuzzy test runner (`npm run test:fuzzy --prefix web`)
+
+Drives 100+ random input sequences (up/down/click/double_click) and validates structural invariants after each input. Content-agnostic; works in either mode.
+
+### 4. Real-data mode (`--mode real`)
+
+`npm run test:simulator:real` and `npm run test:fuzzy:real` run against the actual backend and your real Telegram session. The simulator opens a WebView with its own `localStorage`, separate from your browser. The seed-credentials mechanism copies credentials from `web/test/seed-credentials.local.json` into the WebView's `localStorage` at page load, so no re-entry or re-verification is needed.
+
+#### One-time setup for real-data mode
+
+1. Run `npm run dev --prefix web` and load the page in your browser.
+2. Open Settings, fill in your real Telegram API ID, API hash, backend URL, and backend shared secret, then complete phone-code login.
+3. Open browser DevTools → Application → Local Storage → `http://localhost:5173` and copy the values of these keys into a new file `web/test/seed-credentials.local.json` (gitignored):
+   - `teleGlance.apiBaseUrl`
+   - `teleGlance.backendSharedSecret`
+   - `teleGlance.telegramApiId`
+   - `teleGlance.telegramApiHash`
+   - `teleGlance.telegramSession` (the StringSession)
+4. Run `npm run test:fuzzy:real`. The Vite plugin reads the JSON file and injects the values into the page at load time; the frontend's boot script copies them into the WebView's `localStorage`. The frontend's existing `init()` then calls the backend with the session already populated — no phone-code re-verification is required.
+
+The `seed-credentials.local.json` file is gitignored so credentials never enter the repo. The Vite plugin also serves them at `/api/test/seed-credentials` (only accessible in dev mode) for verification.
 
 ## Assumptions
 
