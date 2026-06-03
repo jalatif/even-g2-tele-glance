@@ -1656,21 +1656,17 @@ export class TelegramAppController {
   }
 
   /**
-   * Apply a chat/topic-list scroll state and queue a fire-and-forget render so the right
-   * panel follows the highlighted row. This is the bridge between the synchronous cache
-   * lookup in `handleSidebarChats`/`handleSidebarTopics` and the glasses UI.
+   * Apply a chat/topic-list scroll state and emit a *partial* render so the right panel
+   * follows the highlighted row. This is the bridge between the synchronous cache lookup
+   * in `handleSidebarChats`/`handleSidebarTopics` and the glasses UI: the controller state
+   * is updated immediately, and the right panel is refreshed in place without rebuilding
+   * the native list.
    *
-   * The render is fire-and-forget through `bridge.enqueueSidebarPanel`. The bridge coalesces
-   * rapid list scrolls into a single latest-wins render so the input handler returns
-   * immediately and only the most recent model ever reaches the glasses.
-   *
-   * The bridge's queue currently always performs a full rebuild (not partial container
-   * upgrades) because the Even Hub simulator's `textContainerUpgrade` is a no-op — partial
-   * updates would leave the right panel showing the first chat/topic's content while the
-   * native list scrolled. The full rebuild carries the new `sidebarSelected` in the same
-   * payload, so the firmware receives a consistent state. On real G2 hardware the rebuild
-   * is correct; on the simulator it may briefly snap the list selection to row 0 (a known
-   * simulator limitation, not a code bug).
+   * The native render is fire-and-forget through `bridge.enqueueSidebarPanel`. The bridge
+   * coalesces rapid list scrolls into a single latest-wins `textContainerUpgrade` chain so
+   * the input handler does not block on slow native renders. Older models are dropped, not
+   * queued, so a long swipe never falls behind. The native list (container ID 8) is left
+   * untouched so the firmware highlight cannot snap back to row 0.
    *
    * If the bridge does not implement `enqueueSidebarPanel`, we fall back to awaiting a
    * direct `renderSidebarPanel` so simpler test doubles still work.

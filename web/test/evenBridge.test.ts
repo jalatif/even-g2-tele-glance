@@ -197,20 +197,15 @@ describe('EvenHubGlassesBridge', () => {
   })
 
   it('coalesces rapid enqueueSidebarPanel calls into a single latest-wins render', async () => {
-    const rebuilds: Array<{ selected: number; panelBody: string }> = []
+    const upgrades: Array<{ id: number; content: string }> = []
     let resolveNext: (() => void) | undefined
     const blockRender = () => new Promise<void>((resolve) => { resolveNext = resolve })
     const bridge = new EvenHubGlassesBridge({
       async createStartUpPageContainer() { return 0 },
-      async rebuildPageContainer(container: unknown) {
-        const sidebar = (container as { listObject?: Array<{ itemContainer?: { itemName?: string[] } }> }).listObject?.[0]
-        const items = sidebar?.itemContainer?.itemName ?? []
-        // The full render carries the list with the current selection; we read it back to
-        // confirm the queued model was applied. The container shape is opaque to the bridge
-        // so this is a best-effort introspection.
-        const text = (container as { textObject?: Array<{ content?: string }> }).textObject ?? []
-        const panelBody = text.find((t) => t.content?.includes('bob-again') || t.content?.includes('carol') || t.content?.includes('bob'))?.content ?? ''
-        rebuilds.push({ selected: items.length, panelBody })
+      async rebuildPageContainer() { return true },
+      async textContainerUpgrade(container: unknown) {
+        const c = container as { containerID: number; content: string }
+        upgrades.push({ id: c.containerID, content: c.content })
         // Slow native render — must not stall the input handler.
         await blockRender()
         return true
@@ -231,7 +226,7 @@ describe('EvenHubGlassesBridge', () => {
       panelFooter: 'Click open',
     }
     await bridge.render(baseModel)
-    rebuilds.length = 0
+    upgrades.length = 0
 
     // Three rapid enqueues while a render is in flight. The slow native render
     // never resolves, so all three enqueues must be accepted and the second
@@ -251,9 +246,10 @@ describe('EvenHubGlassesBridge', () => {
     // After the in-flight render completes, the latest queued model must be flushed.
     resolveNext?.()
     await flushAsync(20)
-    // We expect at least one rebuild; the final panelBody should be the latest queued.
-    expect(rebuilds.length).toBeGreaterThan(0)
-    const lastBody = rebuilds.at(-1)?.panelBody ?? ''
-    expect(lastBody).toContain('bob-again')
+    // We expect at least one upgrade call per render cycle; the final content
+    // should be the latest panel body.
+    expect(upgrades.length).toBeGreaterThan(0)
+    const lastBody = upgrades.filter((u) => u.id === 6).at(-1)
+    expect(lastBody?.content).toContain('bob-again')
   })
 })
