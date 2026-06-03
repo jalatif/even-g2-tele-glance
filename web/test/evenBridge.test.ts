@@ -228,9 +228,6 @@ describe('EvenHubGlassesBridge', () => {
     await bridge.render(baseModel)
     upgrades.length = 0
 
-    // Three rapid enqueues while a render is in flight. The slow native render
-    // never resolves, so all three enqueues must be accepted and the second
-    // and third must be coalesced into the in-flight render slot.
     bridge.enqueueSidebarPanel({ ...baseModel, sidebarSelected: 1, panelBody: 'bob' })
     bridge.enqueueSidebarPanel({ ...baseModel, sidebarSelected: 2, panelBody: 'carol' })
     bridge.enqueueSidebarPanel({ ...baseModel, sidebarSelected: 1, panelBody: 'bob-again' })
@@ -238,16 +235,17 @@ describe('EvenHubGlassesBridge', () => {
     expect(stats.dispatched).toBe(3)
     expect(stats.dropped).toBe(2)
 
-    // The input handler must have returned by now (enqueue is synchronous).
-    // Let the in-flight render complete so the trailing render slot is freed.
-    resolveNext?.()
-    await flushAsync(0)
+    // With the 150ms scroll-idle window, the flush timer hasn't fired yet.
+    expect(upgrades.length).toBe(0)
 
-    // After the in-flight render completes, the latest queued model must be flushed.
-    resolveNext?.()
-    await flushAsync(20)
-    // We expect at least one upgrade call per render cycle; the final content
-    // should be the latest panel body.
+    // Advance past the idle window. The timer fires the single coalesced flush.
+    await flushAsync(160)
+    // Resolve the blocked render cycle (4 textContainerUpgrade calls per flush).
+    for (let i = 0; i < 4; i++) {
+      resolveNext?.()
+      await flushAsync(0)
+    }
+    // The final render cycle must have pushed the latest panel body.
     expect(upgrades.length).toBeGreaterThan(0)
     const lastBody = upgrades.filter((u) => u.id === 6).at(-1)
     expect(lastBody?.content).toContain('bob-again')

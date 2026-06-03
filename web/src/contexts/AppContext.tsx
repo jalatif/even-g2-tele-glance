@@ -62,6 +62,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           {
             debugEventsEnabled: () => settingsRef.current.debugEventsEnabled,
             authConfig: () => settingsRef.current,
+            dispatchContextProvider: () => controllerRef.current?.getDispatchContext() ?? { inputQuiet: false, backgroundWorkActive: false },
           },
         ).catch(() => fallbackBridge)
         if (!active) return

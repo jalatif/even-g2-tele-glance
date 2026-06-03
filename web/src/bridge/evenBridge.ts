@@ -11,15 +11,30 @@ import type { GlassesBridge } from '../controller/appController'
 import type { AppInput, ScreenModel } from '../controller/model'
 import { defaultApiBaseUrl, type TelegramAuthConfig } from '../api'
 import { encryptedTelegramAuthHeader, encryptJsonPayload } from '../secureAuth'
-import { logTeleGlanceTest, summarizeScreenModel } from '../testMode'
+import {
+  logBridgeQueueDepth,
+  logInputDispatch,
+  logTeleGlanceTest,
+  nowMs,
+  summarizeScreenModel,
+  type BridgeQueueDepthReason,
+} from '../testMode'
 import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
 export const APP_BUILD_VERSION: string = (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0') as string
 
+type DispatchContextSnapshot = { inputQuiet: boolean; backgroundWorkActive: boolean }
 type EvenBridgeOptions = {
   debugEventsEnabled?: () => boolean
   authConfig?: () => TelegramAuthConfig
+  /**
+   * Snapshot of controller-side state captured at the moment an Even Hub SDK event
+   * arrives. Used by `input.dispatch` to correlate input latency with background
+   * work (prefetch, polling) and the input quiet window. Returning a fresh object
+   * per call is intentional; the bridge logs it verbatim.
+   */
+  dispatchContextProvider?: () => DispatchContextSnapshot
 }
 
 let activeEventListenerToken: symbol | undefined
@@ -44,14 +59,18 @@ export class EvenHubGlassesBridge implements GlassesBridge {
   private pendingPanelModel: Extract<ScreenModel, { kind: 'sidebar' }> | undefined
   private panelRenderInFlight = false
   private panelRenderQueuedAfter = false
+  private fullRenderInFlight = false
   private partialRenderDispatched = 0
   private partialRenderDropped = 0
+  private partialRenderFlushed = 0
   private panelRenderTimer: ReturnType<typeof setTimeout> | undefined
-  // `panelRenderIdleMs` is a small coalescing window for the partial-render queue.
-  // Rapid list swipes post multiple `enqueueSidebarPanel` calls within a few ms; a 0ms
-  // queue tick still drops everything but the latest model, while making the queue
-  // start on a microtask boundary so the input handler never awaits a native render.
-  private readonly panelRenderIdleMs = 0
+  // `panelRenderIdleMs` is the scroll-idle window for the partial-render queue. On real
+  // G2 hardware each `textContainerUpgrade` call is a 150-400ms firmware roundtrip. If
+  // we flush on every microtask boundary, rapid scrolling chains firmware calls and the
+  // glasses feel sluggish. This delay holds the latest panel model until the user stops
+  // scrolling, so 10 rapid swipes produce exactly one firmware roundtrip. The native
+  // list (container ID 8) is firmware-managed and moves instantly regardless.
+  private readonly panelRenderIdleMs = 150
 
   constructor(
     private readonly sdk: EvenBridgeInstance,
@@ -66,7 +85,9 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     const listenerToken = Symbol('even-hub-listener')
     activeEventListenerToken = listenerToken
     const unsubscribeEvents = sdk.onEvenHubEvent((event) => {
-      if (activeEventListenerToken !== listenerToken) return
+      // `input.dispatch` event so the harness can attribute input latency to the
+      // JS bridge callback rather than to the harness's automation roundtrip.
+      const listenerStart = nowMs()
       const input = mapEvenHubEvent(event as Parameters<typeof mapEvenHubEvent>[0])
       if (input?.type !== 'audioChunk') {
         logTeleGlanceTest('input', {
@@ -82,6 +103,23 @@ export class EvenHubGlassesBridge implements GlassesBridge {
           })
         }, 0)
       }
+      const listenerMs = nowMs() - listenerStart
+      // Emit per-input timing telemetry for every non-audio event. The harness
+      // correlates `input.dispatch` events with `bridge.queueDepth` events by
+      // timestamp to reconstruct the queue state at input time. We intentionally
+      // do NOT access bridge instance state here — the instance hasn't been
+      // constructed yet (the listener is wired before the bridge is created).
+      if (input?.type !== 'audioChunk') {
+        logInputDispatch({
+          listenerMs,
+          queueDepth: 0,
+          pendingModel: false,
+          renderInFlight: false,
+          mappedKind: input?.type ?? null,
+          rawSummary: summarizeForDebug(event),
+          context: options.dispatchContextProvider?.(),
+        })
+      }
       if (input) setTimeout(() => dispatchInput(input), 0)
     })
     return new EvenHubGlassesBridge(
@@ -90,18 +128,47 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       listenerToken,
     )
   }
+
+  private queueDepthSnapshot() {
+    return {
+      partialInFlight: this.panelRenderInFlight ? 1 : 0,
+      partialPending: this.pendingPanelModel !== undefined ? 1 : 0,
+      fullRenderInFlight: this.fullRenderInFlight ? 1 : 0,
+    }
+  }
+
+  private emitQueueDepth(reason: BridgeQueueDepthReason) {
+    const snap = this.queueDepthSnapshot()
+    logBridgeQueueDepth({
+      reason,
+      partialInFlight: snap.partialInFlight,
+      partialPending: snap.partialPending,
+      fullRenderInFlight: snap.fullRenderInFlight,
+      dispatched: this.partialRenderDispatched,
+      dropped: this.partialRenderDropped,
+      flushed: this.partialRenderFlushed,
+    })
+  }
+
   async render(model: ScreenModel) {
     const sequence = ++this.renderSequence
-    if (this.hasRendered) {
-      const container = buildPage(model, RebuildPageContainer)
-      await this.sdk.rebuildPageContainer(container)
+    this.fullRenderInFlight = true
+    this.emitQueueDepth('full-render-start')
+    try {
+      if (this.hasRendered) {
+        const container = buildPage(model, RebuildPageContainer)
+        await this.sdk.rebuildPageContainer(container)
+        logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
+        return
+      }
+      const container = buildPage(model, CreateStartUpPageContainer)
+      await this.sdk.createStartUpPageContainer(container)
+      this.hasRendered = true
       logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
-      return
+    } finally {
+      this.fullRenderInFlight = false
+      this.emitQueueDepth('full-render-end')
     }
-    const container = buildPage(model, CreateStartUpPageContainer)
-    await this.sdk.createStartUpPageContainer(container)
-    this.hasRendered = true
-    logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
   }
 
   /**
@@ -124,6 +191,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     for (const update of updates) {
       await this.sdk.textContainerUpgrade(update)
     }
+    this.partialRenderFlushed += 1
     logTeleGlanceTest('render', { sequence, partial: true, model: summarizeScreenModel(model) })
   }
 
@@ -157,14 +225,25 @@ export class EvenHubGlassesBridge implements GlassesBridge {
         coalesced: previous ? 1 : 0,
         inFlight: true,
       })
+      this.emitQueueDepth('enqueue')
       return
     }
     if (this.panelRenderTimer) {
+      // Reset the idle deadline — each scroll pushes the flush further into the future
+      // so that rapid scrolling never triggers a firmware roundtrip until the user stops.
+      clearTimeout(this.panelRenderTimer)
+      this.panelRenderTimer = setTimeout(() => {
+        this.panelRenderTimer = undefined
+        void this.flushPanelQueue()
+      }, this.panelRenderIdleMs) as unknown as ReturnType<typeof setTimeout>
+      const maybeNodeTimeout = this.panelRenderTimer as unknown as { unref?: () => void }
+      maybeNodeTimeout.unref?.()
       logTeleGlanceTest('render.partial.enqueue', {
         dropped: previous ? 1 : 0,
         coalesced: previous ? 1 : 0,
         inFlight: false,
       })
+      this.emitQueueDepth('enqueue')
       return
     }
     this.panelRenderTimer = setTimeout(() => {
@@ -178,6 +257,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       coalesced: previous ? 1 : 0,
       inFlight: false,
     })
+    this.emitQueueDepth('enqueue')
   }
 
   /**
@@ -191,6 +271,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     this.pendingPanelModel = undefined
     this.panelRenderInFlight = true
     this.panelRenderQueuedAfter = false
+    this.emitQueueDepth('flush-start')
     const startedAt = Date.now()
     try {
       await this.renderSidebarPanel(model)
@@ -200,6 +281,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       const durationMs = Date.now() - startedAt
       logTeleGlanceTest('render.partial.flush', { durationMs })
       this.panelRenderInFlight = false
+      this.emitQueueDepth('flush-end')
       if (this.pendingPanelModel) {
         this.panelRenderQueuedAfter = false
         this.panelRenderTimer = setTimeout(() => {
@@ -227,6 +309,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     this.pendingPanelModel = undefined
     this.panelRenderInFlight = false
     this.panelRenderQueuedAfter = false
+    this.fullRenderInFlight = false
     this.unsubscribeEvents?.()
     this.unsubscribeEvents = undefined
   }
@@ -236,6 +319,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     return {
       dispatched: this.partialRenderDispatched,
       dropped: this.partialRenderDropped,
+      flushed: this.partialRenderFlushed,
     }
   }
   async setAudioEnabled(enabled: boolean) {

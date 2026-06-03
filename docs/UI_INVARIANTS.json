@@ -1115,9 +1115,9 @@
       "expect": {
         "bridgeCall": {
           "method": "setAudioEnabled",
-          "args": [
-            true
-          ]
+          "args": {
+            "enabled": true
+          }
         }
       },
       "budgetMs": 1000
@@ -1162,9 +1162,9 @@
       "expect": {
         "bridgeCall": {
           "method": "setAudioEnabled",
-          "args": [
-            false
-          ]
+          "args": {
+            "enabled": false
+          }
         }
       },
       "budgetMs": 1000

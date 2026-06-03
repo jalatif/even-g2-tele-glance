@@ -54,6 +54,131 @@ function isTestLoggingEnabled() {
   return true
 }
 
+/**
+ * Monotonic high-resolution timer. Returns `performance.now()` when available (browser
+ * WebView, Node test runner) and falls back to `Date.now()` in non-DOM environments.
+ * The harness reports latency buckets derived from these values, so use this for any
+ * timing measurement that should appear in `[TeleGlanceTest]` events.
+ */
+export function nowMs(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now()
+  }
+  return Date.now()
+}
+
+export type InputDispatchContext = {
+  inputQuiet: boolean
+  backgroundWorkActive: boolean
+}
+
+export type InputDispatchPayload = {
+  listenerMs: number
+  queueDepth: number
+  pendingModel: boolean
+  renderInFlight: boolean
+  mappedKind: string | null
+  rawSummary: unknown
+  context?: InputDispatchContext
+}
+
+/**
+ * Emit per-input telemetry from the Even Hub SDK listener. `listenerMs` is the time
+ * spent inside the native→JS callback before the coalesced dispatch timer fires. The
+ * queue/render state lets the harness detect firmware backpressure on real G2 hardware:
+ * if `queueDepth` is consistently 0/1 in simulator but stays >1 on the device, the
+ * firmware's serialized `textContainerUpgrade` is the bottleneck.
+ *
+ * This event is timing-only. It never includes message text, session strings, phone
+ * numbers, or login codes. `rawSummary` is the existing debug summary that the bridge
+ * already produces for the `input` event; both events share that payload.
+ */
+export function logInputDispatch(payload: InputDispatchPayload) {
+  logTeleGlanceTest('input.dispatch', {
+    listenerMs: Math.round(payload.listenerMs * 100) / 100,
+    queueDepth: payload.queueDepth,
+    pendingModel: payload.pendingModel,
+    renderInFlight: payload.renderInFlight,
+    mappedKind: payload.mappedKind,
+    context: payload.context,
+    raw: payload.rawSummary,
+  })
+}
+
+export type StateWorkKind =
+  | 'setState'
+  | 'setStateWithoutRender'
+  | 'setStateForListScroll'
+  | 'setStateWithPartialRender'
+  | 'applyState'
+
+export type StateWorkPayload = {
+  kind: StateWorkKind
+  syncMs: number
+  screen: string
+  focus?: string
+  includedScreenModel?: boolean
+  includedRenderEnqueue?: boolean
+}
+
+/**
+ * Emit per-state-update sync work timing. `syncMs` is the time spent inside the
+ * `setState*` method, including `applyState` (state assignment, polling sync, notify
+ * schedule) plus any `screenModel(state)` formatting and bridge enqueue. The harness
+ * buckets these by `kind` to attribute work to full renders vs. partial panel updates.
+ *
+ * Phone WebView React rerender and screenModel formatting are the hidden cost behind
+ * sluggish input on real hardware. If `setStateForListScroll` consistently shows
+ * `syncMs` > 16 ms on real G2, the synchronous path is starving the input handler.
+ */
+export function logStateWork(payload: StateWorkPayload) {
+  logTeleGlanceTest('state.work', {
+    kind: payload.kind,
+    syncMs: Math.round(payload.syncMs * 100) / 100,
+    screen: payload.screen,
+    focus: payload.focus,
+    includedScreenModel: payload.includedScreenModel,
+    includedRenderEnqueue: payload.includedRenderEnqueue,
+  })
+}
+
+export type BridgeQueueDepthReason =
+  | 'enqueue'
+  | 'flush-start'
+  | 'flush-end'
+  | 'full-render-start'
+  | 'full-render-end'
+  | 'input-dispatch'
+
+export type BridgeQueueDepthPayload = {
+  reason: BridgeQueueDepthReason
+  partialInFlight: number
+  partialPending: number
+  fullRenderInFlight: number
+  dispatched: number
+  dropped: number
+  flushed: number
+}
+
+/**
+ * Emit bridge queue depth snapshots. The partial-render path coalesces rapid list
+ * scrolls into a single latest-wins `textContainerUpgrade` chain, so a depth of 0 or
+ * 1 is the steady state. Real G2 firmware can serialize multiple in-flight upgrades
+ * behind a slow roundtrip; the harness tracks the max `partialInFlight` and
+ * `partialPending` observed across the run to detect that pattern.
+ */
+export function logBridgeQueueDepth(payload: BridgeQueueDepthPayload) {
+  logTeleGlanceTest('bridge.queueDepth', {
+    reason: payload.reason,
+    partialInFlight: payload.partialInFlight,
+    partialPending: payload.partialPending,
+    fullRenderInFlight: payload.fullRenderInFlight,
+    dispatched: payload.dispatched,
+    dropped: payload.dropped,
+    flushed: payload.flushed,
+  })
+}
+
 export function logTeleGlanceTest(event: string, payload: Record<string, unknown>) {
   if (!isTestLoggingEnabled()) return
   console.log(`${TELEGLANCE_TEST_LOG_PREFIX} ${JSON.stringify({ event, ts: Date.now(), ...payload })}`)
@@ -187,9 +312,6 @@ export function summarizeAppState(state: AppState): Record<string, unknown> {
         topicTitle: state.topic?.title ?? null,
         messageCount: state.messages.length,
         chunksLength: state.chunks.length,
-        chunksTotalBytes: state.chunks.reduce((total, chunk) => total + chunk.byteLength, 0),
-        startedAt: state.startedAt,
-        back: state.back ? state.back.screen : null,
       }
     case 'sidebarTranscribing':
       return {
@@ -197,8 +319,6 @@ export function summarizeAppState(state: AppState): Record<string, unknown> {
         focus: state.focus,
         chatTitle: state.chat.title,
         topicTitle: state.topic?.title ?? null,
-        messageCount: state.messages.length,
-        back: state.back ? state.back.screen : null,
       }
     case 'sidebarConfirm':
       return {
@@ -206,82 +326,70 @@ export function summarizeAppState(state: AppState): Record<string, unknown> {
         focus: state.focus,
         chatTitle: state.chat.title,
         topicTitle: state.topic?.title ?? null,
-        transcript: state.transcript,
         selectedIndex: state.selectedIndex,
-        back: state.back ? state.back.screen : null,
-      }
-    case 'sidebarSending':
-      return {
-        screen: state.screen,
-        focus: state.focus,
-        chatTitle: state.chat.title,
-        topicTitle: state.topic?.title ?? null,
-        transcript: state.transcript,
-        back: state.back ? state.back.screen : null,
       }
     case 'sidebarSent':
       return {
         screen: state.screen,
-        focus: state.focus,
         chatTitle: state.chat.title,
         topicTitle: state.topic?.title ?? null,
-        messageCount: state.messages.length,
-        status: state.status ?? null,
-        back: state.back ? state.back.screen : null,
+      }
+    case 'sidebarSending':
+      return {
+        screen: state.screen,
+        chatTitle: state.chat.title,
+        topicTitle: state.topic?.title ?? null,
+        transcript: state.transcript,
       }
     case 'newMessage':
       return {
         screen: state.screen,
         chatTitle: state.chat.title,
         topicTitle: state.topic?.title ?? null,
-        message: state.message,
-        selectedChatIndex: state.selectedChatIndex,
-        chatCount: state.chats.length,
+        messagePreview: state.message,
       }
     case 'auth':
-      return { screen: state.screen, mode: state.mode, message: state.message, phone: state.phone ?? null }
+      return { screen: state.screen, mode: state.mode, message: state.message, phone: state.phone }
     case 'loading':
-    case 'error':
       return { screen: state.screen, message: state.message }
     case 'asleep':
-      return { screen: state.screen, selectedChatIndex: state.selectedChatIndex }
+      return { screen: state.screen, chatCount: state.chats.length }
+    case 'error':
+      return { screen: state.screen, message: state.message }
     default:
-      return { screen: (state as { screen: string }).screen }
+      return { screen: 'unknown' }
   }
 }
 
 export function summarizeScreenModel(model: ScreenModel): Record<string, unknown> {
-  if (model.kind === 'sidebar') {
-    return {
-      kind: model.kind,
-      title: model.title,
-      focus: model.focus,
-      sidebarTitle: model.sidebarTitle,
-      sidebarItems: model.sidebarItems,
-      sidebarSelected: model.sidebarSelected,
-      selectedSidebarItem: model.sidebarItems[model.sidebarSelected] ?? null,
-      panelTitle: model.panelTitle,
-      panelBody: model.panelBody,
-      panelFooter: model.panelFooter,
-      panelBoxHeading: model.panelBox?.heading ?? null,
-      panelBoxContent: model.panelBox?.content ?? null,
-    }
-  }
-  if (model.kind === 'list') {
-    return {
-      kind: model.kind,
-      title: model.title,
-      items: model.items,
-      selectedIndex: model.selectedIndex,
-      selectedItem: model.items[model.selectedIndex] ?? null,
-    }
-  }
-  return {
-    kind: model.kind,
-    title: model.title,
-    body: model.body,
-    footer: model.footer ?? null,
-    boxHeading: model.box?.heading ?? null,
-    boxContent: model.box?.content ?? null,
+  switch (model.kind) {
+    case 'text':
+      return {
+        kind: model.kind,
+        title: model.title,
+        bodyLength: model.body.length,
+        footer: model.footer,
+        box: model.box ? { heading: model.box.heading, contentLength: model.box.content.length } : null,
+      }
+    case 'list':
+      return {
+        kind: model.kind,
+        title: model.title,
+        itemCount: model.items.length,
+        selectedIndex: model.selectedIndex,
+      }
+    case 'sidebar':
+      return {
+        kind: model.kind,
+        title: model.title,
+        focus: model.focus,
+        sidebarItemCount: model.sidebarItems.length,
+        sidebarSelected: model.sidebarSelected,
+        panelBodyLength: model.panelBody.length,
+        panelFooter: model.panelFooter,
+        panelBox: model.panelBox ? { heading: model.panelBox.heading, contentLength: model.panelBox.content.length } : null,
+      }
+    default:
+      return { kind: 'unknown' }
   }
 }

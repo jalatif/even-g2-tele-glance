@@ -3,7 +3,7 @@ import type { TelegramApi } from '../api'
 import type { Chat, Id, Message, TelegramUpdate, Topic } from '../types'
 import type { AppInput, AppState, RecoverableState, ScreenModel } from './model'
 import { messageScrollUnitCount, screenModel } from './model'
-import { isTeleGlanceFixtureMode, logLifecycleEvent, logRecordingEvent } from '../testMode'
+import { isTeleGlanceFixtureMode, logLifecycleEvent, logRecordingEvent, logStateWork, nowMs } from '../testMode'
 import { consumeInjectedAudioChunks } from '../fixtureApi'
 
 export interface GlassesBridge {
@@ -1398,12 +1398,16 @@ export class TelegramAppController {
   }
 
   private async setState(state: AppState) {
+    const finish = this.timeSyncWork('setState')
     this.applyState(state, true)
     this.enqueueRender(state)
+    finish()
   }
 
   private async setStateWithoutRender(state: AppState) {
+    const finish = this.timeSyncWork('setStateWithoutRender')
     this.applyState(state, false)
+    finish()
   }
 
   private applyState(state: AppState, armSelectionOnlyPress: boolean) {
@@ -1638,6 +1642,7 @@ export class TelegramAppController {
     messages: Message[],
     options: { forceAck?: boolean } = {},
   ) {
+    const finish = this.timeSyncWork('setStateWithPartialRender', { includedScreenModel: true, includedRenderEnqueue: true })
     const maxId = newestMessageId(messages)
     const hasUnread = maxId !== undefined && hasUnreadForThread(state, chat, topic)
     const next = hasUnread ? clearUnreadForThread(state, chat, topic) : state
@@ -1653,6 +1658,7 @@ export class TelegramAppController {
       const shouldAck = (hasUnread || options.forceAck === true) && this.shouldSendReadAck(chat, topic, maxId)
       if (shouldAck) this.sendReadAck(chat, topic, maxId)
     }
+    finish()
   }
 
   /**
@@ -1668,24 +1674,27 @@ export class TelegramAppController {
    * queued, so a long swipe never falls behind. The native list (container ID 8) is left
    * untouched so the firmware highlight cannot snap back to row 0.
    *
-   * If the bridge does not implement `enqueueSidebarPanel`, we fall back to awaiting a
    * direct `renderSidebarPanel` so simpler test doubles still work.
    */
   private setStateForListScroll(state: AppState) {
+    const finish = this.timeSyncWork('setStateForListScroll', { includedScreenModel: true, includedRenderEnqueue: true })
     this.applyState(state, true)
-    if (state.screen !== 'sidebar') return
+    if (state.screen !== 'sidebar') { finish(); return }
     const sidebarModel = screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>
     if (this.bridge.enqueueSidebarPanel) {
       this.bridge.enqueueSidebarPanel(sidebarModel)
+      finish()
       return
     }
     if (this.bridge.renderSidebarPanel) {
       // Test doubles may not implement the queued path. Awaiting here is safe because
       // fake bridges resolve synchronously; production bridges always provide enqueue.
       void this.bridge.renderSidebarPanel(sidebarModel)
+      finish()
       return
     }
     this.enqueueRender(state)
+    finish()
   }
 
   private shouldSendReadAck(chat: Chat, topic: Topic | undefined, maxId: Id) {
@@ -1705,6 +1714,57 @@ export class TelegramAppController {
     return Date.now() < this.inputQuietUntil
   }
 
+  /**
+   * Snapshot of controller state consumed by the bridge on every native event.
+   * Lets `input.dispatch` correlate input latency with controller-side background
+   * work and the input quiet window. The harness looks for `backgroundWorkActive=true`
+   * to detect contention between input handling and prefetch/poll activity.
+   */
+  getDispatchContext() {
+    return {
+      inputQuiet: this.isInputQuiet(),
+      backgroundWorkActive: this.isBackgroundWorkActive(),
+    }
+  }
+
+  /**
+   * True if any controller-side background work is currently awaiting a network
+   * roundtrip. Includes message/chat poll refreshes, startup prefetch chains,
+   * topic preview fetches, older-message prefetch, and the read-ack flush. The
+   * intent is to surface "input arrived while the network was busy" to the
+   * harness so it can attribute input latency to network contention rather than
+   * to the bridge.
+   */
+  isBackgroundWorkActive() {
+    if (this.rootRefreshInFlight) return true
+    if (this.messageRefreshInFlight) return true
+    if (this.olderPrefetch) return true
+    if (this.topicsPrefetchInFlight.size > 0) return true
+    if (this.messagePrefetchInFlight.size > 0) return true
+    if (this.topicPreviewInFlight.size > 0) return true
+    if (this.chatPreviewInFlight.size > 0) return true
+    if (this.pendingReadAcks.size > 0) return true
+    if (this.deferredRootRefreshTimer) return true
+    if (this.deferredMessageRefreshTimer) return true
+    return false
+  }
+  private timeSyncWork(
+    kind: 'setState' | 'setStateWithoutRender' | 'setStateForListScroll' | 'setStateWithPartialRender',
+    extras: { includedScreenModel?: boolean; includedRenderEnqueue?: boolean } = {},
+  ) {
+    const startedAt = nowMs()
+    return () => {
+      const state = this.state
+      logStateWork({
+        kind,
+        syncMs: nowMs() - startedAt,
+        screen: state.screen,
+        focus: 'focus' in state ? state.focus : undefined,
+        includedScreenModel: extras.includedScreenModel,
+        includedRenderEnqueue: extras.includedRenderEnqueue,
+      })
+    }
+  }
   private noteUserInput() {
     this.inputQuietUntil = Math.max(this.inputQuietUntil, Date.now() + INPUT_QUIET_MS)
   }
