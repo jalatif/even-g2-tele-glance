@@ -101,6 +101,11 @@ export class TelegramAppController {
   // position/size/border, so a box→no-box transition must trigger a full rebuild to
   // hide the previously-rendered container.
   private lastRenderedHasPanelBox = false
+  // Snapshot of the most recent sidebar page rendered on the glasses, used to detect
+  // focus changes (e.g. chats→messages) that don't need a full rebuild. The list
+  // selection on real G2 hardware resets to row 0 on every rebuild, so we route
+  // chats↔messages transitions through the partial-render path.
+  private lastRenderedListItems: readonly string[] | undefined
   private renderInFlight = false
   private pendingRenderState: AppState | undefined
   private renderTimer: ReturnType<typeof setTimeout> | undefined
@@ -1421,9 +1426,50 @@ export class TelegramAppController {
 
   private async setState(state: AppState) {
     const finish = this.timeSyncWork('setState')
+    const prev = this.state
     this.applyState(state, true)
+    // If both prev and new states are sidebar pages with the same list items and
+    // the same panel-box visibility, route the render through the partial path.
+    // This is the key fix for the chats↔messages focus change: the list stays at
+    // the same containerID with the same items, so a full rebuild (which would
+    // reset the firmware's list selection to row 0 on real G2 hardware) is
+    // unnecessary. Only the right-panel text containers need to change.
+    if (prev.screen === 'sidebar' && state.screen === 'sidebar' && this.bridge.renderSidebarPanel) {
+      const newModel = screenModel(state)
+      if (newModel.kind === 'sidebar') {
+        const newHasPanelBox = Boolean(newModel.panelBox)
+        const listUnchanged = this.lastRenderedListItems !== undefined
+          && this.listItemsMatch(this.lastRenderedListItems, newModel.sidebarItems)
+        if (newHasPanelBox === this.lastRenderedHasPanelBox && listUnchanged) {
+          await this.bridge.renderSidebarPanel(newModel)
+          finish()
+          return
+        }
+        this.lastRenderedHasPanelBox = newHasPanelBox
+        this.lastRenderedListItems = newModel.sidebarItems
+      }
+    } else if (state.screen !== 'sidebar') {
+      this.lastRenderedListItems = undefined
+    } else {
+      // First sidebar render (e.g. loading → chats). Cache the list items so
+      // the next state change (chats → messages) can use the partial path.
+      const newModel = screenModel(state)
+      if (newModel.kind === 'sidebar') {
+        this.lastRenderedHasPanelBox = Boolean(newModel.panelBox)
+        this.lastRenderedListItems = newModel.sidebarItems
+      }
+    }
     this.enqueueRender(state)
     finish()
+  }
+
+  private listItemsMatch(a: readonly string[], b: readonly string[]): boolean {
+    if (a === b) return true
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) {
+      if (a[i] !== b[i]) return false
+    }
+    return true
   }
 
   private async setStateWithoutRender(state: AppState) {

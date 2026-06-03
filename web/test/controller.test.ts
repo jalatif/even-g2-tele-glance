@@ -316,7 +316,13 @@ describe('TelegramAppController', () => {
 
     expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', limit: 8 })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[0] })
-    expect(bridge.render).toHaveBeenLastCalledWith(
+    // The messages-focus render may go through either the full render path (legacy)
+    // or the partial path introduced by the list-selection-preservation fix.
+    const messageRender = [
+      ...(bridge.renderSidebarPanel as any).mock.calls.flat(),
+      ...(bridge.render as any).mock.calls.flat(),
+    ].find((m: any) => m?.kind === 'sidebar' && m?.title === 'Launch')
+    expect(messageRender).toEqual(
       expect.objectContaining({
         kind: 'sidebar',
         title: 'Launch',

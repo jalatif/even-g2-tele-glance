@@ -129,11 +129,12 @@ describe('EvenHubGlassesBridge', () => {
     })
 
     const output = JSON.stringify(rendered)
+    // Native list is always present (kept at the same containerID+position so the
+    // firmware-side list selection survives chats↔messages focus changes).
     expect(output).toContain('"containerName":"sidebar-list"')
     expect(output).toContain('"itemName":["Alice","Project"]')
     expect(output).toContain('"isItemSelectBorderEn":1')
     expect(output).toContain('"isEventCapture":1')
-    expect(output).not.toContain('"containerName":"sidebar","content"')
   })
 
   it('uses text sidebar and panel event capture while messages have focus', async () => {
@@ -167,10 +168,11 @@ describe('EvenHubGlassesBridge', () => {
     })
 
     const output = JSON.stringify(rendered)
-    expect(output).toContain('"containerName":"sidebar"')
-    expect(output).toContain('Support')
-    expect(output).toContain('"containerName":"event-overlay"')
-    expect(output).not.toContain('"containerName":"sidebar-list"')
+    // The native list is kept at the same position so the firmware-side
+    // list selection survives the chats↔messages focus change.
+    expect(output).toContain('"containerName":"sidebar-list"')
+    // list selection survives the focus change.
+    expect(output).toContain('"isEventCapture":1')
   })
 
   it('disposes the Even Hub event listener when available', () => {

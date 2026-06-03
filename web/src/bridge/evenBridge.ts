@@ -418,19 +418,6 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     paddingLength: 0,
     isEventCapture: sidebarHasFocus ? 0 : 1,
   })
-  const sidebar = new TextContainerProperty({
-    containerID: 5,
-    containerName: 'sidebar',
-    content: trimForContainer(fillToContainer(formatSidebarItems(model)), 999),
-    xPosition: 2,
-    yPosition: 38,
-    width: 168,
-    height: 206,
-    borderWidth: 0,
-    borderColor: 8,
-    paddingLength: 4,
-    isEventCapture: 0,
-  })
   const sidebarSeparator = new TextContainerProperty({
     containerID: 3,
     containerName: 'separator',
@@ -496,10 +483,18 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     paddingLength: 4,
     isEventCapture: 0,
   })
-  const list = sidebarHasFocus ? sidebarListContainer(model) : hiddenListContainer()
-  const textObjects = sidebarHasFocus
-    ? [outerBorder, title, overlay, sidebarSeparator, panelBody, panelBox, footer]
-    : [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, panelBox, footer]
+  // Always include the native list at the chat-list position. Hiding the list on
+  // focus='panel' (messages) would force a full rebuild for the focus change,
+  // which resets the firmware-side list selection on real G2 hardware. Keeping
+  // the list at the same position lets the partial-render path in `setState`
+  // update the right-panel text containers without ever touching the list, so
+  // the user-visible highlight stays on the row they selected.
+  // the user-visible highlight stays on the row they selected.
+  const list = sidebarListContainer(model)
+  // The text-rendered sidebar (containerID 5) is deliberately excluded — the
+  // native list is always visible now, and on the simulator the two would
+  // overlap causing ghost text.
+  const textObjects = [outerBorder, title, overlay, sidebarSeparator, panelBody, panelBox, footer]
   return new Container({
     containerTotalNum: textObjects.length + 1,
     textObject: textObjects,
@@ -507,17 +502,8 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
   })
 }
 
-function formatSidebarItems(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
-  if (model.sidebarItems.length === 0) return ''
-  return model.sidebarItems
-    .map((item, index) => {
-      const prefix = index === model.sidebarSelected ? '> ' : '  '
-      return `${prefix}${item}`
-    })
-    .join('\n')
-}
-
 /**
+ * Build the right-panel `TextContainerUpgrade` payloads that the partial-render path
  * Build the right-panel `TextContainerUpgrade` payloads that the partial-render path
  * sends to the glasses. We mirror the trim rules used by `buildSidebarPage` so the
  * partial update looks identical to a full rebuild, but we never touch the native

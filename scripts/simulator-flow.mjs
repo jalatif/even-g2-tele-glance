@@ -166,6 +166,7 @@ async function executeStep(step, _url) {
       if (mapped) {
         const startedAt = Date.now()
         await postInput(mapped, {})
+        await sleep(60)
         const dispatchMs = Date.now() - startedAt
         if (!isFixtureMode) {
           realModePerInputLatencies.push({ name, action: mapped, ms: dispatchMs, screen: currentScreen })
@@ -244,6 +245,12 @@ async function executeStep(step, _url) {
       stepDeadline,
       eventStartTime,
     )
+  }
+  if (expect.bridgeCallNotPresent) {
+    const forbidden = expect.bridgeCallNotPresent
+    await sleep(50)
+    const seen = testEvents.some((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'bridge' && event.method === forbidden)
+    if (seen) failures.push(`${name}: forbidden bridge call ${forbidden} was made`)
   }
   if (isFixtureMode && expect.noRenderEvents) {
     const renderCount = testEvents.filter((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'render').length

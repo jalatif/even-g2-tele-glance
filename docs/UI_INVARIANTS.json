@@ -737,6 +737,19 @@
       "budgetMs": 500
     },
     {
+      "name": "04a-chats-back-from-non-zero",
+      "input": "pressSequence:click,double_click",
+      "target": "sidebar.chats",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats",
+          "selectedChatIndex": 3
+        }
+      },
+      "budgetMs": 1500
+    },
+    {
       "name": "05-chats-swipe-up-1",
       "input": "up",
       "target": "sidebar.chats",
