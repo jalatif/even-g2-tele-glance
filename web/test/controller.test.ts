@@ -60,6 +60,74 @@ describe('TelegramAppController', () => {
     expect(bridge.render).toHaveBeenCalledTimes(renderCount)
   })
 
+  it('forces a full rebuild when the topic-list panelBox visibility flips', async () => {
+    const longMessage: Message = {
+      id: '200',
+      sender: 'Long Sender',
+      // > 25 words so formatMessageBox produces a panelBox.
+      text: 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six twenty-seven',
+      sentAt: '2026-05-29T10:00:00Z',
+    }
+    const shortMessage: Message = { id: '210', sender: 'Short', text: 'hi', sentAt: '2026-05-29T10:01:00Z' }
+    let activeTopicId = 'topic-long'
+    const api = fakeApi({
+      authorized: true,
+      chats: [chats[0], chats[1]],
+      topics: [
+        { id: 'topic-long', title: 'Long', unreadCount: 0, lastMessage: 'long' },
+        { id: 'topic-short', title: 'Short', unreadCount: 0, lastMessage: 'short' },
+      ],
+      latestMessages: () => Promise.resolve(activeTopicId === 'topic-long' ? [longMessage] : [shortMessage]),
+    })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' }) // open topics list
+    await flushAsync()
+    // Manually fetch preview for the long topic (initial selection).
+    await fetchTopicPreview(controller, chats[1], { id: 'topic-long', title: 'Long' })
+    await flushAsync()
+    const renderCountAfterLongPreview = vi.mocked(bridge.render).mock.calls.length
+    const enqueueCountAfterLongPreview = vi.mocked(bridge.enqueueSidebarPanel ?? (() => undefined)).mock.calls.length
+
+    // Swipe to the short topic; this must trigger a full render (not a partial enqueue)
+    // because the panelBox visibility flipped from defined to undefined.
+    activeTopicId = 'topic-short'
+    await controller.dispatch({ type: 'swipeDown' })
+    await flushAsync()
+    expect(vi.mocked(bridge.render).mock.calls.length).toBeGreaterThan(renderCountAfterLongPreview)
+    expect(vi.mocked(bridge.enqueueSidebarPanel ?? (() => undefined)).mock.calls.length).toBe(enqueueCountAfterLongPreview)
+  })
+
+  it('suppresses the auto-press path on the same-index selection fired right after a swipe', async () => {
+    // Use a single non-forum chat so the prefetch runs in the background without
+    // opening any extra message threads we have to track.
+    const api = fakeApi({ authorized: true, chats: [chats[0]] })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    // Swipe the same-direction pair the harness records as a "scroll" so the
+    // selection lands on the same row we will later synthesise a selectIndex for.
+    await controller.dispatch({ type: 'swipeDown' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 0 })
+    const screenBefore = controller.snapshot.screen
+
+    // Same-index selectIndex 50ms after the swipe must NOT auto-open the chat.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await controller.dispatch({ type: 'selectIndex', index: 0 })
+    expect(controller.snapshot.screen).toBe(screenBefore)
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
+
+    // After the debounce window expires, the same selectIndex is treated as a press.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await controller.dispatch({ type: 'selectIndex', index: 0 })
+    expect(controller.snapshot.screen).toBe('sidebar')
+    expect(controller.snapshot).toMatchObject({ focus: 'messages' })
+  })
+
   it('keeps chat selection moving while glasses rendering is slow', async () => {
     const api = fakeApi({ authorized: true, chats: [chats[0], chats[1], { id: '3', title: 'Ops', kind: 'group' }] })
     const bridge = slowBridge()

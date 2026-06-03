@@ -320,6 +320,31 @@ describe('screenModel', () => {
     }
   })
 
+  it('does not double-render boxed chat previews as body text', () => {
+    // Regression: the chats focus screen model used to set panelBody to msg.body
+    // even when msg.box was set, so a long chat preview painted both the
+    // ASCII-bordered box text and the native bordered panelBox on top of each
+    // other (ghost text). Both topics and messages focus already cleared the
+    // body when a box was present; chats focus was missing the same check.
+    // 30+ words — long enough to trigger formatMessageBox (>25 word threshold
+    // after trimming) but short enough to fit in a single box page.
+    const longText = 'lorem ipsum dolor sit amet '.repeat(6)
+    const state: AppState = {
+      screen: 'sidebar', focus: 'chats',
+      chats: [{ id: '1', title: 'Akira', kind: 'user', isForum: false, lastMessage: 'preview' }],
+      selectedChatIndex: 0,
+      previewMessages: [{ id: '1', sender: 'Akira', text: longText }],
+    }
+
+    const model = screenModel(state)
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelBox).toBeDefined()
+      expect(model.panelBody).toBe('')
+    }
+  })
+
+
   it('shows selected-topic loading instead of mirroring the topic list before preview loads', () => {
     const state: AppState = {
       screen: 'sidebar', focus: 'topics',

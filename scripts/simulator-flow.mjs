@@ -167,7 +167,6 @@ async function executeStep(step, _url) {
         const startedAt = Date.now()
         await postInput(mapped, {})
         const dispatchMs = Date.now() - startedAt
-        perInputLatencies.push({ action: mapped, ms: dispatchMs })
         if (!isFixtureMode) {
           realModePerInputLatencies.push({ name, action: mapped, ms: dispatchMs, screen: currentScreen })
           if (currentScreen === 'asleep' && mapped !== 'double_click') {
@@ -178,14 +177,29 @@ async function executeStep(step, _url) {
     }
   }
 
+  // Capture the timestamp boundary AFTER all inputs are posted so the event filter
+  // (`event.ts >= eventStartTime`) excludes pre-input events (e.g. the inactivity
+  // state transition that fires while the harness was running the previous step's
+  // background work). The 100ms back-buffer covers the simulator→Vite round-trip
+  // for the input's controller reaction events.
+  //
+  // Steps with NO input use a wide-open filter (0) so the controller's startup or
+  // injection events (e.g. testSlowChat, testNotify) are still findable.
+  const stepHasInput = typeof step.input === 'string' && (
+    step.input === 'click' || step.input === 'double_click' || step.input === 'up' || step.input === 'down'
+    || step.input.startsWith('pressSequence:')
+  )
+  const eventStartTime = stepHasInput ? Date.now() - 100 : 0
   const startedAt = Date.now()
-  const eventStartIndex = testEvents.length
+  // All `waitForTestEvent` calls in this step share a single deadline so the
+  // total step latency is bounded by `budgetMs` instead of `budgetMs * callCount`.
+  const stepDeadline = Date.now() + budgetMs
   if (expect.state && isFixtureMode) {
     // Strict state predicates are fixture-shaped. In real mode, the catalog still
     // emits them so a no-op can be detected, but we do not fail the run if a real
     // chat/topic/message happens to be present.
     const predicate = makeStatePredicate(expect.state)
-    await waitForTestEvent(name, predicate, budgetMs, eventStartIndex)
+    await waitForTestEvent(name, predicate, stepDeadline, eventStartTime)
   }
   if (expect.renderBodyContains && isFixtureMode) {
     // The catalog renderBodyContains strings reference fixture-only chat/topic titles
@@ -194,8 +208,8 @@ async function executeStep(step, _url) {
     await waitForTestEvent(
       name,
       (event) => event.event === 'render' && expect.renderBodyContains.every((needle) => `${JSON.stringify(event.model ?? {})}`.includes(needle)),
-      budgetMs,
-      eventStartIndex,
+      stepDeadline,
+      eventStartTime,
     )
   }
   if (isFixtureMode && expect.apiCalls) {
@@ -203,8 +217,8 @@ async function executeStep(step, _url) {
     await waitForTestEvent(
       name,
       (event) => event.event === 'api' && callsNeeded.has(event.call),
-      budgetMs,
-      eventStartIndex,
+      stepDeadline,
+      eventStartTime,
     )
   }
   if (isFixtureMode && expect.apiCall) {
@@ -212,14 +226,14 @@ async function executeStep(step, _url) {
     await waitForTestEvent(
       name,
       (event) => event.event === 'api' && event.call === call && (!args || matchesArgs(event.args, args)),
-      budgetMs,
-      eventStartIndex,
+      stepDeadline,
+      eventStartTime,
     )
   }
   if (expect.apiCallNotPresent) {
     const forbidden = expect.apiCallNotPresent
     await sleep(50)
-    const seen = testEvents.slice(eventStartIndex).some((event) => event.event === 'api' && event.call === forbidden)
+    const seen = testEvents.some((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'api' && event.call === forbidden)
     if (seen) failures.push(`${name}: forbidden api call ${forbidden} was made`)
   }
   if (isFixtureMode && expect.bridgeCall) {
@@ -227,12 +241,12 @@ async function executeStep(step, _url) {
     await waitForTestEvent(
       name,
       (event) => event.event === 'bridge' && event.method === expected.method && (expected.args === undefined || JSON.stringify(event.args) === JSON.stringify(expected.args)),
-      budgetMs,
-      eventStartIndex,
+      stepDeadline,
+      eventStartTime,
     )
   }
   if (isFixtureMode && expect.noRenderEvents) {
-    const renderCount = testEvents.slice(eventStartIndex).filter((event) => event.event === 'render').length
+    const renderCount = testEvents.filter((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'render').length
     if (renderCount > 0) failures.push(`${name}: expected zero render events during chat list scroll, saw ${renderCount}`)
   }
   if (isFixtureMode && expect.maxPerSwipeMs && perInputLatencies.length > 0) {
@@ -243,7 +257,7 @@ async function executeStep(step, _url) {
   await sleep(150)
   await pollConsole()
   const captureStartedAt = Date.now()
-  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartIndex })
+  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartTime })
   const totalMs = Date.now() - startedAt
   const captureMs = Date.now() - captureStartedAt
   latencies.push({ name, totalMs, captureMs, budgetMs, perInputLatencies })
@@ -299,7 +313,7 @@ async function sendTestCommand(command) {
 }
 
 async function captureStep(name, expectations, extras = {}) {
-  const eventStartIndex = extras.eventStartIndex ?? 0
+  const eventStartTime = extras.eventStartTime ?? 0
   const glassesPath = path.join(stepDir, `${name}.glasses.png`)
   const webviewPath = path.join(stepDir, `${name}.webview.png`)
   await downloadWithRetry(`${simUrl}/api/screenshot/glasses`, glassesPath, 5)
@@ -338,8 +352,8 @@ async function captureStep(name, expectations, extras = {}) {
       console.log(`  [fallback] ${name}: full-screen capture failed: ${e.message ?? e}`)
     }
   }
-  const latestRender = latestTestEvent('render', eventStartIndex)
-  const latestState = latestTestEvent('state', eventStartIndex)
+  const latestRender = latestTestEvent('render', eventStartTime)
+  const latestState = latestTestEvent('state', eventStartTime)
   const contentMatches = isFixtureMode ? checkContentMatches(expectations, latestRender, latestState) : true
   if (isFixtureMode && expectations.renderBodyContains && latestRender) {
     for (const needle of expectations.renderBodyContains) {
@@ -391,11 +405,27 @@ function isBlankScreenshot(analysis) {
   return allGreenish
 }
 
-function latestTestEvent(eventName, fromIndex = 0) {
-  for (let i = testEvents.length - 1; i >= fromIndex; i -= 1) {
-    if (testEvents[i].event === eventName) return testEvents[i]
+function latestTestEvent(eventName, from = 0) {
+  // `from` may be a numeric index (legacy) or a millisecond timestamp; normalize to
+  // a predicate so the caller can pick whichever is more convenient. The default of
+  // 0 keeps the legacy "look at every event" behavior.
+  const matches = (event) => {
+    if (typeof from === 'number' && from > 1_000_000_000_000) return typeof event.ts === 'number' && event.ts >= from
+    return true
+  }
+  for (let i = testEvents.length - 1; i >= 0; i -= 1) {
+    const event = testEvents[i]
+    if (!matches(event)) continue
+    if (event.event === eventName) return event
   }
   return undefined
+}
+
+function eventMatchesFrom(event, from) {
+  if (typeof from === 'number' && from > 1_000_000_000_000) {
+    return typeof event.ts === 'number' && event.ts >= from
+  }
+  return true
 }
 
 async function validateGolden(name, actual, blank) {
@@ -414,12 +444,16 @@ async function validateGolden(name, actual, blank) {
   }
 }
 
-async function waitForTestEvent(label, predicate, timeoutMs, fromIndex = 0) {
-  const deadline = Date.now() + timeoutMs
+async function waitForTestEvent(label, predicate, deadlineOrTimeout, from = 0) {
+  // Legacy callers pass a timeout in ms; new callers pass a shared absolute deadline.
+  const deadline = deadlineOrTimeout > 1_000_000_000_000 ? deadlineOrTimeout : Date.now() + deadlineOrTimeout
   while (Date.now() < deadline) {
     await pollConsole()
-    const matched = testEvents.slice(fromIndex).reverse().find(predicate)
-    if (matched) return Date.now()
+    for (let i = testEvents.length - 1; i >= 0; i -= 1) {
+      const event = testEvents[i]
+      if (!eventMatchesFrom(event, from)) break
+      if (predicate(event)) return Date.now()
+    }
     await sleep(50)
   }
   failures.push(`${label}: timed out waiting for expected TeleGlanceTest event`)

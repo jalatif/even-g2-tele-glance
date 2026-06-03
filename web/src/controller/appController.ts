@@ -38,6 +38,7 @@ const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   chatPollMs: 5000,
   recordingMinDurationMs: 900,
   selectionOnlyPressDelayMs: 600,
+  swipeToPressDebounceMs: 450,
 }
 
 export type ControllerRuntimeConfig = {
@@ -46,6 +47,7 @@ export type ControllerRuntimeConfig = {
   chatPollMs: number
   recordingMinDurationMs: number
   selectionOnlyPressDelayMs: number
+  swipeToPressDebounceMs: number
 }
 
 type StateListener = (state: AppState) => void
@@ -90,6 +92,15 @@ export class TelegramAppController {
   private readAckFlushTimer: ReturnType<typeof setTimeout> | undefined
   private selectionOnlyPressReadyAt = 0
   private lastSelectIndexPressAt = 0
+  // Wall-clock timestamp of the most recent swipe (up or down). Used to suppress
+  // the chat/topic-list auto-press path for a short window after a scroll, so the
+  // native list-selection-only events that follow a swipe do not auto-open a thread.
+  private lastSwipeAt = 0
+  // Whether the most recent native render sent a visible `panelBox` container to the
+  // glasses. The partial-render path only updates `panelBox` content, not its
+  // position/size/border, so a box→no-box transition must trigger a full rebuild to
+  // hide the previously-rendered container.
+  private lastRenderedHasPanelBox = false
   private renderInFlight = false
   private pendingRenderState: AppState | undefined
   private renderTimer: ReturnType<typeof setTimeout> | undefined
@@ -211,6 +222,11 @@ export class TelegramAppController {
 
   async dispatch(input: AppInput) {
     if (input.type !== 'audioChunk') this.noteUserInput()
+    // Track swipe timing globally so the chat/topic-list auto-press path can suppress
+    // selection-only events that the native list fires immediately after a scroll.
+    if (input.type === 'swipeUp' || input.type === 'swipeDown') {
+      this.lastSwipeAt = Date.now()
+    }
     if (input.type === 'foreground') {
       this.cancelPendingMessagePress()
       if (this.state.screen === 'asleep') {
@@ -251,6 +267,12 @@ export class TelegramAppController {
       const currentIndex = state.focus === 'chats' ? state.selectedChatIndex : state.selectedTopicIndex
       if (idx === currentIndex && Date.now() >= this.selectionOnlyPressReadyAt) {
         const now = Date.now()
+        // Suppress auto-press for a short window after a swipe. Native G2 firmware
+        // sometimes emits a list-selection event immediately after a scroll completes
+        // (with the new index), and the previous code treated that as a press. The
+        // 450ms window covers the firmware's typical post-swipe event burst without
+        // noticeably slowing intentional press-after-swipe sequences.
+        if (now - this.lastSwipeAt < this.runtimeConfig.swipeToPressDebounceMs) return
         if (now - this.lastSelectIndexPressAt < 400) return
         this.lastSelectIndexPressAt = now
         await this.dispatch({ type: 'press', index: idx, itemName: input.itemName })
@@ -1646,8 +1668,17 @@ export class TelegramAppController {
     const maxId = newestMessageId(messages)
     const hasUnread = maxId !== undefined && hasUnreadForThread(state, chat, topic)
     const next = hasUnread ? clearUnreadForThread(state, chat, topic) : state
+    // Capture the incoming `panelBox` visibility BEFORE applyState mutates `this.state`.
+    // The partial-render path only updates `panelBox` content, not its
+    // position/size/border, so a visibility flip must trigger a full rebuild.
+    const nextHasPanelBox = next.screen === 'sidebar'
+      ? Boolean((screenModel(next) as Extract<ScreenModel, { kind: 'sidebar' }>).panelBox)
+      : false
     this.applyState(next, false)
-    if (this.bridge.renderSidebarPanel) {
+    if (nextHasPanelBox !== this.lastRenderedHasPanelBox) {
+      this.lastRenderedHasPanelBox = nextHasPanelBox
+      this.enqueueRender(next)
+    } else if (this.bridge.renderSidebarPanel) {
       await this.bridge.renderSidebarPanel(screenModel(next) as Extract<ScreenModel, { kind: 'sidebar' }>)
     } else {
       // Bridge doesn't support partial updates — fall back to a queued full render so the
@@ -1678,8 +1709,20 @@ export class TelegramAppController {
    */
   private setStateForListScroll(state: AppState) {
     const finish = this.timeSyncWork('setStateForListScroll', { includedScreenModel: true, includedRenderEnqueue: true })
+    // Capture the incoming `panelBox` visibility BEFORE applyState mutates `this.state`.
+    // The partial-render path only updates `panelBox` content, not its
+    // position/size/border, so a visibility flip must trigger a full rebuild.
+    const nextHasPanelBox = state.screen === 'sidebar'
+      ? Boolean((screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>).panelBox)
+      : false
     this.applyState(state, true)
     if (state.screen !== 'sidebar') { finish(); return }
+    if (nextHasPanelBox !== this.lastRenderedHasPanelBox) {
+      this.lastRenderedHasPanelBox = nextHasPanelBox
+      this.enqueueRender(state)
+      finish()
+      return
+    }
     const sidebarModel = screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>
     if (this.bridge.enqueueSidebarPanel) {
       this.bridge.enqueueSidebarPanel(sidebarModel)

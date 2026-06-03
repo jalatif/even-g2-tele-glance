@@ -157,11 +157,13 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     try {
       if (this.hasRendered) {
         const container = buildPage(model, RebuildPageContainer)
+        logTeleGlanceTest('bridge', { method: 'rebuildPageContainer', args: { sequence, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
         await this.sdk.rebuildPageContainer(container)
         logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
         return
       }
       const container = buildPage(model, CreateStartUpPageContainer)
+      logTeleGlanceTest('bridge', { method: 'createStartUpPageContainer', args: { sequence, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
       await this.sdk.createStartUpPageContainer(container)
       this.hasRendered = true
       logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
@@ -188,6 +190,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       return
     }
     const updates = buildSidebarPanelUpdates(model)
+    logTeleGlanceTest('bridge', { method: 'textContainerUpgrade', args: { sequence, count: updates.length, hasPanelBox: Boolean(model.panelBox) } })
     for (const update of updates) {
       await this.sdk.textContainerUpgrade(update)
     }

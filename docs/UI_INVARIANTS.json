@@ -974,7 +974,7 @@
     },
     {
       "name": "19-topic-three-back",
-      "input": "double_click",
+      "input": "pressSequence:double_click",
       "target": "sidebar.topics.preview",
       "expect": {
         "state": {
@@ -982,6 +982,24 @@
         }
       },
       "budgetMs": 500
+    },
+    {
+      "name": "19a-topics-box-to-no-box-swipe",
+      "input": "up",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 2
+        },
+        "renderBodyContains": [
+          "fixture-topic-two-body",
+          "\"panelBox\":null"
+        ],
+        "bridgeCall": {
+          "method": "rebuildPageContainer"
+        }
+      },
+      "budgetMs": 1500
     },
     {
       "name": "20-topics-double-back-to-chats",

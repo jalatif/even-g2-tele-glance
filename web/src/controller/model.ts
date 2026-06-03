@@ -118,11 +118,13 @@ export function screenModel(state: AppState): ScreenModel {
             sidebarItems: state.chats.map(chatLabel),
             sidebarSelected: state.selectedChatIndex,
             panelTitle: selected ? sanitizeGlassesText(selected.title.slice(0, 20)) : '',
-            panelBody: msg?.body
-              ?? state.status
-              ?? (selected?.lastMessage
+            panelBody: msg?.box
+              ? ''
+              : (msg?.body
+                ?? state.status
+                ?? (selected?.lastMessage
                 ? trimUtf8Bytes(sanitizeGlassesText(selected.lastMessage.slice(0, 200)), TEXT_CONTAINER_BYTE_LIMIT)
-                : ' '),
+                  : ' ')),
             panelBox: msg?.box,
             panelFooter: previewLoaded
               ? 'Scroll msgs | Press record | Back'
@@ -296,7 +298,6 @@ function footerText(status: string | undefined, controls: string) {
 function loadingMessageBody(status: string | undefined) {
   return status?.startsWith('Loading ') ? sanitizeGlassesText(status) : undefined
 }
-
 function formatMessages(messages: Message[], scrollOffset = 0) {
   if (messages.length === 0) return { body: trimUtf8Bytes('No messages yet.', TEXT_CONTAINER_BYTE_LIMIT) }
 
@@ -394,8 +395,8 @@ function formatCompactMessageRows(sender: string, text: string) {
   }
   return rows
 }
-
 function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
+  console.log('[DEBUG-FMB] called, sender=', sender, 'text.length=', text.length, 'wordCount=', wordCount(text))
   const topBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
   const midBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
   const bottomBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
