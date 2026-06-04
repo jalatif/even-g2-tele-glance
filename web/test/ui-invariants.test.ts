@@ -208,6 +208,35 @@ describe('UI_INVARIANTS catalog', () => {
       throw new Error('simulator-flow.mjs is missing the "Subprocess health" report section so crashes are surfaced alongside the per-step table')
     }
   })
+
+  it('harness supports --external-simulator mode for user-supplied simulator instances', () => {
+    // External mode lets the harness point at a simulator the user started
+    // manually. This is the supported way to run the harness against a
+    // long-lived simulator session (e.g. when the harness-spawned subprocess
+    // crashes under load). The static-source check below locks in three
+    // contracts: the flag is recognized, the simulator spawn is skipped in
+    // that mode, and a synthetic handle is registered so executeStep's
+    // alive-check still works.
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const source = readFileSync(path.join(repoRoot, 'scripts', 'simulator-flow.mjs'), 'utf8')
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'web', 'package.json'), 'utf8'))
+    if (!/externalSimulator\s*=\s*Boolean\(args\['external-simulator'\]\)/.test(source)) {
+      throw new Error('simulator-flow.mjs is not parsing --external-simulator')
+    }
+    if (!/externalSimulatorUrl\s*=\s*args\['simulator-url'\]/.test(source)) {
+      throw new Error('simulator-flow.mjs is not parsing --simulator-url')
+    }
+    if (!/if\s*\(\s*externalSimulator\s*\)/.test(source)) {
+      throw new Error('simulator-flow.mjs does not branch on externalSimulator to skip the spawn')
+    }
+    if (!/registerExternalSimulatorHandle/.test(source)) {
+      throw new Error('simulator-flow.mjs is missing registerExternalSimulatorHandle; the alive-check in executeStep will misfire for external mode')
+    }
+    if (!packageJson.scripts['test:simulator:external']) {
+      throw new Error('web/package.json is missing the test:simulator:external npm script')
+    }
+  })
+
   it('harness cleans up child processes on SIGINT/SIGTERM/uncaughtException', () => {
     // The harness spawns vite (with VITE_TELEGLANCE_FIXTURE=1 baked in) and
     // optionally a simulator subprocess, both with `detached: true` so they

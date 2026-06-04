@@ -18,13 +18,21 @@ const fastMode = Boolean(args['fast'])
 const skipLatencyCheck = Boolean(args['skip-latency-check'])
 const runMode = args['mode'] ?? 'fixture'
 const isFixtureMode = runMode === 'fixture'
+// --external-simulator: do NOT spawn a simulator subprocess; point simUrl at
+// an instance the user started manually. Use this when the harness-spawned
+// simulator crashes but the user's own instance is healthy, or when the
+// user is iterating against a long-lived external simulator session.
+// --simulator-url overrides the auto-derived simUrl (default
+// http://localhost:9898/).
+const externalSimulator = Boolean(args['external-simulator'])
+const externalSimulatorUrl = args['simulator-url'] ?? null
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 const artifactRoot = path.join(repoRoot, 'artifacts', 'simulator-flow', timestamp)
 const framesDir = path.join(artifactRoot, 'frames')
 const stepDir = path.join(artifactRoot, 'steps')
 const goldenRoot = path.join(webRoot, 'test', 'simulator-goldens')
 const testUrl = `http://${testHost}:${vitePort}/${isFixtureMode ? '?teleGlanceFixture=1' : ''}`
-const simUrl = `http://${testHost}:${automationPort}`
+const simUrl = externalSimulatorUrl ?? `http://${testHost}:${automationPort}`
 const children = []
 let frameIndex = 0
 let recording = true
@@ -97,14 +105,27 @@ try {
   })
   await waitForHttp(testUrl, 20_000)
 
-  const simulator = startProcess('simulator', 'npx', [
-    '@evenrealities/evenhub-simulator@0.7.2',
-    '--automation-port',
-    String(automationPort),
-    testUrl,
-  ], { cwd: repoRoot })
-  await waitForHttp(`${simUrl}/api/ping`, 20_000, 'pong')
-  await clearConsole()
+  let simulator
+  if (externalSimulator) {
+    // External mode: the user started their own simulator. We verify the
+    // URL is reachable, then register a synthetic handle so the per-step
+    // "simulator alive?" guard in executeStep still has something to
+    // inspect. The handle's /api/ping probe runs every 2s; on two
+    // consecutive failures the handle is marked dead and remaining
+    // steps are SKIPPED.
+    await waitForHttp(`${simUrl}/api/ping`, 20_000, 'pong')
+    console.log(`[harness] external simulator: ${simUrl}`)
+    simulator = await registerExternalSimulatorHandle(simUrl)
+  } else {
+    simulator = startProcess('simulator', 'npx', [
+      '@evenrealities/evenhub-simulator@0.7.2',
+      '--automation-port',
+      String(automationPort),
+      testUrl,
+    ], { cwd: repoRoot })
+    await waitForHttp(`${simUrl}/api/ping`, 20_000, 'pong')
+    await clearConsole()
+  }
 
   recorder = setInterval(() => {
     void recordFrame().catch((error) => {
@@ -688,14 +709,16 @@ async function writeReport() {
     ...(processHandles.size > 0 ? [
       '## Subprocess health',
       '',
-      '| Name | PID | Alive | Exited at | Exit code | Signal |',
-      '| --- | ---: | :---: | --- | ---: | --- |',
+      '`External` indicates the harness did NOT spawn this process; it was supplied by the user via --external-simulator / --simulator-url. The PID is `n/a` because the harness never owned the process and cannot terminate it on shutdown.',
+      '',
+      '| Name | PID | External | Alive | Exited at | Exit code | Signal |',
+      '| --- | ---: | :---: | :---: | --- | ---: | --- |',
       ...[...processHandles.values()].map((h) => {
         const alive = h.alive
         const exited = h.exitedAt ?? '-'
         const code = h.exitCode ?? '-'
         const signal = h.signalCode ?? '-'
-        return `| ${h.name} | ${h.pid ?? '-'} | ${alive ? 'yes' : 'no'} | ${exited} | ${code} | ${signal} |`
+        return `| ${h.name} | ${h.pid ?? 'n/a'} | ${h.external ? 'yes' : 'no'} | ${alive ? 'yes' : 'no'} | ${exited} | ${code} | ${signal} |`
       }),
     ] : []),
     '',
@@ -854,7 +877,77 @@ function startProcess(name, command, commandArgs, options) {
   return handle
 }
 
+// External-simulator handle: a thin adapter over a URL the user supplied.
+// The `alive` flag is set false on two consecutive /api/ping failures so a
+// sudden external-simulator crash surfaces the same way as a spawned
+// subprocess crash (with a SKIPPED marker on remaining steps).
+async function registerExternalSimulatorHandle(url) {
+  let alive = true
+  let exitCode = null
+  let signalCode = null
+  let exitedAt = undefined
+  let crashMessage = undefined
+  const handle = {
+    name: 'simulator',
+    pid: undefined,
+    child: undefined,
+    external: true,
+    url,
+    get alive() {
+      return alive && exitCode === null && signalCode === null
+    },
+    exitCode: null,
+    signalCode: null,
+    exitedAt: undefined,
+    crashMessage: undefined,
+  }
+  let consecutiveFailures = 0
+  const probe = setInterval(() => {
+    void fetchWithTimeout(`${url}/api/ping`, undefined, 1_000)
+      .then(async (response) => {
+        const text = await response.text().catch(() => '')
+        const ok = response.ok && text.trim() === 'pong'
+        if (!ok) {
+          consecutiveFailures += 1
+          if (consecutiveFailures >= 2 && alive) {
+            alive = false
+            exitCode = 1
+            exitedAt = new Date().toISOString()
+            crashMessage = `external simulator at ${url} stopped responding to /api/ping; remaining steps will be skipped`
+            handle.exitCode = exitCode
+            handle.signalCode = signalCode
+            handle.exitedAt = exitedAt
+            handle.crashMessage = crashMessage
+            failures.push(crashMessage)
+          }
+        } else {
+          consecutiveFailures = 0
+        }
+      })
+      .catch(() => {
+        consecutiveFailures += 1
+        if (consecutiveFailures >= 2 && alive) {
+          alive = false
+          exitCode = 1
+          exitedAt = new Date().toISOString()
+          crashMessage = `external simulator at ${url} stopped responding to /api/ping; remaining steps will be skipped`
+          handle.exitCode = exitCode
+          handle.signalCode = signalCode
+          handle.exitedAt = exitedAt
+          handle.crashMessage = crashMessage
+          failures.push(crashMessage)
+        }
+      })
+  }, 2_000)
+  handle._probe = probe
+  processHandles.set('simulator', handle)
+  return handle
+}
+
 function stopProcessTree(handle) {
+  // External handles have no child process to terminate; the harness did not
+  // spawn the simulator and the user owns the lifecycle. Just no-op.
+  if (handle?.external) return
   const child = handle?.child ?? handle
   if (!child || child.killed) return
   try {
