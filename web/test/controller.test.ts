@@ -147,6 +147,98 @@ describe('TelegramAppController', () => {
     expect(enqueueCalls).toBeGreaterThanOrEqual(2)
   })
 
+  it('reproduces the simulator firmware-reset desync: a click after a swipe-open cycle opens row 0, not the scrolled-to row', async () => {
+    // This is a STATIC ANALYSIS harness for the user-reported bug. Real
+    // reproduction requires a running simulator + captured `[TeleGlanceTest]`
+    // console output. In a vitest unit test we can deterministically
+    // construct the exact event sequence the simulator/real-G2 emit on a
+    // typical "scroll down twice, then click" flow AFTER a full page rebuild.
+    //
+    // The bug: when a full `rebuildPageContainer` happens (e.g. user opened
+    // a chat, scrolled the message thread, then backed out to the chat list),
+    // the G2 firmware resets its tracked list-selection index to row 0. The
+    // controller's own `state.selectedChatIndex` is preserved across the
+    // rebuild (we don't touch the controller's state). The next user click
+    // arrives with the firmware's payload — `currentSelectItemIndex: 0,
+    // currentSelectItemName: <chat 0 name>` — even though the user's actual
+    // highlight position is row 2 (the controller's state).
+    //
+    // The controller currently trusts the firmware's `input.index` (clamped
+    // to 0) and ends up opening chat 0. The user perceives this as "I
+    // scrolled, I clicked, and the wrong thing opened."
+    //
+    // This test pins down the exact event sequence that reproduces the bug
+    // and asserts the controller's behavior given the firmware's broken
+    // signal. A fix would require either the SDK to expose a way to set the
+    // firmware's tracked index, or the firmware to preserve the index across
+    // rebuilds. Neither is in scope for the WebView. See
+    // `docs/SDK_BUG_NATIVE_LIST_SELECTION.md` for the SDK-level analysis.
+    const api = fakeApi({ authorized: true, chats: [chats[0], chats[1], { id: '3', title: 'Ops', kind: 'group' }] })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+    await controller.init()
+    await flushAsync()
+
+    // 1. User scrolls down twice. Controller's `selectedChatIndex` moves 0 → 2.
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'swipeDown' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 2 })
+
+    // 2. Simulate the firmware-reset desync: the WebView receives a `selectIndex`
+    //    event from the firmware with `currentSelectItemIndex: 0` (the
+    //    firmware's tracked index after a rebuild reset). The user is
+    //    looking at row 2 but the firmware is now reporting row 0.
+    await controller.dispatch({ type: 'selectIndex', index: 0, itemName: 'Alice' })
+
+    // 3. The user clicks. The simulator/firmware sends a `press` with the
+    //    post-rebuild state. Both `index` and `itemName` point to row 0
+    //    consistently — the firmware is internally consistent, just
+    //    inconsistent with the controller.
+    await controller.dispatch({ type: 'press', index: 0, itemName: 'Alice' })
+
+    // 4. Assert the controller's behaviour. With the current code, the
+    //    controller uses `input.index: 0` and opens chat 0. This is the
+    //    firmware-reset bug: the user wanted chat 2, the controller opened
+    //    chat 0. The harness would have to ship a controller-level
+    //    workaround to flip this expectation, but no workaround can
+    //    distinguish "the user really meant row 0" from "the firmware is
+    //    wrong" without information the WebView does not have.
+    const snapshot = controller.snapshot as { focus?: string; topic?: unknown; selectedChatIndex?: number; chat?: { id?: string } }
+    expect(snapshot.focus).toBe('messages')
+    expect(snapshot.chat?.id).toBe('1')  // chat 0 (Alice) — the bug
+    // The user's intent (controller's `selectedChatIndex: 2`) was NOT
+    // honored. This pins the failure mode for the SDK bug report.
+    expect(snapshot.chat?.id).not.toBe('3')  // chat 2 (Ops) — what the user wanted
+  })
+
+  it('opens the scrolled-to chat when the firmware does NOT reset (baseline, no desync)', async () => {
+    // The companion to the previous test: when the firmware is internally
+    // consistent with the controller's state, the click correctly opens the
+    // scrolled-to row. This is the normal path; the previous test shows
+    // what happens when the firmware is wrong.
+    const api = fakeApi({ authorized: true, chats: [chats[0], chats[1], { id: '3', title: 'Ops', kind: 'group' }] })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+    await controller.init()
+    await flushAsync()
+
+    // 1. User scrolls down twice. Controller's `selectedChatIndex` moves 0 → 2.
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'swipeDown' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats', selectedChatIndex: 2 })
+
+    // 2. The firmware-tracked index moves with the controller (no rebuild
+    //    happened). The `selectIndex` event is consistent: index 2, name 'Ops'.
+    await controller.dispatch({ type: 'selectIndex', index: 2, itemName: 'Ops' })
+
+    // 3. The user clicks. Firmware reports index 2, name 'Ops'. Controller
+    //    opens chat 2. This is the correct, expected behavior.
+    await controller.dispatch({ type: 'press', index: 2, itemName: 'Ops' })
+    const snapshot = controller.snapshot as { focus?: string; topic?: unknown; selectedChatIndex?: number; chat?: { id?: string } }
+    expect(snapshot.focus).toBe('messages')
+    expect(snapshot.chat?.id).toBe('3')  // chat 2 (Ops) — correct
+  })
+
   it('enqueues a sidebar panel for each chat scroll without awaiting the native render', async () => {
     const api = fakeApi({ authorized: true, chats: [chats[0], chats[1], { id: '3', title: 'Ops', kind: 'group' }] })
     const bridge = recordingEnqueueBridge()
