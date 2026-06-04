@@ -85,6 +85,18 @@ describe('mapEvenHubEvent', () => {
     expect(onInput).toHaveBeenCalledWith({ type: 'press' })
     vi.useRealTimers()
   })
+  it('debounces duplicate double press payloads', () => {
+    vi.useFakeTimers()
+    const onInput = vi.fn()
+    const coalesce = createInputCoalescer(onInput, 250)
+
+    coalesce({ type: 'doublePress' })
+    coalesce({ type: 'doublePress' })
+
+    expect(onInput).toHaveBeenCalledTimes(1)
+    expect(onInput).toHaveBeenCalledWith({ type: 'doublePress' })
+    vi.useRealTimers()
+  })
 
   it('allows a native double press shortly after a press payload', () => {
     vi.useFakeTimers()
