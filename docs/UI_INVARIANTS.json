@@ -1484,6 +1484,21 @@
         "maxPerSwipeMs": 50
       },
       "budgetMs": 1000
+    },
+    {
+      "name": "49-idle-no-asleep-bounce",
+      "input": "pressSequence:click",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "focus": "messages"
+        },
+        "noLifecycles": ["asleep", "wake"],
+        "apiCalls": [
+          "listMessages"
+        ]
+      },
+      "budgetMs": 8000
     }
   ]
 }

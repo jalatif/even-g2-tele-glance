@@ -317,6 +317,26 @@ async function executeStep(step, _url) {
     const renderCount = testEvents.filter((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'render').length
     if (renderCount > 0) failures.push(`${name}: expected zero render events during chat list scroll, saw ${renderCount}`)
   }
+  if (isFixtureMode && expect.noLifecycles) {
+    // The G2 simulator (and to a lesser extent the real G2 hardware) can fire
+    // `doublePress` events from system-event sources (eventType: 3,
+    // eventSource: 1) when nothing is happening. Each pair sends the
+    // controller to `asleep` and back. On real G2 this happens once per
+    // screen-timeout (~30s); on the simulator it fires every 4-9s. The user
+    // perceives this as "scroll doesn't work" or "I select something and
+    // something else opens up". This matcher asserts that NO matching
+    // lifecycle events fired during the step's input window, so a regression
+    // in the simulator's idle behavior (or in the controller's system-event
+    // filtering) is caught.
+    const forbiddenKinds = new Set(expect.noLifecycles)
+    const seen = testEvents.filter((event) => eventMatchesFrom(event, eventStartTime)
+      && event.event === 'lifecycle'
+      && forbiddenKinds.has(event.kind))
+    if (seen.length > 0) {
+      const kinds = [...new Set(seen.map((event) => event.kind))]
+      failures.push(`${name}: expected no ${kinds.join(', ')} lifecycle events during step, saw ${seen.length} (the simulator is firing idle doublePress events; the controller is bouncing to asleep and back)`)
+    }
+  }
   if (isFixtureMode && expect.maxPerSwipeMs && perInputLatencies.length > 0) {
     for (const item of perInputLatencies) {
       if (item.ms > expect.maxPerSwipeMs) failures.push(`${name}: per-input latency ${item.ms}ms exceeds ${expect.maxPerSwipeMs}ms (action=${item.action})`)
@@ -429,13 +449,12 @@ async function captureStep(name, expectations, extras = {}) {
       const haystack = JSON.stringify(latestRender.model ?? {})
       if (!haystack.includes(needle)) failures.push(`${name}: expected render content "${needle}" not found`)
     }
+  }
   if (isFixtureMode && expectations.renderBodyNotContains && latestRender) {
     const haystack = JSON.stringify(latestRender.model ?? {})
     for (const needle of expectations.renderBodyNotContains) {
       if (haystack.includes(needle)) failures.push(`${name}: expected render model to NOT contain "${needle}" but it did (stale data leaking through)`)
     }
-  }
-    failures.push(`${name}: expected render body content not found`)
   }
   if (isFixtureMode && expectations.noContainerFailures) {
     const stepFailures = containerFailures.filter((f) => f.step === name)

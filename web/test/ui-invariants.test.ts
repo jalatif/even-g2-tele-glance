@@ -190,6 +190,33 @@ describe('UI_INVARIANTS catalog', () => {
     if (!paginated) throw new Error('No step found that exercises listMessages with beforeId (older pagination)')
   })
 
+
+  it('harness exposes a noLifecycles matcher that catches idle-doublePress bounce', () => {
+    // The G2 simulator (and the real G2 hardware, less often) fires system
+    // `doublePress` events when nothing is happening, sending the controller
+    // to asleep and back. The user perceives this as "scroll doesn't work"
+    // or "I select something and something else opens up". The catalog must
+    // have a step that asserts no asleep/wake events fire while the user is
+    // intentionally interacting with a single chat. This locks in the
+    // matcher AND the catalog step so a regression in either is caught.
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const source = readFileSync(path.join(repoRoot, 'scripts', 'simulator-flow.mjs'), 'utf8')
+    if (!/expect\.noLifecycles/.test(source)) {
+      throw new Error('simulator-flow.mjs is missing the noLifecycles matcher; idle-doublePress bounce is invisible to the harness')
+    }
+    if (!/event\.event === 'lifecycle'/.test(source)) {
+      throw new Error('noLifecycles matcher must check event.event === "lifecycle"')
+    }
+    const step = catalog.steps.find((s) => s.name === '49-idle-no-asleep-bounce')
+    if (!step) throw new Error('No catalog step 49-idle-no-asleep-bounce found')
+    if (!Array.isArray(step.expect?.noLifecycles) || !step.expect.noLifecycles.includes('asleep') || !step.expect.noLifecycles.includes('wake')) {
+      throw new Error('step 49-idle-no-asleep-bounce must declare noLifecycles: ["asleep", "wake"]')
+    }
+    if (typeof step.budgetMs !== 'number' || step.budgetMs < 4000) {
+      throw new Error('step 49-idle-no-asleep-bounce needs a budget >= 4000ms so the simulator has time to fire its idle doublePress')
+    }
+  })
+
   it('harness skips remaining steps when the simulator subprocess dies', () => {
     // The harness's executeStep must short-circuit when the simulator handle's
     // `alive` flag is false, so a tokio panic or OOM in the simulator doesn't
