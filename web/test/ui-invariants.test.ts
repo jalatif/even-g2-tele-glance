@@ -161,6 +161,18 @@ describe('UI_INVARIANTS catalog', () => {
     if (!hasTopic) throw new Error('Missing long-message step for forum topic (target=sidebar.messages.topic)')
   })
 
+  it('records a no-container-failures step that catches stale right-side text', () => {
+    // The harness fails a step if the simulator rejects any textContainerUpgrade
+    // call for a container the current page layout does not own. The catalog must
+    // exercise this matcher on a step that opens a topic (where the previous
+    // message-view container layout differs from the topics-list layout).
+    const step = catalog.steps.find((s) => s.expect?.noContainerFailures === true)
+    if (!step) throw new Error('No catalog step with noContainerFailures expectation found')
+    if (typeof step.input !== 'string' || step.input === 'null') {
+      throw new Error(`${step.name}: noContainerFailures step should have an input that can trigger a partial render`)
+    }
+  })
+
   it('records a burst-scroll step that asserts no render events', () => {
     const burst = catalog.steps.find((step) => step.expect?.noRenderEvents === true)
     if (!burst) throw new Error('No burst-scroll step with noRenderEvents expectation found')
@@ -176,5 +188,54 @@ describe('UI_INVARIANTS catalog', () => {
       return calls.some((call) => String(call).includes('beforeId'))
     })
     if (!paginated) throw new Error('No step found that exercises listMessages with beforeId (older pagination)')
+  })
+
+  it('harness skips remaining steps when the simulator subprocess dies', () => {
+    // The harness's executeStep must short-circuit when the simulator handle's
+    // `alive` flag is false, so a tokio panic or OOM in the simulator doesn't
+    // generate dozens of misleading "timed out waiting for TeleGlanceTest
+    // event" failures that hide the real cause. We assert the static source
+    // here because the simulator subprocess cannot be exercised from vitest.
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const source = readFileSync(path.join(repoRoot, 'scripts', 'simulator-flow.mjs'), 'utf8')
+    if (!/simulatorHandle\s*\.\s*alive\s*===\s*false|!\s*simulatorHandle\s*\.\s*alive/.test(source)) {
+      throw new Error('simulator-flow.mjs is missing the simulator-alive short-circuit at the top of executeStep')
+    }
+    if (!/SKIPPED/.test(source)) {
+      throw new Error('simulator-flow.mjs should mark skipped steps with a SKIPPED prefix in the failure message so the report reader can grep for them')
+    }
+    if (!/Subprocess health/.test(source)) {
+      throw new Error('simulator-flow.mjs is missing the "Subprocess health" report section so crashes are surfaced alongside the per-step table')
+    }
+  })
+  it('harness cleans up child processes on SIGINT/SIGTERM/uncaughtException', () => {
+    // The harness spawns vite (with VITE_TELEGLANCE_FIXTURE=1 baked in) and
+    // optionally a simulator subprocess, both with `detached: true` so they
+    // live in their own process group. Without an explicit signal handler,
+    // node's default behaviour on Ctrl+C or SIGTERM is to exit immediately
+    // and the children get reparented to init and keep serving — which
+    // leaks the fixture-mode frontend into the user's next `npm run dev`
+    // session. We assert the static source has the three handlers we need.
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const source = readFileSync(path.join(repoRoot, 'scripts', 'simulator-flow.mjs'), 'utf8')
+    // We accept either literal-quoted forms or a loop that iterates the
+    // signal names. Both are valid; the harness uses a loop so the same
+    // handler covers both SIGINT and SIGTERM.
+    const sigintHandler = /process\.on\(['"]SIGINT['"]/.test(source)
+      || /process\.on\(signal,/.test(source)
+    if (!sigintHandler) {
+      throw new Error('simulator-flow.mjs is missing a SIGINT handler; Ctrl+C will leak the harness-spawned vite with VITE_TELEGLANCE_FIXTURE=1')
+    }
+    const sigtermHandler = /process\.on\(['"]SIGTERM['"]/.test(source)
+      || /process\.on\(signal,/.test(source)
+    if (!sigtermHandler) {
+      throw new Error('simulator-flow.mjs is missing a SIGTERM handler; external `pkill` will leak the harness-spawned vite')
+    }
+    if (!/process\.on\(['"]uncaughtException['"]/.test(source)) {
+      throw new Error('simulator-flow.mjs is missing an uncaughtException handler; a thrown error will leak the harness-spawned vite')
+    }
+    if (!/runSyncCleanup/.test(source)) {
+      throw new Error('simulator-flow.mjs is missing the runSyncCleanup helper that signal handlers should call')
+    }
   })
 })

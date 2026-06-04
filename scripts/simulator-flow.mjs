@@ -32,6 +32,34 @@ let recorderBusy = false
 let recorder
 let consoleSinceId = 0
 const consoleEntries = []
+const containerFailures = []  // simulator 'TextContainerUpgrade failed' warnings, with step + ts
+let currentStepName = null
+// Map of process name -> handle returned by startProcess. Used by executeStep
+// to detect when the simulator subprocess has died and skip the remaining
+// catalog steps instead of emitting dozens of misleading timeout failures.
+const processHandles = new Map()
+let cleanupRan = false
+function runSyncCleanup() {
+  if (cleanupRan) return
+  cleanupRan = true
+  if (recorder) { try { clearInterval(recorder) } catch { /* ignore */ } }
+  for (const handle of processHandles.values()) {
+    if (handle?._probe) { try { clearInterval(handle._probe) } catch { /* ignore */ } }
+  }
+  for (const handle of [...processHandles.values()].reverse()) {
+    try { stopProcessTree(handle) } catch { /* ignore */ }
+  }
+  // process.exit is sync; halts the event loop so children are not reaped
+  // asynchronously and reparented to init.
+  process.exit(130)
+}
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  try { process.on(signal, runSyncCleanup) } catch { /* ignore on platforms without the signal */ }
+}
+process.on('uncaughtException', (error) => {
+  console.error(`[harness] uncaughtException: ${error?.stack ?? error}`)
+  runSyncCleanup()
+})
 const testEvents = []
 const latencies = []
 const failures = []
@@ -106,8 +134,8 @@ try {
     }
   }
 
-  for (const child of children.reverse()) {
-    stopProcessTree(child)
+  for (const handle of [...processHandles.values()].reverse()) {
+    stopProcessTree(handle)
   }
 }
 
@@ -127,6 +155,18 @@ async function runFlow() {
 }
 
 async function executeStep(step, _url) {
+  currentStepName = step.name
+  // If the simulator subprocess died earlier, every subsequent fetch / poll
+  // would time out and produce a misleading "timed out waiting for
+  // TeleGlanceTest event" failure. Skip the step with one clear, attributable
+  // failure instead. The "skipped" marker is grep-friendly so the report
+  // reader can see at a glance which steps were short-circuited.
+  const simulatorHandle = processHandles.get('simulator')
+  if (simulatorHandle && !simulatorHandle.alive) {
+    failures.push(`${step.name}: SKIPPED — simulator subprocess already exited (${simulatorHandle.crashMessage ?? `code ${simulatorHandle.exitCode} signal ${simulatorHandle.signalCode}`})`)
+    console.log(`[flow] skip ${step.name}: simulator dead`)
+    return
+  }
   const name = step.name
   const target = step.target
   const expect = step.expect ?? {}
@@ -281,6 +321,7 @@ async function executeStep(step, _url) {
     failures.push(`${name}: glasses screenshot is blank (only ${glasses.uniqueColors} unique colors, all near selection-border green)`)
   }
   console.log(`[flow] ok ${name}: ${totalMs}ms`)
+  currentStepName = null
 }
 
 function makeStatePredicate(expected) {
@@ -367,9 +408,20 @@ async function captureStep(name, expectations, extras = {}) {
       const haystack = JSON.stringify(latestRender.model ?? {})
       if (!haystack.includes(needle)) failures.push(`${name}: expected render content "${needle}" not found`)
     }
+  if (isFixtureMode && expectations.renderBodyNotContains && latestRender) {
+    const haystack = JSON.stringify(latestRender.model ?? {})
+    for (const needle of expectations.renderBodyNotContains) {
+      if (haystack.includes(needle)) failures.push(`${name}: expected render model to NOT contain "${needle}" but it did (stale data leaking through)`)
+    }
   }
-  if (isFixtureMode && expectations.renderBodyContains && !contentMatches) {
     failures.push(`${name}: expected render body content not found`)
+  }
+  if (isFixtureMode && expectations.noContainerFailures) {
+    const stepFailures = containerFailures.filter((f) => f.step === name)
+    if (stepFailures.length > 0) {
+      const ids = [...new Set(stepFailures.map((f) => f.containerId))].sort((a, b) => a - b)
+      failures.push(`${name}: simulator rejected ${stepFailures.length} textContainerUpgrade call(s) for container(s) ${ids.join(', ')}; panel body / box / sidebar did not update visually`)
+    }
   }
   await writeFile(path.join(stepDir, `${name}.json`), JSON.stringify({
     name,
@@ -475,6 +527,7 @@ async function pollConsole() {
   for (const entry of entries) {
     consoleSinceId = Math.max(consoleSinceId, Number(entry.id ?? 0) + 1)
     if (isConsoleError(entry)) failures.push(`console ${entry.level}: ${entry.message}`)
+    captureContainerFailure(entry)
     const event = parseTestEvent(entry.message)
     if (event) {
       testEvents.push(event)
@@ -550,6 +603,26 @@ function isConsoleError(entry) {
     || message.includes('glyph dsc. not found')
 }
 
+// Match the simulator's "TextContainerUpgrade failed: container N not found"
+// warning that the G2 simulator emits when the WebView calls textContainerUpgrade
+// for a container ID the current page layout does not own. These are NOT marked
+// as console errors by isConsoleError, so without this helper the harness would
+// silently ignore them. They are a load-bearing signal: each warning means the
+// panel body, panel box, or sidebar text did not update visually, which is the
+// exact class of bug ("ghost text", "stale panel", "right-side not refreshing")
+// the user can see on the glasses but the harness state checks cannot detect.
+function captureContainerFailure(entry) {
+  const message = String(entry?.message ?? '')
+  const match = message.match(/TextContainerUpgrade failed: container (\d+) not found/)
+  if (!match) return
+  containerFailures.push({
+    step: currentStepName,
+    containerId: Number(match[1]),
+    level: entry.level,
+    message,
+    ts: Date.now(),
+  })
+}
 async function recordFrame() {
   if (!recording || recorderBusy || fastMode) return
   recorderBusy = true
@@ -612,7 +685,21 @@ async function writeReport() {
     `- Failures: ${failures.length}`,
     `- Warnings: ${warnings.length}`,
     '',
-    '## Latency',
+    ...(processHandles.size > 0 ? [
+      '## Subprocess health',
+      '',
+      '| Name | PID | Alive | Exited at | Exit code | Signal |',
+      '| --- | ---: | :---: | --- | ---: | --- |',
+      ...[...processHandles.values()].map((h) => {
+        const alive = h.alive
+        const exited = h.exitedAt ?? '-'
+        const code = h.exitCode ?? '-'
+        const signal = h.signalCode ?? '-'
+        return `| ${h.name} | ${h.pid ?? '-'} | ${alive ? 'yes' : 'no'} | ${exited} | ${code} | ${signal} |`
+      }),
+    ] : []),
+    '',
+     '## Latency',
     '',
     '| Step | Total ms | Budget ms | Capture ms |',
     '| --- | ---: | ---: | ---: |',
@@ -667,6 +754,15 @@ async function writeReport() {
       'Inputs sent while the screen was off that the controller is expected to drop. Real-mode only.',
       '',
       ...asleepNoOps.slice(-30).map((evt) => `- ${evt.name}: ${evt.action} at ${new Date(evt.ts).toISOString()}`),
+    ] : []),
+    ...(containerFailures.length ? [
+      '## Container upgrade failures',
+      '',
+      'Simulator rejected `textContainerUpgrade` calls for a container the current page layout does not own. Each rejected call means the panel body, panel box, or sidebar text did not update visually on the glasses. These are exactly the bugs that look like "ghost text" or "right side not refreshing" on hardware but pass the state-only harness checks.',
+      '',
+      '| Step | Container ID | Level |',
+      '| --- | ---: | --- |',
+      ...containerFailures.slice(-50).map((evt) => `| ${evt.step ?? '-'} | ${evt.containerId} | ${evt.level} |`),
     ] : []),
     '',
     ...(realModeApiTimings.length ? [
@@ -724,14 +820,43 @@ function startProcess(name, command, commandArgs, options) {
   children.push(child)
   child.stdout.on('data', (chunk) => process.stdout.write(`[${name}] ${chunk}`))
   child.stderr.on('data', (chunk) => process.stderr.write(`[${name}] ${chunk}`))
+  // Track subprocess liveness. Once it exits with a non-zero code or any
+  // signal that is not SIGTERM, every subsequent step in the catalog is
+  // guaranteed to fail with a timeout, a fetch error, or a stale state. We
+  // surface the crash in the report and skip the remaining steps instead
+  // of emitting dozens of misleading "timed out waiting for TeleGlanceTest
+  // event" failures that hide the real cause.
+  const handle = {
+    name,
+    pid: child.pid,
+    child,
+    get alive() {
+      return child.exitCode === null && child.signalCode === null
+    },
+    exitCode: null,
+    signalCode: null,
+    exitedAt: undefined,
+    crashMessage: undefined,
+  }
   child.on('exit', (code, signal) => {
-    if (code !== 0 && signal !== 'SIGTERM') failures.push(`${name} exited with code ${code ?? signal}`)
+    handle.exitCode = code
+    handle.signalCode = signal
+    handle.exitedAt = new Date().toISOString()
+    if (code !== 0 && signal !== 'SIGTERM') {
+      const why = code !== null
+        ? `exited with code ${code}`
+        : `killed by signal ${signal}`
+      handle.crashMessage = `${name} ${why}; every subsequent harness step will be skipped because the subprocess died. Common causes: tokio panic (look for "panicked at" in stderr above), OOM, or a port already in use.`
+      failures.push(handle.crashMessage)
+    }
   })
-  return child
+  processHandles.set(name, handle)
+  return handle
 }
 
-function stopProcessTree(child) {
-  if (child.killed) return
+function stopProcessTree(handle) {
+  const child = handle?.child ?? handle
+  if (!child || child.killed) return
   try {
     process.kill(-child.pid, 'SIGTERM')
   } catch {
