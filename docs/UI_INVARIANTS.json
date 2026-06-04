@@ -822,6 +822,70 @@
       "budgetMs": 1000
     },
     {
+      "name": "08a-topics-fast-open-before-preview",
+      "input": "click",
+      "target": "sidebar.messages.topic",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 0,
+          "focus": "messages"
+        },
+        "renderBodyContains": [
+          "Topic zero warmup body"
+        ],
+        "noContainerFailures": true
+      },
+      "apiCalls": [
+        "listMessages"
+      ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "08b-topics-back-shows-loading",
+      "input": "double_click",
+      "target": "sidebar.topics.noPreview",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "topics",
+          "selectedTopicIndex": 0
+        },
+        "renderBodyContains": [
+          "Loading messages..."
+        ],
+        "noContainerFailures": true
+      },
+      "budgetMs": 500
+    },
+    {
+      "name": "08c-topics-swipe-preview-from-cache",
+      "input": "down",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 1
+        },
+        "renderBodyContains": [
+          "fixture-topic-one-body"
+        ]
+      },
+      "budgetMs": 1000
+    },
+    {
+      "name": "08d-topics-swipe-back-cached-preview",
+      "input": "up",
+      "target": "sidebar.topics.preview",
+      "expect": {
+        "state": {
+          "selectedTopicIndex": 0
+        },
+        "renderBodyContains": [
+          "Topic zero warmup body"
+        ]
+      },
+      "budgetMs": 500
+    },
+    {
       "name": "09-topics-preview-loaded",
       "input": null,
       "target": "sidebar.topics.preview",
@@ -894,7 +958,13 @@
         "state": {
           "screen": "sidebar",
           "focus": "topics"
-        }
+        },
+        "renderBodyContains": [
+          "fixture-topic-one-body"
+        ],
+        "renderBodyNotContains": [
+          "Topic zero warmup body"
+        ]
       },
       "budgetMs": 500
     },
@@ -939,7 +1009,10 @@
       "expect": {
         "state": {
           "focus": "topics"
-        }
+        },
+        "renderBodyContains": [
+          "fixture-topic-two-body"
+        ]
       },
       "budgetMs": 500
     },
@@ -950,7 +1023,10 @@
       "expect": {
         "state": {
           "selectedTopicIndex": 3
-        }
+        },
+        "renderBodyContains": [
+          "fixture-long-topic-body-anchor"
+        ]
       },
       "budgetMs": 500
     },

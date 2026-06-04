@@ -63,6 +63,9 @@ Container IDs are shared across `TextContainerProperty`, `ListContainerProperty`
 - Whitespace normalised to single space
 - For `panelBox.heading.contains` and `panelBox.content.contains`, the matcher applies the same `formatBoxContent` pipeline the bridge uses, so it tolerates the same `+`, `-`, `|` decorations the bridge removes
 - For `panelBody.contains` on text-kind screens, the matcher ignores trailing ellipsis added by `trimForContainer`
+- `renderBodyContains` matches against the latest render model emitted by the bridge (`[TeleGlanceTest] {"event":"render",...}` payload). Each needle is a substring of the JSON-serialised model.
+- `renderBodyNotContains` is the inverse: each needle MUST NOT appear anywhere in the render model. Use it to catch stale data: a previous chat/topic name leaking through after a swipe, "Older fixture" surviving a back navigation, "Sent" status persisting into a new recording, the wrong preview body on a cached-only topic.
+- `noContainerFailures: true` fails the step if the simulator rejected any `textContainerUpgrade` call during the step (matched by the `[simulator] [WARN ...] TextContainerUpgrade failed: container N not found` log line). The G2 simulator emits this warning when the WebView asks to update a container ID the current page layout does not own. Each rejected call means the panel body, panel box, or sidebar text did not update visually on the glasses — the exact class of bug ("ghost text", "stale right side") that passes the state-only harness checks but is visible to the user on the display.
 
 `notContains` catches stale data: stale chat name on the right panel after a swipe, "Older fixture page" appearing twice, "Sent" status surviving into the next recording flow.
 
@@ -354,15 +357,19 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 |06|`06-chats-swipe-up-2`|`swipeUp`|`sidebar.chats`|`selectedChatIndex === 1`|
 |07|`07-chats-swipe-up-3`|`swipeUp`|`sidebar.chats`|`selectedChatIndex === 0`|
 |08|`08-chats-open-forum-topics`|`press`|`sidebar.topics.noPreview`|panel shows `Loading messages...`|
+|08a|`08a-topics-fast-open-before-preview`|`click` on first topic|`sidebar.messages.topic`|message fetch must use `topic.id`; preview cache MUST populate for the just-opened topic so a back-then-swipe shows content, not `Loading messages...`|
+|08b|`08b-topics-back-shows-loading`|`doublePress`|`sidebar.topics.noPreview`|back to topics must show `Loading messages...` (preview cache was cleared on open) — a back-after-preload MUST keep the cached preview|
+|08c|`08c-topics-swipe-preview-from-cache`|`swipeDown`|`sidebar.topics.preview` (topic 1)|panel must show `fixture-topic-one-body` from the cache, not a fresh fetch|
+|08d|`08d-topics-swipe-back-cached-preview`|`swipeUp`|`sidebar.topics.preview` (topic 0)|panel must show `Topic zero warmup body` from the cache; this catches a regression where the swipe handler blanks the right panel on cached-only topics|
 |09|`09-topics-preview-loaded`|(wait)|`sidebar.topics.preview`|panel shows topic 0 preview|
-|10|`10-topics-swipe-down-1`|`swipeDown`|`sidebar.topics.preview` (topic 1)|panel updates with topic 1 messages|
-|11|`11-topics-open-topic-one`|`press`|`sidebar.messages.topic`|left marker on topic 1, panel shows both messages|
+|10|`10-topics-swipe-down-1`|`swipeDown`|`sidebar.topics.preview` (topic 1)|panel must show `fixture-topic-one-body`|
+|11|`11-topics-open-topic-one`|`press`|`sidebar.messages.topic`|left marker on topic 1, panel shows both messages; render must NOT contain `Topic zero warmup body` (catches stale-topic preview leaking through to messages view)|
 |12|`12-topic-messages-scroll-older`|`swipeUp`|`sidebar.messages.topic` (older page)|`state.status` contains `Loading older` then older text|
-|13|`13-topic-messages-back`|`doublePress`|`sidebar.topics.preview`|returns to topics, NOT chats|
-|14|`14-topics-swipe-down-2`|`swipeDown`|`sidebar.topics.preview` (topic 2)|panel shows topic 2|
+|13|`13-topic-messages-back`|`doublePress`|`sidebar.topics.preview`|returns to topics, NOT chats; right panel must show `fixture-topic-one-body` (the topic we just left) and MUST NOT show `Topic zero warmup body`|
+|14|`14-topics-swipe-down-2`|`swipeDown`|`sidebar.topics.preview` (topic 2)|panel must show `fixture-topic-two-body` from the prefetch cache|
 |15|`15-topics-open-topic-two`|`press`|`sidebar.messages.topic`|`api.listMessages.args.topicId === 'fixture-topic-2'`|
-|16|`16-topic-two-back`|`doublePress`|`sidebar.topics.preview`|back to topics|
-|17|`17-topics-swipe-down-3`|`swipeDown`|`sidebar.topics.preview` (topic 3)|panel shows topic 3|
+|16|`16-topic-two-back`|`doublePress`|`sidebar.topics.preview`|back to topics; panel must show `fixture-topic-two-body` (the topic we just left), not a stale `Loading messages...`|
+|17|`17-topics-swipe-down-3`|`swipeDown`|`sidebar.topics.preview` (topic 3)|panel must show the topic-3 long-message anchor (catches a regression where the swipe handler does not hydrate the right panel for cached topic 3)|
 |18|`18-topics-open-topic-three`|`press`|`sidebar.messages.topic`|panel shows topic 3 messages|
 |19|`19-topic-three-back`|`doublePress`|`sidebar.topics.preview`|back to topics|
 |20|`20-topics-double-back-to-chats`|`doublePress`|`sidebar.chats`|`selectedChatIndex === 1` preserved|
