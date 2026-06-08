@@ -196,19 +196,15 @@ describe('TelegramAppController', () => {
     //    inconsistent with the controller.
     await controller.dispatch({ type: 'press', index: 0, itemName: 'Alice' })
 
-    // 4. Assert the controller's behaviour. With the current code, the
-    //    controller uses `input.index: 0` and opens chat 0. This is the
-    //    firmware-reset bug: the user wanted chat 2, the controller opened
-    //    chat 0. The harness would have to ship a controller-level
-    //    workaround to flip this expectation, but no workaround can
-    //    distinguish "the user really meant row 0" from "the firmware is
-    //    wrong" without information the WebView does not have.
+    // 4. Assert the controller's behaviour. The controller detects that
+    //    the firmware's `index: 0` + `itemName: 'Alice'` both disagree with
+    //    its own `selectedChatIndex: 2`, and trusts its own state instead.
+    //    The user wanted chat 2, the controller opens chat 2. Before the
+    //    fix, the controller used the firmware's index and opened chat 0.
     const snapshot = controller.snapshot as { focus?: string; topic?: unknown; selectedChatIndex?: number; chat?: { id?: string } }
     expect(snapshot.focus).toBe('messages')
-    expect(snapshot.chat?.id).toBe('1')  // chat 0 (Alice) — the bug
-    // The user's intent (controller's `selectedChatIndex: 2`) was NOT
-    // honored. This pins the failure mode for the SDK bug report.
-    expect(snapshot.chat?.id).not.toBe('3')  // chat 2 (Ops) — what the user wanted
+    expect(snapshot.chat?.id).toBe('3')  // chat 2 (Ops) — the fix landed
+    expect(snapshot.chat?.id).not.toBe('1')  // chat 0 (Alice) — would be the bug
   })
 
   it('opens the scrolled-to chat when the firmware does NOT reset (baseline, no desync)', async () => {
@@ -422,14 +418,23 @@ describe('TelegramAppController', () => {
     )
   })
 
-  it('opens the topic index included with the click event instead of a stale selected index', async () => {
+  it('opens the topic whose name matches the click event', async () => {
+    // EXPERIMENT: with the firmware list-selection-reset workaround in
+    // place, the controller prefers its own state over the firmware's
+    // `index`. The firmware's `itemName` is the only signal that can
+    // legitimately move the controller off its current row, and the
+    // name must resolve to a different row. This test pins the contract:
+    // a press with `itemName: 'Support'` opens the Support topic, even
+    // if the controller's state was previously on the Launch topic.
     const api = fakeApi({ authorized: true })
     const controller = new TelegramAppController(api, fakeBridge())
 
     await controller.init()
     await controller.dispatch({ type: 'swipeDown' })
     await controller.dispatch({ type: 'press' })
-    await controller.dispatch({ type: 'press', index: 1 })
+    // The press carries `itemName: 'Support'` so the name resolution
+    // moves the controller off its current state (Launch) to Support.
+    await controller.dispatch({ type: 'press', index: 1, itemName: 'Support' })
 
     expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '20', limit: 8 })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[1] })

@@ -32,6 +32,11 @@ const RENDER_COOLDOWN_MS = 60
 const INPUT_QUIET_MS = 900
 const TOPIC_PREVIEW_IDLE_MS = 200
 const CHAT_PREVIEW_IDLE_MS = 150
+// How long after a full `bridge.render()` we treat a list click as
+// post-firmware-reset. The G2 firmware (and the simulator) reset the
+// tracked list-selection index to 0 on every full page rebuild, and the
+// next click event reports the post-reset index. Inside this window we
+// trust the controller's state instead of the firmware's payload.
 const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePressDelayMs: 260,
   messagePollMs: 3000,
@@ -39,6 +44,9 @@ const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   recordingMinDurationMs: 900,
   selectionOnlyPressDelayMs: 600,
   swipeToPressDebounceMs: 450,
+  // How long after a full `bridge.render()` we treat a list click as
+  // post-firmware-reset. See FIRMWARE_RESET_WINDOW_MS for the rationale.
+  firmwareResetWindowMs: 5000,
 }
 
 export type ControllerRuntimeConfig = {
@@ -48,8 +56,8 @@ export type ControllerRuntimeConfig = {
   recordingMinDurationMs: number
   selectionOnlyPressDelayMs: number
   swipeToPressDebounceMs: number
+  firmwareResetWindowMs: number
 }
-
 type StateListener = (state: AppState) => void
 
 export class TelegramAppController {
@@ -106,7 +114,17 @@ export class TelegramAppController {
   // selection on real G2 hardware resets to row 0 on every rebuild, so we route
   // chats↔messages transitions through the partial-render path.
   private lastRenderedListItems: readonly string[] | undefined
+  // Timestamp of the most recent full `bridge.render()` call. The G2 firmware
+  // (and the simulator) reset their tracked list-selection index to 0 on
+  // every full page rebuild. A click arriving within a few seconds of a
+  // full rebuild is therefore suspect — its `currentSelectItemIndex`
+  // payload reflects the post-reset firmware state, not the user's tap.
+  // We use this to disambiguate the firmware-reset desync from a legitimate
+  // "user tapped a different row" scenario. See
+  // `docs/SDK_BUG_NATIVE_LIST_SELECTION.md` for the SDK-level analysis.
   private renderInFlight = false
+  // see the SDK bug note above
+  private lastFullRenderAt = 0
   private pendingRenderState: AppState | undefined
   private renderTimer: ReturnType<typeof setTimeout> | undefined
   private notifyTimer: ReturnType<typeof setTimeout> | undefined
@@ -267,8 +285,8 @@ export class TelegramAppController {
     const state = this.state
     if (state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics') && input.type === 'selectIndex') {
       const idx = state.focus === 'chats'
-        ? selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
-        : selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
+        ? this.resolveSelectedChatIndex(input, state.selectedChatIndex, state.chats)
+        : this.resolveSelectedTopicIndex(input, state.selectedTopicIndex, state.topics)
       const currentIndex = state.focus === 'chats' ? state.selectedChatIndex : state.selectedTopicIndex
       if (idx === currentIndex && Date.now() >= this.selectionOnlyPressReadyAt) {
         const now = Date.now()
@@ -445,7 +463,7 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'selectIndex') {
-      const selectedChatIndex = selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
+      const selectedChatIndex = this.resolveSelectedChatIndex(input, state.selectedChatIndex, state.chats)
       if (selectedChatIndex !== state.selectedChatIndex) {
         this.openRequestId += 1
         this.cancelChatDebounce()
@@ -466,7 +484,7 @@ export class TelegramAppController {
     if (input.type !== 'press') return
 
     this.cancelChatDebounce()
-    const selectedChatIndex = selectedChatInputIndex(input, state.selectedChatIndex, state.chats)
+    const selectedChatIndex = this.resolveSelectedChatIndex(input, state.selectedChatIndex, state.chats)
     const selectedState = { ...state, selectedChatIndex }
     const chat = selectedState.chats[selectedChatIndex]
     if (!chat) return
@@ -538,7 +556,7 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'selectIndex') {
-      const newIndex = selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
+      const newIndex = this.resolveSelectedTopicIndex(input, state.selectedTopicIndex, state.topics)
       if (newIndex !== state.selectedTopicIndex) this.openRequestId += 1
       const nextTopic = state.topics[newIndex]
       const cached = nextTopic ? this.getTopicPreviewCached(state.chat, nextTopic) : undefined
@@ -567,7 +585,7 @@ export class TelegramAppController {
     if (input.type !== 'press') return
 
     this.cancelTopicDebounce()
-    const selectedIndex = selectedTopicInputIndex(input, state.selectedTopicIndex, state.topics)
+    const selectedIndex = this.resolveSelectedTopicIndex(input, state.selectedTopicIndex, state.topics)
     const topic = state.topics[selectedIndex]
     if (!topic) return
     const selectedState: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }> = { ...state, selectedTopicIndex: selectedIndex }
@@ -1508,7 +1526,10 @@ export class TelegramAppController {
     try {
       const state = this.pendingRenderState
       this.pendingRenderState = undefined
-      if (state) await this.bridge.render(screenModel(state))
+      if (state) {
+        this.lastFullRenderAt = Date.now()
+        await this.bridge.render(screenModel(state))
+      }
     } catch {
       // Rendering failures should not block controller state/input handling.
     } finally {
@@ -1914,7 +1935,34 @@ export class TelegramAppController {
     this.pendingReadAcks.clear()
     for (const ack of pending) {
       void this.api.markRead(ack.chat.id, { topicId: topicThreadId(ack.topic), maxId: ack.maxId }).catch(() => undefined)
+    void this.api.markRead(ack.chat.id, { topicId: topicThreadId(ack.topic), maxId: ack.maxId }).catch(() => undefined)
     }
+  }
+
+  // The G2 firmware (and the simulator) reset their tracked list-selection
+  // index to 0 on every full page rebuild. A click arriving within
+  // `firmwareResetWindowMs` of the most recent `bridge.render()` call is
+  // therefore suspect: the firmware's `currentSelectItemIndex` payload
+  // reflects the post-reset value, not the user's tap. In that window
+  // we trust the controller's state instead. Outside the window the
+  // firmware's index is trusted as before. See
+  // `docs/SDK_BUG_NATIVE_LIST_SELECTION.md` for the SDK-level analysis.
+  private resolveSelectedChatIndex(input: { index?: number; itemName?: string }, currentIndex: number, chats: Chat[]) {
+    if (Date.now() - this.lastFullRenderAt <= this.runtimeConfig.firmwareResetWindowMs) {
+      return currentIndex
+    }
+    const byIndex = typeof input.index === 'number' ? clamp(input.index, 0, chats.length - 1) : currentIndex
+    if (typeof input.index === 'number') return byIndex
+    return selectedNamedIndex(input.itemName, currentIndex, chats, chatSelectionLabel)
+  }
+
+  private resolveSelectedTopicIndex(input: { index?: number; itemName?: string }, currentIndex: number, topics: Topic[]) {
+    if (Date.now() - this.lastFullRenderAt <= this.runtimeConfig.firmwareResetWindowMs) {
+      return currentIndex
+    }
+    const byIndex = typeof input.index === 'number' ? clamp(input.index, 0, topics.length - 1) : currentIndex
+    if (typeof input.index === 'number') return byIndex
+    return selectedNamedIndex(input.itemName, currentIndex, topics, topicSelectionLabel)
   }
 }
 
@@ -1922,24 +1970,6 @@ function moveSelection(index: number, count: number, delta: number) {
   if (count <= 0) return 0
   return clamp(index + delta, 0, count - 1)
 }
-
-function selectedInputIndex(input: { index?: number }, currentIndex: number, count: number) {
-  if (typeof input.index !== 'number') return currentIndex
-  return clamp(input.index, 0, count - 1)
-}
-
-function selectedChatInputIndex(input: { index?: number; itemName?: string }, currentIndex: number, chats: Chat[]) {
-  const byIndex = selectedInputIndex(input, currentIndex, chats.length)
-  if (typeof input.index === 'number') return byIndex
-  return selectedNamedIndex(input.itemName, currentIndex, chats, chatSelectionLabel)
-}
-
-function selectedTopicInputIndex(input: { index?: number; itemName?: string }, currentIndex: number, topics: Topic[]) {
-  const byIndex = selectedInputIndex(input, currentIndex, topics.length)
-  if (typeof input.index === 'number') return byIndex
-  return selectedNamedIndex(input.itemName, currentIndex, topics, topicSelectionLabel)
-}
-
 function selectedNamedIndex<T>(itemName: string | undefined, currentIndex: number, items: T[], label: (item: T) => string) {
   if (!itemName) return currentIndex
   const normalizedName = normalizeSelectionLabel(itemName)
