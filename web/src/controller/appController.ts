@@ -646,25 +646,16 @@ export class TelegramAppController {
     if (!topic) return
     const selectedState: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }> = { ...state, selectedTopicIndex: selectedIndex }
 
-    if (selectedState.previewMessages?.length && selectedState.previewTopic && String(selectedState.previewTopic.id) === String(topic.id)) {
-      this.openRequestId += 1
-      await this.setState({
-        screen: 'sidebar', focus: 'messages',
-        chats: selectedState.chats, selectedChatIndex: selectedState.selectedChatIndex,
-        chat: selectedState.chat, topic,
-        messages: selectedState.previewMessages,
-        cursor: selectedState.previewCursor ?? oldestMessageId(selectedState.previewMessages),
-        scrollOffset: selectedState.previewScrollOffset ?? 0,
-        back: selectedState,
-        newerPages: selectedState.previewNewerPages ?? [],
-        isNewestPage: selectedState.previewIsNewestPage ?? true,
-        topics: selectedState.topics,
-        selectedTopicIndex: selectedIndex,
-      })
-      this.maybePrefetchOlder()
-      return
-    }
-
+    // Always open the full topic message thread. The previous fast-path
+    // (using `previewMessages` as the initial thread) was a perceived
+    // performance optimization that turned out to be a footgun on
+    // real G2 hardware: the user lands in `sidebar.messages` with 1-2
+    // preview messages, cannot scroll meaningfully, and the footer
+    // says "Click record" even though the thread is incomplete. Always
+    // pay the ~200ms cost of `openMessages` so the thread we show is
+    // the real one, and the swipe-scroll / record / back affordances
+    // in the footer all work as advertised. See
+    // `docs/STRUCTURAL_INVARIANTS.md` for the screen transition.
     await this.openMessages(selectedState.chat, topic, selectedState)
   }
 

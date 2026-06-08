@@ -447,8 +447,96 @@ describe('TelegramAppController', () => {
     )
   })
 
+  it('opens the full topic message thread, not the cached preview', async () => {
+    // Regression for the bug where `handleSidebarTopics` for `press`
+    // took a fast-path that put the user into `sidebar.messages`
+    // with only the 1-2 cached preview messages, instead of the
+    // full thread. On real G2 hardware this manifested as: footer
+    // says "Click record | Double click back" but the user has
+    // nothing meaningful to scroll and the 260ms press debounce
+    // was the only useful interaction. The fix is to always call
+    // `openMessages` so the full thread loads. This test proves
+    // the full thread is the one that ends up in `state.messages`
+    // The per-topic preview (1 message) is loaded once during
+    // The listMessages mock distinguishes the per-topic preview
+    // (1 message) from the full topic thread (2 messages) by
+    // whether `request.topicId` is set. Chat-level previews
+    // (no topicId) are not what the user opens; topic-scoped
+    // calls are the ones we want to assert are the full thread.
+    // The first topic-scoped call returns the preview; every
+    // subsequent topic-scoped call returns the full thread.
+    let topicScopedCallCount = 0
+    const listMessages = vi.fn(async (_chatId: string, request: { topicId?: string; beforeId?: string; limit?: number } = {}) => {
+      if (request.topicId === undefined) return []
+      topicScopedCallCount += 1
+      if (topicScopedCallCount === 1) {
+        return [{ id: 'preview-1', sender: 'Owner', text: 'Preview only', sentAt: '2026-05-31T20:00:00Z' }]
+      }
+      return [
+        { id: 'thread-1', sender: 'Owner', text: 'Latest', sentAt: '2026-06-01T10:00:00Z' },
+        { id: 'thread-2', sender: 'Owner', text: 'Earlier', sentAt: '2026-06-01T09:00:00Z' },
+      ]
+    })
+    const api = {
+      authStatus: vi.fn(async () => ({ authorized: true })),
+      startPhoneAuth: vi.fn(async () => ({ sent: true })),
+      verifyPhoneAuth: vi.fn(async () => ({ authorized: true })),
+      logout: vi.fn(async () => undefined),
+      listChats: vi.fn(async () => chats),
+      listTopics: vi.fn(async () => topics),
+      listMessages,
+      sendMessage: vi.fn(async () => ({ id: 'new', sender: 'Me', text: 'x', sentAt: '2026-06-01T10:01:00Z' } as Message)),
+      markRead: vi.fn(async () => undefined),
+      transcribe: vi.fn(async () => ({ text: '' })),
+      subscribeUpdates: vi.fn(() => () => undefined),
+    } as unknown as TelegramApi
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    // Open the forum chat, then open the first topic. Wait for the
+    // controller's input-quiet window to clear and flush the
+    // debounced topic-preview fetch so `state.previewMessages` is
+    // populated — that's the precondition for the old fast-path
+    // bug. Without this setup the bug couldn't trigger because
+    // `previewMessages?.length` is empty and the fast-path is
+    // skipped.
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    clearInputQuiet(controller)
+    await fetchTopicPreview(controller, chats[1], topics[0])
+    expect(controller.snapshot).toMatchObject({
+      screen: 'sidebar', focus: 'topics',
+      previewTopic: topics[0],
+      previewMessages: [{ id: 'preview-1', sender: 'Owner', text: 'Preview only' }],
+    })
+
+    // Press to open the topic — this is the user gesture that
+    // triggered the bug. With the fast-path removed, the
+    // controller must call `openMessages` to fetch the full
+    // thread.
+    await controller.dispatch({ type: 'press' })
+    await flushAsync()
+
+    // The full thread must be the source of truth. The bug was
+    // that the controller would use the cached preview as the
+    // initial thread, leaving the user with only the warmup body
+    // and no scrollable history.
+    expect(api.listMessages).toHaveBeenCalledWith('2', { topicId: '10', limit: 8 })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', topic: topics[0] })
+    if (controller.snapshot.screen === 'sidebar' && controller.snapshot.focus === 'messages') {
+      // The full thread IDs (thread-1 / thread-2) must be the
+      // messages in the state, not the preview ID (preview-1).
+      // The order is the controller's oldest-first normalize
+      // applied to the API payload, so we just check both IDs
+      // are present.
+      const ids = controller.snapshot.messages.map((m) => m.id)
+      expect(ids).toContain('thread-1')
+      expect(ids).toContain('thread-2')
+      expect(ids).not.toContain('preview-1')
+    }
+  })
+
   it('opens the topic whose name matches the click event', async () => {
-    // EXPERIMENT: with the firmware list-selection-reset workaround in
     // place, the controller prefers its own state over the firmware's
     // `index`. The firmware's `itemName` is the only signal that can
     // legitimately move the controller off its current row, and the
