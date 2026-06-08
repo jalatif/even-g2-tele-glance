@@ -16,9 +16,27 @@
  */
 
 import { spawn } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+async function cleanOldArtifacts(kind) {
+  const dir = path.join(repoRoot, 'artifacts', kind)
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch { return }
+  const dirs = entries
+    .filter(e => e.isDirectory())
+    .map(e => ({ name: e.name, ts: e.name.replace(/T(\d+)-(\d+)-(\d+)-(\d+)Z$/, 'T$1:$2:$3.$4Z') }))
+    .map(e => ({ name: e.name, mtime: new Date(e.ts).getTime() }))
+    .filter(e => !isNaN(e.mtime))
+    .sort((a, b) => b.mtime - a.mtime)
+  // Keep the newest existing dir, remove the rest
+  for (let i = 1; i < dirs.length; i++) {
+    await rm(path.join(dir, dirs[i].name), { recursive: true, force: true }).catch(() => {})
+  }
+}
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const webRoot = path.join(repoRoot, 'web')
@@ -243,6 +261,7 @@ function checkStructuralInvariants() {
 // --- Main ---
 
 async function main() {
+  await cleanOldArtifacts('fuzzy-test')
   await mkdir(artifactRoot, { recursive: true })
 
   console.log(`\n==> TeleGlance Fuzzy Test Runner <==`)

@@ -2,10 +2,29 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import zlib from 'node:zlib'
+
+async function cleanOldArtifacts(kind) {
+  const dir = path.join(repoRoot, 'artifacts', kind)
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch { return }
+  const dirs = entries
+    .filter(e => e.isDirectory())
+    .map(e => ({ name: e.name, ts: e.name.replace(/T(\d+)-(\d+)-(\d+)-(\d+)Z$/, 'T$1:$2:$3.$4Z') }))
+    .map(e => ({ name: e.name, mtime: new Date(e.ts).getTime() }))
+    .filter(e => !isNaN(e.mtime))
+    .sort((a, b) => b.mtime - a.mtime)
+  // Keep the newest existing dir, remove the rest
+  for (let i = 1; i < dirs.length; i++) {
+    await rm(path.join(dir, dirs[i].name), { recursive: true, force: true }).catch(() => {})
+  }
+}
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const webRoot = path.join(repoRoot, 'web')
@@ -93,6 +112,7 @@ const realModeQueueDepthSamples = []
 let catalog = null
 let testConsoleBridge = false
 
+await cleanOldArtifacts('simulator-flow')
 await mkdir(framesDir, { recursive: true })
 await mkdir(stepDir, { recursive: true })
 await mkdir(goldenRoot, { recursive: true })
