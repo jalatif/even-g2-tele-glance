@@ -30,9 +30,23 @@ const LOADING_OLDER_STATUS = 'Loading older messages...'
 const RENDER_DEFER_MS = 0
 const RENDER_COOLDOWN_MS = 60
 const INPUT_QUIET_MS = 900
+// Idle system `doublePress` events on the G2 / simulator arrive with
+// `eventSource === 1`. The simulator's idle event pattern is
+// (doublePress) → 4-9s gap → (press, doublePress, press, swipeUp,
+// swipeDown, ...) → 4-9s gap → next doublePress; the
+// `doublePress`es themselves are 4-9s apart but the supporting
+// `press` / `swipe` events arrive up to ~4s before each
+// `doublePress`. A genuine user-driven `doublePress` is preceded
+// by ≥5s of silence in real use; the cluster window in
+// `isIdleSystemDoublePress` drops the event when it arrives inside
+// this window. See `AGENTS.md` "Idle doublePress events on the
+// G2 / simulator can mimic user input" and
+// `web/test/controller.test.ts`.
+const IDLE_DOUBLE_PRESS_CLUSTER_MS = 5000
 const TOPIC_PREVIEW_IDLE_MS = 200
 const CHAT_PREVIEW_IDLE_MS = 150
 // How long after a full `bridge.render()` we treat a list click as
+// post-firmware-reset. The G2 firmware (and the simulator) reset the
 // post-firmware-reset. The G2 firmware (and the simulator) reset the
 // tracked list-selection index to 0 on every full page rebuild, and the
 // next click event reports the post-reset index. Inside this window we
@@ -131,6 +145,11 @@ export class TelegramAppController {
   private notifyPending = false
   private openRequestId = 0
   private inputQuietUntil = 0
+  // Timestamp of the most recent `eventSource === 1` event of any
+  // type. The cluster window is what distinguishes a deliberate user
+  // `doublePress` (preceded by silence) from the simulator's idle
+  // event spam (press, swipe, press, doublePress at 50-200ms intervals).
+  private lastSystemEventAt = 0
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -244,7 +263,19 @@ export class TelegramAppController {
   }
 
   async dispatch(input: AppInput) {
-    if (input.type !== 'audioChunk') this.noteUserInput()
+    // Drop idle system `doublePress` events from the G2 / simulator
+    // firmware BEFORE we update any state or touch the input-quiet
+    // bookkeeping, so the cluster-window check uses the prior clock
+    // value rather than the one this event would just have set.
+    if (this.isIdleSystemDoublePress(input)) {
+      // Still honor the input-quiet window so background polling
+      // pauses briefly. We deliberately do NOT advance the system-
+      // event clock here — that happens after this short-circuit so
+      // the cluster check stays consistent across drops.
+      this.noteUserInput()
+      return
+    }
+    if (input.type !== 'audioChunk') this.noteUserInitiatedInput(input)
     // Track swipe timing globally so the chat/topic-list auto-press path can suppress
     // selection-only events that the native list fires immediately after a scroll.
     if (input.type === 'swipeUp' || input.type === 'swipeDown') {
@@ -432,6 +463,11 @@ export class TelegramAppController {
     state: Extract<AppState, { screen: 'sidebar'; focus: 'chats' }>, input: AppInput
   ) {
     if (input.type === 'doublePress') {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress` (eventSource === 1 inside the
+      // cluster window). See `isIdleSystemDoublePress` and AGENTS.md
+      // "Idle doublePress events on the G2 / simulator can mimic
+      // user input."
       this.rememberChats(state.chats)
       this.cancelChatDebounce()
       await this.setState({ screen: 'asleep', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
@@ -507,12 +543,20 @@ export class TelegramAppController {
       if (isTeleGlanceFixtureMode()) logLifecycleEvent('asleep', { input: input.type, selectedChatIndex: state.selectedChatIndex })
       return
     }
+    // The dispatch-level filter in `dispatch` has already dropped
+    // any idle system `doublePress` (eventSource === 1 inside the
+    // cluster window), so reaching this branch means a real user
+    // is waking the device. See `isIdleSystemDoublePress` and
+    // AGENTS.md "Idle doublePress events on the G2 / simulator can
+    // mimic user input."
     if (isTeleGlanceFixtureMode()) logLifecycleEvent('wake', { selectedChatIndex: state.selectedChatIndex })
     await this.setState({ screen: 'sidebar', focus: 'chats', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
   }
 
   private async handleNewMessage(state: Extract<AppState, { screen: 'newMessage' }>, input: AppInput) {
     if (input.type === 'doublePress') {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress`. See `isIdleSystemDoublePress`.
       this.rememberChats(state.chats)
       await this.setState({ screen: 'asleep', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
       await this.bridge.turnScreenOff?.()
@@ -530,6 +574,8 @@ export class TelegramAppController {
     state: Extract<AppState, { screen: 'sidebar'; focus: 'topics' }>, input: AppInput
   ) {
     if (input.type === 'doublePress') {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress`. See `isIdleSystemDoublePress`.
       this.cancelTopicDebounce()
       await this.setState({
         screen: 'sidebar', focus: 'chats',
@@ -626,6 +672,8 @@ export class TelegramAppController {
     state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>, input: AppInput
   ) {
     if (input.type === 'doublePress') {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress`. See `isIdleSystemDoublePress`.
       this.openRequestId += 1
       this.cancelPendingMessagePress()
       await this.goBackFromMessages(state)
@@ -851,6 +899,8 @@ export class TelegramAppController {
     state: Extract<AppState, { screen: 'sidebarRecording' }>, input: AppInput
   ) {
     if (input.type === 'doublePress') {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress`. See `isIdleSystemDoublePress`.
       void this.bridge.setAudioEnabled(false).catch(() => undefined)
       if (Date.now() - state.startedAt < this.runtimeConfig.recordingMinDurationMs) {
         await this.setState({
@@ -970,6 +1020,8 @@ export class TelegramAppController {
       return
     }
     if (input.type === 'doublePress') {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress`. See `isIdleSystemDoublePress`.
       await this.setState({
         screen: 'sidebar', focus: 'messages',
         chats: state.chats, selectedChatIndex: state.selectedChatIndex,
@@ -1037,6 +1089,8 @@ export class TelegramAppController {
     state: Extract<AppState, { screen: 'sidebarSent' }>, input: AppInput
   ) {
     if (input.type === 'doublePress') {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress`. See `isIdleSystemDoublePress`.
       await this.setState({
         screen: 'sidebar', focus: 'chats',
         chats: state.chats, selectedChatIndex: state.selectedChatIndex,
@@ -1057,6 +1111,8 @@ export class TelegramAppController {
 
   private async handleError(state: Extract<AppState, { screen: 'error' }>, input: AppInput) {
     if (input.type === 'doublePress' && state.previous) {
+      // The dispatch-level filter in `dispatch` has already dropped
+      // any idle system `doublePress`. See `isIdleSystemDoublePress`.
       await this.setState(state.previous)
       return
     }
@@ -1887,6 +1943,41 @@ export class TelegramAppController {
   }
   private noteUserInput() {
     this.inputQuietUntil = Math.max(this.inputQuietUntil, Date.now() + INPUT_QUIET_MS)
+  }
+
+  /**
+   * A `doublePress` is considered an idle system event when the
+   * firmware tagged it with `eventSource === 1` and the firmware has
+   * been firing other system events in a tight cluster. On the G2 and
+   * `@evenrealities/evenhub-simulator@0.7.2` the firmware fires press,
+   * swipe, doublePress, press events with `eventSource === 1` every
+   * 50-200ms when nothing is happening; without filtering, the
+   * controller bounces between the awake and asleep states without
+   * any user action. A genuine user-driven `doublePress` is preceded
+   * by ≥2s of silence, so the cluster pattern is the most reliable
+   * signal we can use to distinguish idle firmware noise from a
+   * deliberate user action. See `AGENTS.md` "Idle doublePress events
+   * on the G2 / simulator can mimic user input" and
+   * `web/test/controller.test.ts`.
+   */
+  private isIdleSystemDoublePress(input: AppInput): boolean {
+    if (input.type !== 'doublePress') return false
+    if (input.eventSource !== 1) return false
+    // If the user has been silent for the cluster window, the firmware
+    // is unlikely to be spamming us; treat this as a deliberate user
+    // action and honor it.
+    return Date.now() - this.lastSystemEventAt < IDLE_DOUBLE_PRESS_CLUSTER_MS
+  }
+
+  private noteUserInitiatedInput(input: AppInput) {
+    this.noteUserInput()
+    // Mark any `eventSource === 1` event so the next system doublePress
+    // arriving inside the cluster window can be dropped. The `audioChunk`
+    // variant does not carry an eventSource so it cannot be a system
+    // idle event.
+    if (input.type !== 'audioChunk' && input.eventSource === 1) {
+      this.lastSystemEventAt = Date.now()
+    }
   }
 
   private msUntilQuiet() {

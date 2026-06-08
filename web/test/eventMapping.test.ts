@@ -53,14 +53,32 @@ describe('mapEvenHubEvent', () => {
   })
 
   it('keeps raw jsonData eventType when SDK-normalized sysEvent omits it', () => {
+    // The raw eventSource is preserved so the controller can distinguish
+    // idle system doublePress events (eventSource === 1) from genuine
+    // user double-presses. See AGENTS.md "Idle doublePress events...".
     expect(
       mapEvenHubEvent({
         jsonData: { eventType: 3, eventSource: 2 },
         sysEvent: { eventSource: 2 },
       }),
-    ).toEqual({ type: 'doublePress' })
+    ).toEqual({ type: 'doublePress', eventSource: 2 })
   })
 
+  it('preserves eventSource on press / doublePress / swipe so the controller can filter idle system events', () => {
+    // AGENTS.md "Idle doublePress events on the G2 / simulator can mimic
+    // user input" — the controller drops the awake↔asleep bounce when
+    // eventSource === 1 and the last user input is older than 1s.
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 3, eventSource: 1 } })).toEqual({ type: 'doublePress', eventSource: 1 })
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 0, eventSource: 2 } })).toEqual({ type: 'press', eventSource: 2 })
+    expect(mapEvenHubEvent({ textEvent: { eventType: 1, eventSource: 1 } })).toEqual({ type: 'swipeUp', eventSource: 1 })
+    expect(mapEvenHubEvent({ jsonData: { eventType: 3, eventSource: 1 } })).toEqual({ type: 'doublePress', eventSource: 1 })
+    // String-encoded source values are tolerated for parity with proto
+    // payloads that arrive with quoted integers.
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 3, eventSource: '1' } })).toEqual({ type: 'doublePress', eventSource: 1 })
+    // When the raw event carries no eventSource, the AppInput omits the
+    // field so callers that test exact equality stay simple.
+    expect(mapEvenHubEvent({ sysEvent: { eventType: 3 } })).toEqual({ type: 'doublePress' })
+  })
   it('debounces duplicate click payloads instead of synthesizing double press', () => {
     vi.useFakeTimers()
     const onInput = vi.fn()

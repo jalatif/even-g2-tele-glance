@@ -91,13 +91,14 @@ export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | u
   const rawRecord = readRawRecord(event)
   const rawIndex = readSelectedIndex(rawRecord)
   const rawItemName = readSelectedName(rawRecord)
+  const rawEventSource = readEventSource(event)
   if (eventTypeEquals(rawEventType, EvenEventType.foregroundEnter, EvenEventTypeName.foregroundEnter)) {
-    return { type: 'foreground' }
+    return withEventSource({ type: 'foreground' }, rawEventSource)
   }
-  if (eventTypeEquals(rawEventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalSelection('doublePress', rawIndex, rawItemName)
-  if (eventTypeEquals(rawEventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalSelection('press', rawIndex, rawItemName)
-  if (eventTypeEquals(rawEventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return { type: 'swipeUp' }
-  if (eventTypeEquals(rawEventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return { type: 'swipeDown' }
+  if (eventTypeEquals(rawEventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withEventSource(withOptionalSelection('doublePress', rawIndex, rawItemName), rawEventSource)
+  if (eventTypeEquals(rawEventType, EvenEventType.click, EvenEventTypeName.click)) return withEventSource(withOptionalSelection('press', rawIndex, rawItemName), rawEventSource)
+  if (eventTypeEquals(rawEventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return withEventSource({ type: 'swipeUp' }, rawEventSource)
+  if (eventTypeEquals(rawEventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return withEventSource({ type: 'swipeDown' }, rawEventSource)
 
   const normalized = normalizeEvent(event)
 
@@ -105,8 +106,10 @@ export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | u
     return { type: 'audioChunk', pcm: toUint8Array(normalized.audioEvent.audioPcm) }
   }
 
+  const normalizedEventSource = rawEventSource ?? readEventSource(normalized)
+
   if (eventTypeEquals(readEventType(normalized.sysEvent), EvenEventType.foregroundEnter, EvenEventTypeName.foregroundEnter)) {
-    return { type: 'foreground' }
+    return withEventSource({ type: 'foreground' }, normalizedEventSource)
   }
 
   const listEvent = normalized.listEvent
@@ -115,14 +118,41 @@ export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | u
   const index = readSelectedIndex(listEvent)
   const itemName = readSelectedName(listEvent)
   if ((index !== undefined || itemName !== undefined) && eventType === undefined) {
-    return withOptionalSelection('selectIndex', index, itemName)
+    return withEventSource(withOptionalSelection('selectIndex', index, itemName), normalizedEventSource)
   }
 
-  if (eventTypeEquals(eventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withOptionalSelection('doublePress', index, itemName)
-  if (eventType === undefined || eventTypeEquals(eventType, EvenEventType.click, EvenEventTypeName.click)) return withOptionalSelection('press', index, itemName)
-  if (eventTypeEquals(eventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return { type: 'swipeUp' }
-  if (eventTypeEquals(eventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return { type: 'swipeDown' }
+  if (eventTypeEquals(eventType, EvenEventType.doubleClick, EvenEventTypeName.doubleClick)) return withEventSource(withOptionalSelection('doublePress', index, itemName), normalizedEventSource)
+  if (eventType === undefined || eventTypeEquals(eventType, EvenEventType.click, EvenEventTypeName.click)) return withEventSource(withOptionalSelection('press', index, itemName), normalizedEventSource)
+  if (eventTypeEquals(eventType, EvenEventType.scrollTop, EvenEventTypeName.scrollTop)) return withEventSource({ type: 'swipeUp' }, normalizedEventSource)
+  if (eventTypeEquals(eventType, EvenEventType.scrollBottom, EvenEventTypeName.scrollBottom)) return withEventSource({ type: 'swipeDown' }, normalizedEventSource)
   return undefined
+}
+
+function readEventSource(event: EvenHubEventLike | unknown): number | undefined {
+  if (!isRecord(event)) return undefined
+  const candidate = event as EvenHubEventLike
+  const fromNested = (record: EventRecord | undefined): number | undefined => {
+    if (!record) return undefined
+    const value = pickValue(record, ['eventSource', 'sourceType', 'source'])
+    if (typeof value === 'number' && Number.isInteger(value)) return value
+    if (typeof value === 'string' && /^-?\d+$/.test(value)) {
+      const parsed = Number.parseInt(value, 10)
+      return Number.isInteger(parsed) ? parsed : undefined
+    }
+    return undefined
+  }
+  return (
+    fromNested(candidate.listEvent) ??
+    fromNested(candidate.textEvent) ??
+    fromNested(candidate.sysEvent) ??
+    fromNested(firstRecord(candidate.jsonData, candidate.data)) ??
+    fromNested(candidate)
+  )
+}
+
+function withEventSource<T extends AppInput>(input: T, eventSource: number | undefined): T {
+  if (eventSource === undefined) return input
+  return { ...input, eventSource }
 }
 
 function readRawEventType(event: EvenHubEventLike | unknown): number | string | undefined {

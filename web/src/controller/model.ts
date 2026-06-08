@@ -12,14 +12,23 @@ const MESSAGE_BOX_WORD_THRESHOLD = 25
 const encoder = new TextEncoder()
 const messagePageCache = new WeakMap<Message[], MessageDisplayPage[]>()
 
+/**
+ * One user-visible input gesture. `eventSource` carries the raw
+ * `EventSourceType` value from the underlying Even Hub event when
+ * available, so the controller can distinguish user gestures
+ * (`TOUCH_EVENT_FROM_GLASSES_R` is `1` on the G2) from the idle
+ * system `doublePress` events that the firmware and simulator
+ * emit on screen-timeout. See `AGENTS.md` "Idle doublePress
+ * events on the G2 / simulator can mimic user input."
+ */
 export type AppInput =
-  | { type: 'press'; index?: number; itemName?: string }
-  | { type: 'doublePress'; index?: number; itemName?: string }
-  | { type: 'swipeUp' }
-  | { type: 'swipeDown' }
-  | { type: 'selectIndex'; index?: number; itemName?: string }
+  | { type: 'press'; index?: number; itemName?: string; eventSource?: number }
+  | { type: 'doublePress'; index?: number; itemName?: string; eventSource?: number }
+  | { type: 'swipeUp'; eventSource?: number }
+  | { type: 'swipeDown'; eventSource?: number }
+  | { type: 'selectIndex'; index?: number; itemName?: string; eventSource?: number }
   | { type: 'audioChunk'; pcm: Uint8Array }
-  | { type: 'foreground' }
+  | { type: 'foreground'; eventSource?: number }
 
 export type ScreenModel =
   | { kind: 'text'; title: string; body: string; footer?: string; box?: BoxedText }
