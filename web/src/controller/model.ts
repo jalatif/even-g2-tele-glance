@@ -135,35 +135,70 @@ export function screenModel(state: AppState): ScreenModel {
                 ? trimUtf8Bytes(sanitizeGlassesText(selected.lastMessage.slice(0, 200)), TEXT_CONTAINER_BYTE_LIMIT)
                   : ' ')),
             panelBox: msg?.box,
+            // The footer tells the user what the gestures do, not
+            // what is on the right panel. "Swipe chats" makes it
+            // unambiguous that swipes change the left list; "Press
+            // open" tells the user the press opens the selected
+            // chat. The previous "Scroll msgs" wording was being
+            // misread as "the right side scrolls", which it does
+            // not — swipes on the chats list scroll the left list,
+            // and the right panel updates with the new chat's
+            // preview. See `docs/UI_INVARIANTS.md` sidebar.chats.
             panelFooter: previewLoaded
-              ? 'Scroll msgs | Press record | Back'
+              ? 'Swipe chats | Press open'
               : (state.status ?? 'Swipe chats | Press open'),
             focus: 'sidebar',
           }
         }
         case 'topics': {
+          // The topics state shows the chat's topic list on the
+          // left and a per-topic preview on the right. The preview
+          // looks very similar to a full message thread (same
+          // container, same body shape) which has caused users on
+          // the G2 to think they're inside the message thread and
+          // to swipe expecting the right panel to scroll older
+          // messages — but the state is still `sidebar.topics`, so
+          // the swipes actually scroll the left list. The fix is to
+          // make the preview visibly distinct from the full
+          // thread: prefix the title with a ">" indicator and
+          // replace the existing footer wording with a more
+          // emphatic "TAP TO OPEN" cue that leaves no doubt the
+          // user is on a preview and needs to press to open the
+          // thread. Once the thread is open the footer switches
+          // to the full "Swipe scroll | Click record | Double click
+          // back" copy. We deliberately keep `formatMessages` so
+          // the boxed rendering path is preserved for long
+          // previews (this also keeps the long-content `panelBox`
+          // branch that the evenBridge renders natively).
           const previewMessages = state.previewMessages
           const previewLoaded = previewMessages !== undefined
           const scrollOffset = state.previewScrollOffset ?? 0
           const msg = previewMessages ? formatMessages(previewMessages, scrollOffset) : undefined
           const selectedTopic = state.topics[state.selectedTopicIndex]
+          const topicTitle = state.previewTopic
+            ? sanitizeGlassesText(state.previewTopic.title.slice(0, 18))
+            : selectedTopic
+              ? sanitizeGlassesText(selectedTopic.title.slice(0, 18))
+              : 'Topics'
           return {
             kind: 'sidebar',
             title: sanitizeGlassesText(state.chat.title.slice(0, 20)),
             sidebarTitle: 'Topics',
             sidebarItems: state.topics.map(topicLabel),
             sidebarSelected: state.selectedTopicIndex,
-            panelTitle: state.previewTopic
-              ? sanitizeGlassesText(state.previewTopic.title.slice(0, 20))
+            // Prefix the preview title with a ">" so the user can
+            // tell at a glance that the right panel is a preview
+            // and not the full thread.
+            panelTitle: `> ${topicTitle}`,
+            panelBody: previewLoaded
+              ? (msg?.box ? '' : trimUtf8Bytes(msg?.body ?? '', TEXT_CONTAINER_BYTE_LIMIT))
               : selectedTopic
-                ? sanitizeGlassesText(selectedTopic.title.slice(0, 20))
-                : 'Topics',
-            panelBody: previewMessages
-              ? msg?.box ? '' : trimUtf8Bytes(msg?.body ?? '', TEXT_CONTAINER_BYTE_LIMIT)
-              : selectedTopic
-                ? 'Loading messages...'
+                ? 'Loading...'
                 : formatTopicPreviews(state.topics),
-            panelFooter: previewLoaded ? 'Swipe topics | Press open' : 'Loading messages...',
+            // The footer is the primary signal. "TAP TO OPEN" is
+            // unambiguous and the previous "Swipe topics" wording
+            // was being misread as "the right side scrolls".
+            panelFooter: previewLoaded ? 'TAP TO OPEN TOPIC' : 'Loading...',
             panelBox: msg?.box,
             focus: 'sidebar',
           }

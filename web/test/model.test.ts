@@ -363,13 +363,19 @@ describe('screenModel', () => {
     }
 
     const model = screenModel(state)
-
     expect(model.kind).toBe('sidebar')
     if (model.kind === 'sidebar') {
-      expect(model.panelTitle).toBe('Stock-Analyst')
-      expect(model.panelBody).toBe('Loading messages...')
+      // The title is now prefixed with a ">" to make it clear at
+      // a glance that the right panel is a per-topic preview,
+      // not the full message thread (the user kept confusing
+      // the two on real G2 hardware).
+      expect(model.panelTitle).toBe('> Stock-Analyst')
+      expect(model.panelBody).toBe('Loading...')
       expect(model.panelBody).not.toContain('General')
-      expect(model.panelFooter).toBe('Loading messages...')
+      // The footer is the primary signal that this is a preview
+      // and not the full thread; see the comment on
+      // `sidebar.topics` in `model.ts`.
+      expect(model.panelFooter).toBe('Loading...')
     }
   })
 
