@@ -181,7 +181,13 @@ export function screenModel(state: AppState): ScreenModel {
             sidebarSelected: state.topic ? (state.selectedTopicIndex ?? 0) : state.selectedChatIndex,
             panelTitle: '',
             panelBody: loadingBody ?? (msg.box ? '' : msg.body),
-            panelFooter: footerText(state.status, 'Click record | Double click back'),
+            // The footer MUST mention every gesture the message
+            // thread accepts, otherwise the user has no way to
+            // discover swipe-scrolling. Keep the labels short so
+            // they still fit the 180-byte footer container; the
+            // `Swipe` / `Click` / `Double click` shorthand matches
+            // the chats list footer at line 139 for consistency.
+            panelFooter: footerText(state.status, 'Swipe scroll | Click record | Double click back'),
             panelBox: loadingBody ? undefined : msg.box,
             focus: 'panel',
           }
@@ -265,7 +271,9 @@ export function screenModel(state: AppState): ScreenModel {
         sidebarSelected: state.selectedChatIndex,
         panelTitle: '',
         panelBody: msg.box ? '' : msg.body,
-        panelFooter: footerText(state.status, 'Click record | Double click back'),
+        // Same footer wording as the active message thread so the
+        // user knows they can swipe-scroll even after sending.
+        panelFooter: footerText(state.status, 'Swipe scroll | Click record | Double click back'),
         panelBox: msg.box,
         focus: 'panel',
       }

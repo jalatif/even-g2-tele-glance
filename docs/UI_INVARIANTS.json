@@ -329,7 +329,7 @@
         "panelBodyContains": {
           "fromState": "messages[*].text"
         },
-        "panelFooterDefault": "Click record | Double click back"
+        "panelFooterDefault": "Swipe scroll | Click record | Double click back"
       },
       "transitions": {
         "press": "sidebarRecording",
@@ -361,7 +361,7 @@
         "panelBodyContains": {
           "fromState": "messages[*].text"
         },
-        "panelFooterDefault": "Click record | Double click back"
+        "panelFooterDefault": "Swipe scroll | Click record | Double click back"
       },
       "transitions": {
         "press": "sidebarRecording",
@@ -567,7 +567,7 @@
         "sidebarTitle": "Chats"
       },
       "right": {
-        "panelFooterDefault": "Click record | Double click back"
+        "panelFooterDefault": "Swipe scroll | Click record | Double click back"
       },
       "transitions": {
         "press": "sidebarRecording",
@@ -1221,6 +1221,23 @@
         "listMessages",
         "markRead"
       ],
+      "budgetMs": 1000
+    },
+    {
+      "name": "22a-press-debounce-starts-recording",
+      "input": null,
+      "target": "sidebarRecording",
+      "expect": {
+        "state": {
+          "screen": "sidebarRecording"
+        },
+        "bridgeCall": {
+          "method": "setAudioEnabled",
+          "args": {
+            "enabled": true
+          }
+        }
+      },
       "budgetMs": 1000
     },
     {

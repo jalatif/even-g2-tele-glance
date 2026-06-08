@@ -953,6 +953,41 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
   })
 
+  it('transitions from sidebar.messages to sidebarRecording after the press debounce elapses', async () => {
+    // The user complained that "click record nothing happens" on the
+    // real glasses; the actual behavior is that a single press on the
+    // message thread schedules a 260ms debounce before it starts
+    // recording, so the user sees no immediate feedback. This test
+    // pins the actual flow so future refactors cannot silently drop
+    // the debounce (which would break the tap-cancel pattern that
+    // the existing harness relies on) or extend it without a
+    // corresponding docs/UI_INVARIANTS update.
+    const api = fakeApi({ authorized: true })
+    const bridge = fakeBridge()
+    // Use a small but non-zero debounce so the test exercises the
+    // timer path, not the zero-delay short-circuit.
+    const controller = new TelegramAppController(api, bridge, { messagePressDelayMs: 50 })
+
+    await controller.init()
+    // Open the first chat so the controller sits on sidebar.messages.
+    await controller.dispatch({ type: 'press' })
+    await flushAsync()
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+
+    // Single press: still on sidebar.messages immediately afterwards.
+    await controller.dispatch({ type: 'press' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+    // Audio is not enabled yet — the debounce hasn't fired.
+    expect(vi.mocked(bridge.setAudioEnabled)).not.toHaveBeenCalledWith(true)
+
+    // After the debounce elapses, the controller transitions to the
+    // recording screen and enables the microphone.
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    await flushAsync()
+    expect(controller.snapshot.screen).toBe('sidebarRecording')
+    expect(vi.mocked(bridge.setAudioEnabled)).toHaveBeenCalledWith(true)
+  })
+
   it('records, transcribes, confirms, and sends a voice reply', async () => {
     const api = fakeApi({ authorized: true, transcription: { text: 'Reply text' } })
     const bridge = fakeBridge()

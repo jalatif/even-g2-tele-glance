@@ -22,7 +22,11 @@ describe('screenModel', () => {
     expect(model.kind).toBe('sidebar')
     if (model.kind === 'sidebar') {
       expect(encoder.encode(model.panelBody).byteLength).toBeLessThanOrEqual(999)
-      expect(model.panelFooter).toBe('Click record | Double click back')
+      // The footer MUST mention every gesture the message thread
+      // accepts, otherwise the user has no way to discover
+      // swipe-scrolling. Keep the assertion in sync with the
+      // `model.ts` sidebar.messages footer.
+      expect(model.panelFooter).toBe('Swipe scroll | Click record | Double click back')
     }
   })
 

@@ -199,7 +199,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **right**:
   - `panelBody.contains`: each visible message's `text`. For `fixture-chat-0`: `'Alpha message page contains fixture-alpha-body for startup testing.'` and `'Alpha outgoing marker for visual validation.'`
   - `panelBody.byteLength`: <= 999
-  - `panelFooter`: `'Click record | Double click back'`
+  - `panelFooter`: `'Swipe scroll | Click record | Double click back'`
   - `panelBox`: optional for long messages
 - **transitions**:
   - `press` -> `sidebarRecording`
@@ -305,7 +305,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **render**: `{ kind: 'sidebar', title: 'Reply sent', focus: 'panel' }`
 - **right**:
   - `panelBody.contains`: outgoing message text
-  - `panelFooter`: `'Click record | Double click back'`
+  - `panelFooter`: `'Swipe scroll | Click record | Double click back'`
 - **transitions**:
   - `press` -> `sidebarRecording`
   - `doublePress` -> `back`
@@ -377,8 +377,9 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 |19|`19-topic-three-back`|`doublePress`|`sidebar.topics.preview`|back to topics|
 |20|`20-topics-double-back-to-chats`|`doublePress`|`sidebar.chats`|`selectedChatIndex === 1` preserved|
 |21|`21-chats-open-alpha`|`swipeUp` + `press`|`sidebar.messages.normal`|chat 0, both messages, `markRead` called|
-|22|`22-alpha-record-start`|`press` (delay 0)|`sidebarRecording`|`setAudioEnabled(true)`|
-|23|`23-alpha-record-audio-1`|`audioChunk` x 1|`sidebarRecording`|`state.chunks.length === 1`|
+|22|`22-chats-reopen-alpha`|`pressSequence:up,up,up,up,click`|`sidebar.messages.normal`|chat 0, both messages, `markRead` called, ends on the message thread with the press debounce armed|
+|22a|`22a-press-debounce-starts-recording`|(wait for `messagePressDelayMs`)|`sidebarRecording`|`setAudioEnabled(true)` called — pins the 260ms debounce that turns a single press into recording (without it the user has no feedback when they tap "record")|
+|23|`23-alpha-record-start`|`click` (no-op, controller already recording)|`sidebarRecording`|`setAudioEnabled(true)` (idempotent)|
 |24|`24-alpha-record-audio-2`|`audioChunk` x 1|`sidebarRecording`|`state.chunks.length === 2`|
 |25|`25-alpha-record-audio-3`|`audioChunk` x 1|`sidebarRecording`|`state.chunks.length === 3`|
 |26|`26-alpha-record-stop`|`press`|`sidebarTranscribing`|`setAudioEnabled(false)`|
