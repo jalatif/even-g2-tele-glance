@@ -135,8 +135,12 @@
         ]
       },
       "transitions": {
-        "press": "auth.needsSetup"
+        "press": "auth.needsSetup",
+        "doublePress": "auth.needsSetup"
       },
+      "bridgeCalls": [
+        "showExitConfirmation"
+      ],
       "budgetMs": 500,
       "apiCalls": [
         "authStatus"
@@ -157,8 +161,12 @@
         ]
       },
       "transitions": {
-        "press": "auth.signedOut"
+        "press": "auth.signedOut",
+        "doublePress": "auth.signedOut"
       },
+      "bridgeCalls": [
+        "showExitConfirmation"
+      ],
       "budgetMs": 500,
       "apiCalls": [
         "authStatus"

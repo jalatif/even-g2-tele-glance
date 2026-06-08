@@ -20,6 +20,35 @@ const reversedMessages: Message[] = [
 ]
 
 describe('TelegramAppController', () => {
+  it('exits the app on double-tap from the pre-login auth screen', async () => {
+    // The reviewer expects the glasses user to be able to leave the app with
+    // a double-tap even when no Telegram credentials are configured and the
+    // auth screen is the only thing on display. The controller should hand
+    // off to the native exit-confirmation dialog without touching the API.
+    const api = fakeApi({ authorized: false })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(
+      api,
+      bridge,
+      {},
+      undefined,
+      () => false,
+    )
+
+    await controller.init()
+    expect(controller.snapshot).toMatchObject({
+      screen: 'auth',
+      mode: 'needsSetup',
+    })
+    expect(vi.mocked(api.authStatus)).not.toHaveBeenCalled()
+
+    await controller.dispatch({ type: 'doublePress' })
+    expect(vi.mocked(bridge.showExitConfirmation ?? (() => undefined))).toHaveBeenCalledTimes(1)
+    // The auth screen must not transition out of `auth` just because the
+    // native exit dialog was shown — the host app owns the dismissal flow.
+    expect(controller.snapshot).toMatchObject({ screen: 'auth', mode: 'needsSetup' })
+  })
+
   it('shows phone login prompt when no Telegram session exists', async () => {
     const api = fakeApi({ authorized: false })
     const bridge = fakeBridge()

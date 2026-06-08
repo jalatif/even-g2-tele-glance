@@ -111,17 +111,19 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **state**: `{ screen: 'auth', mode: 'needsSetup', message: 'Follow the in ... on the phone.' }`
 - **render**: `{ kind: 'text', title: 'Telegram' }`
 - **body.contains**: `['instructions', 'Settings']`
-- **transitions**: `press` -> stays; message re-rendered
+- **transitions**: `press` -> stays; message re-rendered. `doublePress` -> `bridge.showExitConfirmation()` invoked; state stays on `auth.needsSetup` (the host app owns the dismissal flow).
 - **budget**: 500 ms
 - **apiCalls**: `authStatus` returns `{ configured: false, authorized: false }`
+- **bridgeCalls**: `showExitConfirmation` is called once on `doublePress` from the auth screen.
 
 ### 4.3 `auth.signedOut`
 - **state**: `{ screen: 'auth', mode: 'signedOut', message: '... phone number ...' }`
 - **render**: `{ kind: 'text', title: 'Telegram' }`
 - **body.contains**: `['phone number']`
-- **transitions**: `press` -> stays
+- **transitions**: `press` -> stays. `doublePress` -> `bridge.showExitConfirmation()` invoked; state stays on `auth.signedOut`.
 - **budget**: 500 ms
 - **apiCalls**: `authStatus` returns `{ configured: true, authorized: false }`
+- **bridgeCalls**: `showExitConfirmation` is called once on `doublePress` from the auth screen.
 
 ### 4.4 `auth.phonePending`
 - **state**: `{ screen: 'auth', mode: 'phonePending', message: '... code ...', phone: '+1...' }`

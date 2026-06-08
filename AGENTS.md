@@ -248,7 +248,7 @@ Requirements:
 - Decide whether public distribution should keep frontend-local StringSession storage or move to encrypted per-user backend storage with real user authentication.
 - Add real Telegram typing indicators. Message updates currently use server-sent events plus polling fallback.
 - Add production-grade backend process management for device testing, such as a launch script, `uvicorn` service wrapper, health check, and clearer restart instructions.
-- Decide whether production should use Tailscale HTTP, Tailscale Serve HTTPS, a LAN URL, or a hosted HTTPS backend. Update `app.json` whitelist and frontend config accordingly.
+- The shipped `app.json` network whitelist carries a runtime placeholder `http://<BACKEND_URL>:8787` and does not bake in any per-developer Tailscale IP. `npm run configure:tailscale --prefix web` swaps that placeholder for this machine's real Tailscale IP at packaging time, so the .ehpk only carries a specific IP when the developer is actually packaging for their own device test. Tailscale HTTP, Tailscale Serve HTTPS, LAN, and hosted HTTPS backends are all supported by editing the Backend URL in TeleGlance Settings; the whitelist's `localhost`/`127.0.0.1` entries cover the simulator, and `<BACKEND_URL>:8787` is the only entry that needs substitution.
 - Add a package/version script that builds Tailscale output and writes a versioned `.ehpk` in one command.
 - Before every repack, bump `app.json` `version` first and delete stale `.ehpk` outputs so the workspace only keeps the latest package artifact.
 - Add on-device QA cases for phone locked/backgrounded, idle for 2+ minutes, returning from another phone app, root-page exit behavior, and recovery after backend disconnect.

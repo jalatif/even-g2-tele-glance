@@ -339,6 +339,16 @@ export class TelegramAppController {
   }
 
   private async handleAuth(state: Extract<AppState, { screen: 'auth' }>, input: AppInput) {
+    if (input.type === 'doublePress') {
+      // The glasses app can be opened before the user has completed the
+      // backend/phone-code setup, in which case the only useful interaction
+      // is to leave the app. The reviewer expects double-tap to exit the
+      // app from any pre-login screen, so trigger the native exit
+      // confirmation on the first double-tap rather than waiting for the
+      // user to find a hidden back path.
+      await this.bridge.showExitConfirmation?.()
+      return
+    }
     if (input.type !== 'press') return
     await this.run(async () => {
       if (state.mode === 'needsSetup') {

@@ -86,7 +86,7 @@ scripts/start-backend.sh --reload`}</code></pre>
         </details>
         <label>
           <span>Backend URL</span>
-          <input value={draft.apiBaseUrl} onChange={(event) => update('apiBaseUrl', event.target.value)} placeholder="http://100.x.x.x:8787" />
+          <input value={draft.apiBaseUrl} onChange={(event) => update('apiBaseUrl', event.target.value)} placeholder="<BACKEND_URL>:8787" />
         </label>
         <label>
           <span>Backend shared secret</span>

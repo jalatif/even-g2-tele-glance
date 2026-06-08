@@ -21,6 +21,8 @@ venv/
 server/data/
 *.session
 *.session-journal
+# Vestigial nested backend tree from an early scaffold; never used at runtime.
+server/server/
 
 # Node
 node_modules/

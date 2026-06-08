@@ -172,7 +172,7 @@ npm run configure:tailscale
 npm run dev:tailscale
 ```
 
-`configure:tailscale` detects the machine's Tailscale IP and updates `app.json` network permissions for local device testing. It prints the Backend URL to enter in TeleGlance Settings.
+`configure:tailscale` detects the machine's Tailscale IP and substitutes the runtime placeholder (`http://<BACKEND_URL>:8787`) in `app.json`'s `network.whitelist` for that IP, so the resulting `.ehpk` only carries a per-developer IP at packaging time. It also prints the Backend URL to enter in TeleGlance Settings.
 
 If backend requests fail with CORS errors while using a custom URL, prefer Tailscale first. If you must use another private network range, add a regex override in root `.env`, for example:
 

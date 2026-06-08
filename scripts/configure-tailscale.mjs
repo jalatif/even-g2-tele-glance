@@ -17,10 +17,18 @@ const networkPermission = appJson.permissions?.find((permission) => permission.n
 if (!networkPermission) {
   throw new Error('app.json is missing the network permission.')
 }
-networkPermission.whitelist = unique([
-  ...(networkPermission.whitelist ?? []),
-  backendOrigin,
-])
+// The shipped manifest carries a runtime placeholder (`http://<BACKEND_URL>:8787`)
+// so the .ehpk does not bake in a per-developer IP. Local device testing
+// swaps that placeholder for this machine's real Tailscale IP right before
+// packaging; other developers (or the App Store) ship the placeholder as-is.
+const placeholder = 'http://<BACKEND_URL>:8787'
+const whitelist = networkPermission.whitelist ?? []
+const placeholderIndex = whitelist.indexOf(placeholder)
+if (placeholderIndex === -1) {
+  throw new Error(`app.json network whitelist is missing the ${placeholder} placeholder.`)
+}
+whitelist[placeholderIndex] = backendOrigin
+networkPermission.whitelist = unique(whitelist)
 writeFileSync(appJsonPath, `${JSON.stringify(appJson, null, 2)}\n`)
 
 console.log(`Tailscale backend URL: ${backendOrigin}`)
