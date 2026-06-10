@@ -36,8 +36,11 @@ export type TelegramAuthConfig = {
   sttBaseUrl?: string
 }
 
+export const SHARED_BACKEND_URL = 'https://teleglance.akira-os.net'
+export const SHARED_BACKEND_TEST_SECRET = 'test-secret-token'
+
 export function defaultApiBaseUrl() {
-  return localApiBaseUrl() ?? 'http://localhost:8787'
+  return localApiBaseUrl() ?? SHARED_BACKEND_URL
 }
 
 export const API_BASE_URL_STORAGE_KEY = 'teleGlance.apiBaseUrl'
@@ -157,6 +160,15 @@ export class HttpTelegramApi implements TelegramApi {
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   }
+  /**
+   * Returns the actual shared secret to use for the current baseUrl.
+   * For the shared testing backend, the built-in test secret wins.
+   * For custom backends, returns the user-configured secret or empty string.
+   */
+  private getEffectiveSharedSecret() {
+    if (this.baseUrl.startsWith(SHARED_BACKEND_URL)) return SHARED_BACKEND_TEST_SECRET
+    return this.authConfig().backendSharedSecret?.trim() ?? ''
+  }
 
   private async request<T>(path: string, init: RequestInit, baseUrl = this.baseUrl, includeTelegramAuth = true): Promise<T> {
     const headers = await this.withTelegramHeaders(init.headers, includeTelegramAuth)
@@ -233,10 +245,11 @@ export class HttpTelegramApi implements TelegramApi {
   private async withTelegramHeaders(headers: HeadersInit | undefined, includeTelegramAuth: boolean) {
     const merged = new Headers(headers)
     if (!includeTelegramAuth) return merged
-    const config = this.authConfig()
-    if (!config.backendSharedSecret?.trim()) {
+    const sharedSecret = this.getEffectiveSharedSecret()
+    if (!sharedSecret) {
       throw new Error('Backend shared secret is required. Set it in TeleGlance Settings and in backend .env as TELEGLANCE_SHARED_SECRET.')
     }
+    const config = { ...this.authConfig(), backendSharedSecret: sharedSecret }
     const encryptedAuth = await encryptedTelegramAuthHeader(config)
     if (!encryptedAuth) {
       throw new Error('Encrypted auth requires Backend shared secret, Telegram API ID, and Telegram API hash in TeleGlance Settings.')
@@ -246,7 +259,7 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   private async withEncryptedJsonBody(init: RequestInit, headers: Headers, includeTelegramAuth: boolean): Promise<RequestInit> {
-    const sharedSecret = this.authConfig().backendSharedSecret?.trim()
+    const sharedSecret = this.getEffectiveSharedSecret()
     const contentType = headers.get('Content-Type') ?? headers.get('content-type') ?? ''
     if (!includeTelegramAuth || !sharedSecret || typeof init.body !== 'string' || !contentType.startsWith('application/json')) {
       return init
@@ -261,7 +274,7 @@ export class HttpTelegramApi implements TelegramApi {
   private async responseText(response: Response, includeTelegramAuth: boolean) {
     const text = await response.text()
     if (!includeTelegramAuth || response.headers.get('X-TeleGlance-Encrypted') !== '1') return text
-    const sharedSecret = this.authConfig().backendSharedSecret?.trim()
+    const sharedSecret = this.getEffectiveSharedSecret()
     if (!sharedSecret) throw new Error('Backend shared secret is required to decrypt backend response.')
     const envelope = JSON.parse(text) as { encryptedPayload?: unknown }
     if (typeof envelope.encryptedPayload !== 'string') throw new Error('Encrypted backend response is malformed')
@@ -271,7 +284,7 @@ export class HttpTelegramApi implements TelegramApi {
   private async decryptEventData(data: string) {
     const payload = JSON.parse(data) as { encryptedPayload?: unknown }
     if (typeof payload.encryptedPayload !== 'string') return data
-    const sharedSecret = this.authConfig().backendSharedSecret?.trim()
+    const sharedSecret = this.getEffectiveSharedSecret()
     if (!sharedSecret) throw new Error('Backend shared secret is required to decrypt update stream.')
     return decryptJsonPayload(payload.encryptedPayload, sharedSecret)
   }

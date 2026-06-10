@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { HttpTelegramApi, type TelegramApi } from '../api'
+import { HttpTelegramApi, SHARED_BACKEND_URL, type TelegramApi } from '../api'
 import { EvenHubGlassesBridge } from '../bridge/evenBridge'
 import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge } from '../controller/appController'
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
@@ -100,7 +100,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             settingsRef.current = next
             if (active) setSettings(next)
           },
-          () => fixtureMode || Boolean(settingsRef.current.backendSharedSecret.trim() && settingsRef.current.telegramApiId.trim() && settingsRef.current.telegramApiHash.trim()),
+          () => {
+            if (fixtureMode) return true
+            const settings = settingsRef.current
+            const telegramOk = Boolean(settings.telegramApiId.trim() && settings.telegramApiHash.trim())
+            if (!telegramOk) return false
+            if (settings.apiBaseUrl.startsWith(SHARED_BACKEND_URL)) return true
+            return Boolean(settings.backendSharedSecret.trim())
+          },
         )
         controller = createdController
         controllerRef.current = createdController

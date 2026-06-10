@@ -2,7 +2,7 @@
   "package_id": "com.jalatif.telegram",
   "edition": "202601",
   "name": "TeleGlance",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.10",
   "entrypoint": "index.html",
@@ -15,7 +15,8 @@
         "http://127.0.0.1:8787",
         "http://<BACKEND_URL>:8787",
         "https://my.telegram.org",
-        "https://react.dev/errors/"
+        "https://react.dev/errors/",
+        "https://teleglance.akira-os.net"
       ]
     },
     {

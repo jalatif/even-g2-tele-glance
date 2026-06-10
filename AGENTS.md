@@ -196,6 +196,11 @@ Requirements:
 - Glasses text sanitization now strips unsupported emoji ranges after replacing known status-circle emoji, avoiding LVGL unsupported-glyph warnings observed in simulator runs.
 - Automated simulator fixture validation is implemented with `npm run test:simulator --prefix web`. It launches fixture-mode Vite plus `@evenrealities/evenhub-simulator@0.7.2`, drives chat indexes 1-3 and forum topics 1-3, validates deterministic message content, compares `web/test/simulator-goldens`, and writes report/video artifacts under `artifacts/simulator-flow/<timestamp>/`.
 
+- The shared testing backend at `https://teleglance.akira-os.net` uses an
+  internal `test-secret-token` for wire encryption. The user's
+  `backendSharedSecret` is ignored while that URL is set; the deployed
+  backend is configured with `TELEGLANCE_SHARED_SECRET=test-secret-token`.
+
 ## Observed Issues and Learnings
 
 - Even Hub text/list container limits are strict on device and simulator. Message display must be byte-bounded, not character-bounded, because content over 999 UTF-8 bytes can fail rendering or leave the glasses on a stale screen.

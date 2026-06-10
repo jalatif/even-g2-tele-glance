@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { SHARED_BACKEND_URL } from '../api'
 import { useApp } from '../contexts/AppContext'
 import type { FrontendConfig } from '../storage'
 
@@ -20,6 +21,7 @@ export function SettingsScreen({ buildVersion }: { buildVersion: string }) {
 
   const hasTelegramCredentials = Boolean(draft.telegramApiId.trim() && draft.telegramApiHash.trim())
   const hasBackendSecret = Boolean(draft.backendSharedSecret.trim())
+  const isSharedBackend = draft.apiBaseUrl.startsWith(SHARED_BACKEND_URL)
   const hasTelegramSession = Boolean(draft.telegramSession.trim())
   const isConnected = state.screen !== 'auth' && state.screen !== 'loading' && state.screen !== 'error'
 
@@ -72,7 +74,7 @@ export function SettingsScreen({ buildVersion }: { buildVersion: string }) {
 
       <section className="phone-panel settings-group">
         <h2>Backend</h2>
-        <p className="hint">Current backend: {draft.apiBaseUrl}. Expand setup details if you need install or network instructions.</p>
+
         <details className="settings-details">
           <summary>Backend setup instructions</summary>
           <p className="hint">Run your own backend from this repo, then enter its reachable URL here. Repo link: <a href="https://github.com/jalatif/even-g2-tele-glance.git" target="_blank" rel="noreferrer">github.com/jalatif/even-g2-tele-glance</a>.</p>
@@ -86,14 +88,19 @@ scripts/start-backend.sh --reload`}</code></pre>
         </details>
         <label>
           <span>Backend URL</span>
-          <input value={draft.apiBaseUrl} onChange={(event) => update('apiBaseUrl', event.target.value)} placeholder="<BACKEND_URL>:8787" />
+          <input value={draft.apiBaseUrl} onChange={(event) => update('apiBaseUrl', event.target.value)} placeholder={SHARED_BACKEND_URL} />
         </label>
         <label>
           <span>Backend shared secret</span>
-          <input type="password" value={draft.backendSharedSecret} onChange={(event) => update('backendSharedSecret', event.target.value)} placeholder="Required" />
+          <input type="password" value={draft.backendSharedSecret} onChange={(event) => update('backendSharedSecret', event.target.value)} placeholder={isSharedBackend ? 'Not used for testing backend' : 'Required'} />
         </label>
-        <p className="hint">Required. Set the exact same value in backend root <code>.env</code> as <code>TELEGLANCE_SHARED_SECRET</code>. The secret is stored locally and used on both sides to encrypt backend API payloads; it is not sent as plaintext.</p>
-        <p className="hint">Use a LAN or Tailscale URL that the phone running Even Realities can reach. Saving backend or Telegram changes reloads the app.</p>
+        {isSharedBackend ? (
+          <p className="testing-banner">
+            <span className="asterisk">*</span> Use https://teleglance.akira-os.net only for testing (no secure-token needed). Testing url can be unstable so use only for testing and switch to your own backend and then set the exact same value in backend root <code>.env</code> as <code>TELEGLANCE_SHARED_SECRET</code>. The secret is stored locally and used on both sides to encrypt backend API payloads; it is not sent as plaintext.
+          </p>
+        ) : (
+          <p className="hint">Required. Set the exact same value in backend root <code>.env</code> as <code>TELEGLANCE_SHARED_SECRET</code>. The secret is stored locally and used on both sides to encrypt backend API payloads; it is not sent as plaintext.</p>
+        )}
       </section>
 
       <section className="phone-panel settings-group">

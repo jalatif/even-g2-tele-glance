@@ -403,6 +403,22 @@ textarea {
   grid-template-columns: 1fr auto;
 }
 
+.testing-banner {
+  margin: 12px 0;
+  padding: 10px 16px;
+  border: 1px solid #cc5555;
+  border-radius: 6px;
+  background: #1a0d0d;
+  color: #ffcccc;
+  line-height: 1.5;
+}
+.testing-banner code {
+  color: #ff9999;
+}
+.testing-banner .asterisk {
+  color: #ff4444;
+  font-weight: bold;
+}
 @media (max-width: 520px) {
   .composer,
   .phone-actions {

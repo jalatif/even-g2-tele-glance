@@ -17,5 +17,15 @@ if ! "$PYTHON" -c "import telethon" >/dev/null 2>&1; then
   exit 1
 fi
 
+HOST="0.0.0.0"
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--local" ]]; then
+    HOST="127.0.0.1"
+  else
+    ARGS+=("$arg")
+  fi
+done
+
 cd "$SERVER_DIR"
-exec "$PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port 8787 "$@"
+exec "$PYTHON" -m uvicorn app.main:app --host "$HOST" --port 8787 "${ARGS[@]}"
