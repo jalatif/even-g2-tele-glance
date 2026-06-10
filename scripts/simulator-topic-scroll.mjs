@@ -22,10 +22,11 @@
 import { setTimeout as delay } from 'timers/promises'
 
 const SIM_URL = process.env.SIMULATOR_URL ?? 'http://localhost:9898'
-const VITE_URL = process.env.VITE_URL ?? 'http://localhost:5173'
 const TOPICS_TO_TEST = [4, 5, 6]
 const MESSAGES_PER_TOPIC = 12
 const MAX_SWIPES_PER_TOPIC = 30
+
+let consoleSinceId = 0
 
 async function postInput(action, { quietMs = 750 } = {}) {
   const res = await fetch(`${SIM_URL}/api/input`, {
@@ -37,26 +38,40 @@ async function postInput(action, { quietMs = 750 } = {}) {
   await delay(quietMs)
 }
 
-async function drainEvents() {
-  try {
-    const res = await fetch(`${VITE_URL}/api/test/fixture-commands`, { method: 'GET' })
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.events ?? []
-  } catch {
-    return []
+async function pollConsole() {
+  const res = await fetch(`${SIM_URL}/api/console?since_id=${consoleSinceId}`)
+  if (!res.ok) throw new Error(`console poll failed: ${res.status}`)
+  const payload = await res.json()
+  const entries = payload.entries ?? []
+  for (const entry of entries) {
+    consoleSinceId = Math.max(consoleSinceId, Number(entry.id ?? 0) + 1)
   }
+  return entries
 }
 
-async function waitForCondition(predicate, { timeoutMs = 30_000, intervalMs = 250, label = 'condition' } = {}) {
-  const started = Date.now()
-  let last = []
-  while (Date.now() - started < timeoutMs) {
-    last = await drainEvents()
-    if (predicate(last)) return last
-    await delay(intervalMs)
+function parseTestEvents(entries) {
+  const events = []
+  for (const entry of entries) {
+    const message = String(entry.message ?? '')
+    const marker = '[TeleGlanceTest] '
+    const index = message.indexOf(marker)
+    if (index < 0) continue
+    try {
+      const parsed = JSON.parse(message.slice(index + marker.length))
+      events.push(parsed)
+    } catch {
+      // Skip malformed events.
+    }
   }
-  throw new Error(`waitForCondition timed out after ${timeoutMs}ms waiting for: ${label}\nLast events: ${JSON.stringify(last.slice(-5), null, 2)}`)
+  return events
+}
+
+function latestState(events) {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const ev = events[i]
+    if (ev?.event === 'state') return ev
+  }
+  return null
 }
 
 function latestSidebarRender(events) {
@@ -71,12 +86,17 @@ function currentScreenModel(events) {
   return latestSidebarRender(events)?.model ?? null
 }
 
-function latestState(events) {
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const ev = events[i]
-    if (ev?.event === 'state') return ev
+async function waitForCondition(predicate, { timeoutMs = 30_000, intervalMs = 300, label = 'condition' } = {}) {
+  const started = Date.now()
+  let last = []
+  while (Date.now() - started < timeoutMs) {
+    const entries = await pollConsole()
+    const events = parseTestEvents(entries)
+    last = events
+    if (predicate(events)) return events
+    await delay(intervalMs)
   }
-  return null
+  throw new Error(`waitForCondition timed out after ${timeoutMs}ms waiting for: ${label}\nLast events: ${JSON.stringify(last.slice(-5), null, 2)}`)
 }
 
 function expectedAnchorsForTopic(topic) {
@@ -90,34 +110,12 @@ function expectedAnchorsForTopic(topic) {
 async function waitForChatsScreen() {
   return waitForCondition(
     (events) => {
+      const state = latestState(events)
       const model = currentScreenModel(events)
-      return model?.focus === 'sidebar' && model?.sidebarItemCount >= 5
+      return state?.focus === 'chats' && (model?.sidebarItemCount ?? 0) >= 5
     },
-    { timeoutMs: 15_000, label: 'chats focus with 5 chats' },
+    { timeoutMs: 20_000, label: 'chats focus with 5 chats' },
   )
-}
-
-async function resetToChatsAtIndexZero() {
-  // The controller may be on any chat, topic, or message screen when
-  // the script starts. Drive it back to the chats list at index 0
-  // (Fixture Alpha) by pressing up enough times to wrap from any
-  // index back to 0, then double-pressing to back out of any nested
-  // state. The 5 chats are [Alpha(0), Forum(1), Ops(2), Research(3),
-  // Archive(4)], so 5 ups always land on 0 regardless of where we
-  // started. We do double_clicks too because if we're already on
-  // chats, they go to asleep; we wake back up with a double_click.
-  for (let i = 0; i < 6; i += 1) await postInput('up')
-  // If we ended up on asleep, wake back to chats. If on chats already,
-  // the second double_click takes us to asleep; we wake back. The end
-  // state is always chats.
-  for (let i = 0; i < 4; i += 1) {
-    await postInput('double_click')
-    const events = await drainEvents()
-    const model = currentScreenModel(events)
-    if (model?.focus === 'sidebar' && model?.sidebarItemCount >= 5) return
-  }
-  // Last-ditch: re-issue the up sequence
-  for (let i = 0; i < 6; i += 1) await postInput('up')
 }
 
 async function openForum() {
@@ -128,8 +126,9 @@ async function openForum() {
   await postInput('down')
   await waitForCondition(
     (events) => {
+      const state = latestState(events)
       const model = currentScreenModel(events)
-      return model?.focus === 'sidebar' && model?.sidebarSelected === 1
+      return state?.focus === 'chats' && model?.sidebarSelected === 1
     },
     { timeoutMs: 5_000, label: 'sidebarSelected=1' },
   )
@@ -184,7 +183,8 @@ async function exhaustivelyScroll(topic) {
     // fetch takes another 80ms. 600ms is enough to let both
     // round-trips complete before we read state.
     await delay(600)
-    const events = await drainEvents()
+    const entries = await pollConsole()
+    const events = parseTestEvents(entries)
     const model = currentScreenModel(events)
     const body = model?.panelBodyExcerpt ?? ''
     const box = model?.panelBox?.contentExcerpt ?? ''
@@ -223,8 +223,6 @@ async function run() {
   const results = []
   console.log('Waiting for app to load...')
   await waitForChatsScreen()
-  console.log('Resetting navigation to chats at index 0...')
-  await resetToChatsAtIndexZero()
   console.log('Opening Project forum...')
   await openForum()
   console.log('Forum topics visible.')
