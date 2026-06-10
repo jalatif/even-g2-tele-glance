@@ -95,7 +95,7 @@ Vitest tests for pure logic: model, event mapping, storage, controller state mac
 
 ### 2. Simulator fixture harness (`npm run test:simulator --prefix web`)
 
-Drives the 48-step catalog from `docs/UI_INVARIANTS.json` through a fixture-backed instance of the app. The Vite plugin sets `VITE_TELEGLANCE_FIXTURE=1` so the frontend uses deterministic fixture data instead of real Telegram. This validates the full UI flow without a backend or real session.
+Drives the catalog from `docs/UI_INVARIANTS.json` through a fixture-backed instance of the app. The Vite plugin sets `VITE_TELEGLANCE_FIXTURE=1` so the frontend uses deterministic fixture data instead of real Telegram. This validates the full UI flow without a backend or real session; the JSON catalog is the source of truth for the current step count.
 
 ### 3. Fuzzy test runner (`npm run test:fuzzy --prefix web`)
 

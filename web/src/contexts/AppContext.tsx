@@ -3,7 +3,7 @@ import { HttpTelegramApi, SHARED_BACKEND_URL, type TelegramApi } from '../api'
 import { EvenHubGlassesBridge } from '../bridge/evenBridge'
 import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge } from '../controller/appController'
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
-import { FixtureTelegramApi, bindFixtureApi } from '../fixtureApi'
+import { FixtureTelegramApi, bindFixtureApi, bindFixtureCommandHandler } from '../fixtureApi'
 import { InstrumentedTelegramApi } from '../instrumentedApi'
 import {
   clearFrontendConfigFromAppStorage,
@@ -54,6 +54,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let unsubscribeUpdates: (() => void) | undefined
     let glasses: GlassesBridge | undefined
     let controller: TelegramAppController | undefined
+    let unbindFixtureCommands: (() => void) | undefined
 
     async function start() {
       try {
@@ -111,6 +112,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         )
         controller = createdController
         controllerRef.current = createdController
+        if (fixtureMode) {
+          unbindFixtureCommands = bindFixtureCommandHandler(async (command) => {
+            if (command.kind === 'reinitialize') await createdController.init()
+            if (command.kind === 'injectAudioChunks') {
+              const base64 = command.pcmBase64 as string
+              const pcm = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
+              await createdController.dispatch({ type: 'audioChunk', pcm, injected: true })
+            }
+          })
+        }
         unsubscribe = createdController.subscribe((next) => {
           logTeleGlanceTest('state', summarizeAppState(next))
           if (active) setState(next)
@@ -130,6 +141,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unsubscribe?.()
       unsubscribeUpdates?.()
       controller?.dispose()
+      unbindFixtureCommands?.()
       glasses?.dispose?.()
       if (controllerRef.current === controller) controllerRef.current = null
     }

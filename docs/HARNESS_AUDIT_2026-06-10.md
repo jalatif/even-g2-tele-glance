@@ -8,7 +8,7 @@ empty sample array, and fuzzy UI-size checks referenced telemetry fields that no
 longer existed. Random failures also could not be reproduced because no seed was
 recorded.
 
-The strict fixture run after enabling these contracts completed 57 catalog steps and
+The strict fixture run after enabling these contracts completed 56 catalog steps and
 reported 91 assertion failures. These are not all application regressions. They are
 evidence that the catalog, fixture timing, and current controller behavior have
 drifted apart. The run is preserved under:
@@ -33,6 +33,27 @@ drifted apart. The run is preserved under:
 - Golden image mismatches are failures rather than warnings.
 - Catalog validation rejects duplicate step names and unknown expectation keys.
 
+## Repair pass status
+
+The first repair pass classified and corrected the strict catalog failures caused by
+stale cache/API assumptions, shared-deadline event scanning, unrealistic press timing,
+long-message page expectations, fixture notification state, and recording injection.
+Fixture PCM now enters through the controller command hook, so recording assertions no
+longer depend on an unrelated gesture or simulator microphone timing.
+
+Current validation evidence:
+
+- Strict 56-step fixture catalog: zero unexpected failures at
+  `artifacts/simulator-flow/2026-06-10T16-37-14-090Z`.
+- Seeded 100-input fuzzy run: zero failures with seed `424242` at
+  `artifacts/fuzzy-test/2026-06-10T16-37-53-768Z`.
+- Frontend unit suite: 120 tests pass; TypeScript typecheck is clean.
+
+The simulator still emits intermittent `TextContainerUpgrade failed: container 5/6
+not found` warnings during lifecycle transitions. The current catalog records these,
+but a later bridge-generation repair must eliminate them and promote any occurrence to
+a release-gating failure.
+
 ## Highest-priority remaining gaps
 
 ### P0 - Make the fixture catalog clean and semantically current
@@ -43,8 +64,9 @@ classified as one of: application bug, fixture bug, stale expectation, simulator
 limitation, or performance regression. Do not raise budgets until the phase timing
 shows which component consumed the time.
 
-The catalog count in documentation also says 48 steps while the current catalog has
-57. Generate documentation tables/counts from JSON to prevent future drift.
+Historical validation documents still describe the earlier 48-step catalog. Active
+testing instructions now treat the JSON catalog as the source of truth; generated
+documentation tables/counts are still needed to prevent future drift.
 
 ### P0 - Add end-to-end input correlation
 

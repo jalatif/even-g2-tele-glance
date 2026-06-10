@@ -197,6 +197,7 @@ export class FixtureTelegramApi implements TelegramApi {
   private slowChatsMs = 0
   private subscribers = new Set<(update: TelegramUpdate) => void>()
   private injectedNotification: { chatId: Id; message: string; topicId?: Id | null } | null = null
+  private chatOverrides = new Map<string, Partial<Chat>>()
 
   setMode(mode: 'normal' | 'missing' | 'signedOut' | 'error' | 'slow') {
     this.mode = mode
@@ -216,6 +217,21 @@ export class FixtureTelegramApi implements TelegramApi {
 
   setInjectedNotification(value: { chatId: Id; message: string; topicId?: Id | null } | null) {
     this.injectedNotification = value
+    if (!value || this.subscribers.size === 0) return
+    const key = String(value.chatId)
+    const current = fixtureChats.find((chat) => String(chat.id) === key)
+    this.chatOverrides.set(key, {
+      lastMessage: value.message,
+      unreadCount: Math.max(1, Number(current?.unreadCount ?? 0) + 1),
+    })
+    this.injectedNotification = null
+    const update: TelegramUpdate = {
+      type: 'message',
+      chatId: value.chatId,
+      topicId: value.topicId ?? null,
+      message: msg(Date.now(), 'Fixture Notifier', value.message, false),
+    }
+    for (const subscriber of this.subscribers) Promise.resolve().then(() => subscriber(update))
   }
 
   async authStatus() {
@@ -240,7 +256,7 @@ export class FixtureTelegramApi implements TelegramApi {
   async listChats(limit = 20) {
     if (this.slowChatsMs > 0) await fixtureDelay(this.slowChatsMs)
     else await fixtureDelay(40)
-    return fixtureChats.slice(0, limit).map((chat) => ({ ...chat }))
+    return fixtureChats.slice(0, limit).map((chat) => ({ ...chat, ...(this.chatOverrides.get(String(chat.id)) ?? {}) }))
   }
 
   async listTopics(chatId: Id) {
@@ -360,6 +376,16 @@ export function bindFixtureApi(api: FixtureTelegramApi) {
 
 let commandPollTimer: ReturnType<typeof setInterval> | undefined
 let injectedAudioChunks: Uint8Array[] = []
+let fixtureCommandHandler: ((command: { kind: string } & Record<string, unknown>) => void | Promise<void>) | undefined
+
+export function bindFixtureCommandHandler(
+  handler: (command: { kind: string } & Record<string, unknown>) => void | Promise<void>,
+) {
+  fixtureCommandHandler = handler
+  return () => {
+    if (fixtureCommandHandler === handler) fixtureCommandHandler = undefined
+  }
+}
 
 function startCommandPolling(api: FixtureTelegramApi) {
   if (commandPollTimer) return
@@ -384,11 +410,16 @@ function startCommandPolling(api: FixtureTelegramApi) {
             api.setInjectedNotification(cmd as unknown as { chatId: string; message: string; topicId?: string | null })
             break
           case 'injectAudioChunks': {
-            const base64 = cmd.pcmBase64 as string
-            const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-            injectedAudioChunks.push(bytes)
+            if (fixtureCommandHandler) await fixtureCommandHandler(cmd)
+            else {
+              const base64 = cmd.pcmBase64 as string
+              const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+              injectedAudioChunks.push(bytes)
+            }
             break
           }
+          default:
+            await fixtureCommandHandler?.(cmd)
         }
       }
     } catch {

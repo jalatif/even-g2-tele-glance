@@ -27,7 +27,7 @@ export type AppInput =
   | { type: 'swipeUp'; eventSource?: number }
   | { type: 'swipeDown'; eventSource?: number }
   | { type: 'selectIndex'; index?: number; itemName?: string; eventSource?: number }
-  | { type: 'audioChunk'; pcm: Uint8Array }
+  | { type: 'audioChunk'; pcm: Uint8Array; injected?: boolean }
   | { type: 'foreground'; eventSource?: number }
 
 export type ScreenModel =

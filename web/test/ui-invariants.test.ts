@@ -128,6 +128,7 @@ describe('UI_INVARIANTS catalog', () => {
       'apiCall', 'apiCallNotPresent', 'apiCalls', 'bridgeCall', 'bridgeCallNotPresent',
       'kind', 'maxPerSwipeMs', 'noContainerFailures', 'noLifecycles', 'noRenderEvents',
       'renderBodyContains', 'renderBodyContainsAny', 'renderBodyNotContains', 'state',
+      'targetEventRequired',
     ])
     for (const step of catalog.steps) {
       for (const key of Object.keys(step.expect ?? {})) {
@@ -188,7 +189,11 @@ describe('UI_INVARIANTS catalog', () => {
     const longMessageSteps = catalog.steps.filter((step) => {
       const needles = step.expect?.renderBodyContains
       if (!Array.isArray(needles)) return false
-      return needles.some((needle) => typeof needle === 'string' && needle.includes('fixture-long'))
+      return needles.some((needle) => typeof needle === 'string' && (
+        needle.includes('deliberately long fixture message')
+        || needle.includes('Fixture topic long message body')
+        || needle.includes('fixture-long')
+      ))
     })
     if (longMessageSteps.length < 2) {
       throw new Error(`Expected at least 2 long-message steps (chat + topic), found ${longMessageSteps.length}`)

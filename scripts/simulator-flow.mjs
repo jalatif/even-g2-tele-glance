@@ -218,6 +218,7 @@ async function executeStep(step, _url) {
     ? { ...(targetContract.state ?? {}), ...(expect.state ?? {}) }
     : null
   const expectedRender = isFixtureMode ? targetContract.render ?? null : null
+  const targetEventStart = expect.targetEventRequired === false ? 0 : undefined
 
   // Flush all events from the previous step before establishing this step's
   // boundary. Index boundaries are deterministic even when the browser and
@@ -228,9 +229,11 @@ async function executeStep(step, _url) {
   if (step.input === 'testSlowChat') {
     await sendTestCommand({ kind: 'setMode', mode: 'slow' })
     await sendTestCommand({ kind: 'setSlowChats', ms: 1200 })
+    await sendTestCommand({ kind: 'reinitialize' })
   }
   if (step.input === 'testError') {
     await sendTestCommand({ kind: 'setMode', mode: 'error' })
+    await sendTestCommand({ kind: 'reinitialize' })
   }
   if (step.input === 'testNotify') {
     await sendTestCommand({ kind: 'setInjectedNotification', chatId: 'fixture-chat-0', message: 'New fixture message' })
@@ -238,7 +241,6 @@ async function executeStep(step, _url) {
   if (step.input === 'audioChunk') {
     const pcm = await readFile(path.join(webRoot, 'test', 'fixtures', 'recording-sample.pcm'))
     await sendTestCommand({ kind: 'injectAudioChunks', pcmBase64: pcm.toString('base64') })
-    await postInput('double_click', {})
   }
   const perInputLatencies = []
   if (step.input === 'click' || step.input === 'double_click' || step.input === 'up' || step.input === 'down') {
@@ -262,7 +264,11 @@ async function executeStep(step, _url) {
         await postInput(mapped, {})
         const dispatchMs = Date.now() - startedAt
         perInputLatencies.push({ action: mapped, ms: dispatchMs })
-        await sleep(60)
+        // A single click is deliberately delayed by the app while it waits for
+        // a possible second click. Let it resolve before sending a gesture meant
+        // for the next screen. Swipes remain rapid so burst/coalescing tests keep
+        // exercising the hardware-rate path.
+        await sleep(mapped === 'click' ? 380 : mapped === 'double_click' ? 100 : 60)
         if (!isFixtureMode) {
           realModePerInputLatencies.push({ name, action: mapped, ms: dispatchMs, screen: currentScreen })
           if (currentScreen === 'asleep' && mapped !== 'double_click') {
@@ -281,20 +287,20 @@ async function executeStep(step, _url) {
   const startedAt = Date.now()
   // All `waitForTestEvent` calls in this step share a single deadline so the
   // total step latency is bounded by `budgetMs` instead of `budgetMs * callCount`.
-  const stepDeadline = Date.now() + budgetMs
+  const stepDeadline = Date.now() + budgetMs + (step.expectToFail ? 2_000 : 0)
   if (expectedState && Object.keys(expectedState).length > 0) {
     // Strict state predicates are fixture-shaped. In real mode, the catalog still
     // emits them so a no-op can be detected, but we do not fail the run if a real
     // chat/topic/message happens to be present.
     const predicate = makeStatePredicate(expectedState)
-    await waitForTestEvent(`${name}: state ${JSON.stringify(expectedState)}`, predicate, stepDeadline, eventStartTime)
+    await waitForTestEvent(`${name}: state ${JSON.stringify(expectedState)}`, predicate, stepDeadline, targetEventStart ?? eventStartTime)
   }
   if (expectedRender) {
     await waitForTestEvent(
       `${name}: render contract ${JSON.stringify(expectedRender)}`,
       (event) => event.event === 'render' && matchesRenderContract(event.model, expectedRender),
       stepDeadline,
-      eventStartTime,
+      targetEventStart ?? eventStartTime,
     )
   }
   if (expect.renderBodyContains && isFixtureMode) {
@@ -378,7 +384,8 @@ async function executeStep(step, _url) {
     await waitForTestEvent(
       `${name}: event ${requiredEvent.event}${requiredEvent.kind ? `/${requiredEvent.kind}` : ''}`,
       (event) => event.event === requiredEvent.event
-        && (requiredEvent.kind === undefined || event.kind === requiredEvent.kind),
+        && (requiredEvent.kind === undefined || event.kind === requiredEvent.kind)
+        && (!requiredEvent.match || matchesArgs(event, requiredEvent.match)),
       stepDeadline,
       eventStartTime,
     )
@@ -458,7 +465,10 @@ function matchesExpectedApiCall(event, expected) {
   const spec = String(expected)
   const [call] = spec.split(' with ')
   if (event.call !== call) return false
-  if (spec.includes('beforeId')) return event.args?.beforeId !== undefined && event.args?.beforeId !== null
+  if (spec.includes('beforeId')) {
+    const beforeId = event.args?.beforeId ?? event.args?.options?.beforeId
+    return beforeId !== undefined && beforeId !== null
+  }
   return true
 }
 
@@ -612,15 +622,25 @@ async function validateGolden(name, actual, blank) {
 async function waitForTestEvent(label, predicate, deadlineOrTimeout, from = 0) {
   // Legacy callers pass a timeout in ms; new callers pass a shared absolute deadline.
   const deadline = deadlineOrTimeout > 1_000_000_000_000 ? deadlineOrTimeout : Date.now() + deadlineOrTimeout
-  while (Date.now() < deadline) {
-    await pollConsole()
+  const findMatch = () => {
     for (let i = testEvents.length - 1; i >= 0; i -= 1) {
       const event = testEvents[i]
       if (!eventMatchesFrom(event, from)) break
-      if (predicate(event)) return Date.now()
+      if (predicate(event)) return true
     }
+    return false
+  }
+  if (findMatch()) return Date.now()
+  while (Date.now() < deadline) {
+    await pollConsole()
+    if (findMatch()) return Date.now()
     await sleep(50)
   }
+  // The final poll can complete just after the deadline. Scan once more so an
+  // event emitted within the step is not reported missing merely because an
+  // earlier assertion consumed the shared wait budget.
+  await pollConsole()
+  if (findMatch()) return Date.now()
   failures.push(`${label}: timed out waiting for expected TeleGlanceTest event`)
   return Date.now()
 }

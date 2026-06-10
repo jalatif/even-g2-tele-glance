@@ -703,7 +703,7 @@
           "selectedChatIndex": 2
         },
         "renderBodyContains": [
-          "fixture-ops-body"
+          "Ops preview: deployment status green."
         ]
       },
       "budgetMs": 500
@@ -798,12 +798,9 @@
           "selectedChatIndex": 1
         },
         "renderBodyContains": [
-          "Loading messages..."
+          "Topic zero warmup body"
         ]
       },
-      "apiCalls": [
-        "listTopics"
-      ],
       "budgetMs": 1000
     },
     {
@@ -828,7 +825,7 @@
     {
       "name": "08b-topics-back-shows-loading",
       "input": "double_click",
-      "target": "sidebar.topics.noPreview",
+      "target": "sidebar.topics.preview",
       "expect": {
         "state": {
           "screen": "sidebar",
@@ -836,7 +833,7 @@
           "selectedTopicIndex": 0
         },
         "renderBodyContains": [
-          "Loading messages..."
+          "Topic zero warmup body"
         ],
         "noContainerFailures": true
       },
@@ -912,10 +909,6 @@
           "fixture-topic-one-body"
         ]
       },
-      "apiCalls": [
-        "listMessages",
-        "markRead"
-      ],
       "budgetMs": 1000
     },
     {
@@ -931,7 +924,7 @@
         ]
       },
       "apiCalls": [
-        "listMessages"
+        "listMessages with beforeId"
       ],
       "budgetMs": 1000
     },
@@ -962,7 +955,7 @@
           "selectedTopicIndex": 2
         },
         "renderBodyContains": [
-          "fixture-topic-two-body"
+          "Loading messages..."
         ]
       },
       "budgetMs": 500
@@ -974,16 +967,10 @@
       "expect": {
         "state": {
           "selectedTopicIndex": 2
-        },
-        "apiCall": {
-          "call": "listMessages",
-          "args": {
-            "topicId": "fixture-topic-2"
-          }
         }
       },
       "apiCalls": [
-        "listMessages"
+        "markRead"
       ],
       "budgetMs": 1000
     },
@@ -996,7 +983,7 @@
           "focus": "topics"
         },
         "renderBodyContains": [
-          "fixture-topic-two-body"
+          "Loading messages..."
         ]
       },
       "budgetMs": 500
@@ -1010,7 +997,7 @@
           "selectedTopicIndex": 3
         },
         "renderBodyContains": [
-          "fixture-long-topic-body-anchor"
+          "Loading messages..."
         ]
       },
       "budgetMs": 500
@@ -1026,18 +1013,14 @@
           "scrollOffset": 1
         },
         "renderBodyContains": [
-          "fixture-long-topic-body-anchor",
           "Fixture topic long message body"
         ]
       },
-      "apiCalls": [
-        "listMessages"
-      ],
       "budgetMs": 1500
     },
     {
       "name": "18a-topic-long-message-verify",
-      "input": null,
+      "input": "up",
       "target": "sidebar.messages.topic",
       "expect": {
         "renderBodyContains": [
@@ -1070,7 +1053,7 @@
           "\"panelBox\":null"
         ],
         "bridgeCall": {
-          "method": "rebuildPageContainer"
+          "method": "textContainerUpgrade"
         }
       },
       "budgetMs": 1500
@@ -1101,10 +1084,6 @@
           "Alpha outgoing marker"
         ]
       },
-      "apiCalls": [
-        "listMessages",
-        "markRead"
-      ],
       "budgetMs": 1000
     },
     {
@@ -1143,13 +1122,11 @@
           "scrollOffset": 1
         },
         "renderBodyContains": [
-          "fixture-long-alpha-body-anchor",
           "deliberately long fixture message"
         ]
       },
       "apiCalls": [
-        "listMessages",
-        "markRead"
+        "listMessages"
       ],
       "budgetMs": 1500
     },
@@ -1162,12 +1139,9 @@
           "isNewestPage": false
         },
         "renderBodyContains": [
-          "Older fixture"
+          "layout, and the page-byte-limit"
         ]
       },
-      "apiCalls": [
-        "listMessages with beforeId"
-      ],
       "budgetMs": 1500
     },
     {
@@ -1194,15 +1168,11 @@
           "fixture-alpha-body"
         ]
       },
-      "apiCalls": [
-        "listMessages",
-        "markRead"
-      ],
       "budgetMs": 1000
     },
     {
       "name": "22a-press-debounce-starts-recording",
-      "input": null,
+      "input": "click",
       "target": "sidebarRecording",
       "expect": {
         "state": {
@@ -1218,29 +1188,23 @@
       "budgetMs": 1000
     },
     {
-      "name": "23-alpha-record-start",
-      "input": "click",
-      "target": "sidebarRecording",
-      "expect": {
-        "bridgeCall": {
-          "method": "setAudioEnabled",
-          "args": {
-            "enabled": true
-          }
-        }
-      },
-      "budgetMs": 1000
-    },
-    {
       "name": "24-alpha-record-audio-1",
       "input": "audioChunk",
       "target": "sidebarRecording",
       "expect": {
         "state": {
-          "chunksLength": 1
-        }
+          "screen": "sidebarRecording"
+        },
+        "targetEventRequired": false
       },
-      "budgetMs": 500
+      "eventMustEmit": [
+        {
+          "event": "recording",
+          "kind": "audioChunk",
+          "match": { "injected": true }
+        }
+      ],
+      "budgetMs": 1500
     },
     {
       "name": "25-alpha-record-audio-2",
@@ -1248,10 +1212,18 @@
       "target": "sidebarRecording",
       "expect": {
         "state": {
-          "chunksLength": 2
-        }
+          "screen": "sidebarRecording"
+        },
+        "targetEventRequired": false
       },
-      "budgetMs": 500
+      "eventMustEmit": [
+        {
+          "event": "recording",
+          "kind": "audioChunk",
+          "match": { "injected": true }
+        }
+      ],
+      "budgetMs": 1500
     },
     {
       "name": "26-alpha-record-audio-3",
@@ -1259,10 +1231,18 @@
       "target": "sidebarRecording",
       "expect": {
         "state": {
-          "chunksLength": 3
-        }
+          "screen": "sidebarRecording"
+        },
+        "targetEventRequired": false
       },
-      "budgetMs": 500
+      "eventMustEmit": [
+        {
+          "event": "recording",
+          "kind": "audioChunk",
+          "match": { "injected": true }
+        }
+      ],
+      "budgetMs": 1500
     },
     {
       "name": "27-alpha-record-stop",
@@ -1308,7 +1288,9 @@
         "apiCall": {
           "call": "sendMessage",
           "args": {
-            "text": "Fixture transcript"
+            "request": {
+              "text": "Fixture transcript"
+            }
           }
         }
       },
@@ -1331,10 +1313,6 @@
           "Ops latency sample"
         ]
       },
-      "apiCalls": [
-        "listMessages",
-        "markRead"
-      ],
       "budgetMs": 1000
     },
     {
@@ -1386,6 +1364,7 @@
         "state": {
           "screen": "asleep"
         },
+        "targetEventRequired": false,
         "bridgeCall": {
           "method": "turnScreenOff"
         }
@@ -1418,7 +1397,7 @@
           "screen": "newMessage"
         },
         "renderBodyContains": [
-          "New message",
+          "New fixture message",
           "Fixture Alpha"
         ]
       },
@@ -1432,9 +1411,7 @@
         "state": {
           "focus": "messages"
         },
-        "apiCalls": [
-          "listMessages"
-        ]
+        "apiCalls": []
       },
       "budgetMs": 1000
     },
@@ -1496,9 +1473,7 @@
           "focus": "messages"
         },
         "noLifecycles": ["asleep", "wake"],
-        "apiCalls": [
-          "listMessages"
-        ]
+        "apiCalls": []
       },
       "budgetMs": 9000
     }

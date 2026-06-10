@@ -297,7 +297,12 @@ export class TelegramAppController {
         this.state = { ...this.state, chunks: [...this.state.chunks, input.pcm] }
         if (isTeleGlanceFixtureMode()) {
           const total = this.state.chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
-          logRecordingEvent('audioChunk', { size: input.pcm.byteLength, totalBytes: total, chunks: this.state.chunks.length })
+          logRecordingEvent('audioChunk', {
+            size: input.pcm.byteLength,
+            totalBytes: total,
+            chunks: this.state.chunks.length,
+            ...(input.injected ? { injected: true } : {}),
+          })
         }
       }
       return
@@ -473,6 +478,7 @@ export class TelegramAppController {
       this.cancelChatDebounce()
       await this.setState({ screen: 'asleep', chats: state.chats, selectedChatIndex: state.selectedChatIndex })
       await this.bridge.turnScreenOff?.()
+      if (isTeleGlanceFixtureMode()) logLifecycleEvent('asleep', { input: input.type, selectedChatIndex: state.selectedChatIndex })
       return
     }
     if (input.type === 'swipeUp') {

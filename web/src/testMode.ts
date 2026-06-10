@@ -355,6 +355,7 @@ export function summarizeAppState(state: AppState): Record<string, unknown> {
         focus: state.focus,
         chatTitle: state.chat.title,
         topicTitle: state.topic?.title ?? null,
+        transcript: state.transcript,
         selectedIndex: state.selectedIndex,
       }
     case 'sidebarSent':
@@ -397,8 +398,9 @@ export function summarizeScreenModel(model: ScreenModel): Record<string, unknown
         kind: model.kind,
         title: model.title,
         bodyLength: model.body.length,
+        body: model.body,
         footer: model.footer,
-        box: model.box ? { heading: model.box.heading, contentLength: model.box.content.length } : null,
+        box: model.box ? { heading: model.box.heading, contentLength: model.box.content.length, content: model.box.content } : null,
       }
     case 'list':
       return {
@@ -426,9 +428,10 @@ export function summarizeScreenModel(model: ScreenModel): Record<string, unknown
         sidebarSelected: model.sidebarSelected,
         sidebarItems: model.sidebarItems,
         panelBodyLength: model.panelBody.length,
+        panelBody: model.panelBody,
         panelBodyExcerpt: model.panelBody.slice(0, 600),
         panelFooter: model.panelFooter,
-        panelBox: model.panelBox ? { heading: model.panelBox.heading, contentLength: model.panelBox.content.length, contentExcerpt: model.panelBox.content.slice(0, 400) } : null,
+        panelBox: model.panelBox ? { heading: model.panelBox.heading, contentLength: model.panelBox.content.length, content: model.panelBox.content, contentExcerpt: model.panelBox.content.slice(0, 400) } : null,
       }
       return { kind: 'unknown' }
   }
