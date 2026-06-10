@@ -111,13 +111,51 @@ describe('UI_INVARIANTS catalog', () => {
   })
 
   it('every test step has a budget and a target', () => {
+    const names = new Set<string>()
     for (const step of catalog.steps) {
       if (!step.name) throw new Error('A test step is missing a name')
+      if (names.has(step.name)) throw new Error(`Duplicate test step name: ${step.name}`)
+      names.add(step.name)
       if (!step.target) throw new Error(`${step.name}: test step missing target screen id`)
       if (typeof step.budgetMs !== 'number' || step.budgetMs <= 0) {
         throw new Error(`${step.name}: test step missing positive budgetMs`)
       }
     }
+  })
+
+  it('catalog expectations are all implemented by the simulator harness', () => {
+    const supported = new Set([
+      'apiCall', 'apiCallNotPresent', 'apiCalls', 'bridgeCall', 'bridgeCallNotPresent',
+      'kind', 'maxPerSwipeMs', 'noContainerFailures', 'noLifecycles', 'noRenderEvents',
+      'renderBodyContains', 'renderBodyContainsAny', 'renderBodyNotContains', 'state',
+    ])
+    for (const step of catalog.steps) {
+      for (const key of Object.keys(step.expect ?? {})) {
+        if (!supported.has(key)) throw new Error(`${step.name}: unsupported expectation key ${key}`)
+      }
+    }
+  })
+
+  it('harness enforces target contracts, every declared API call, and required events', () => {
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const source = readFileSync(path.join(repoRoot, 'scripts', 'simulator-flow.mjs'), 'utf8')
+    expect(source).toContain('catalog.screens[target]')
+    expect(source).toContain('for (const call of expectedApiCalls)')
+    expect(source).toContain('for (const requiredEvent of step.eventMustEmit ?? [])')
+    expect(source).toContain('matchesExpectedApiCall')
+  })
+
+  it('performance and fuzzy checks consume real samples and are replayable', () => {
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const flow = readFileSync(path.join(repoRoot, 'scripts', 'simulator-flow.mjs'), 'utf8')
+    const fuzzy = readFileSync(path.join(repoRoot, 'scripts', 'fuzzy-test.mjs'), 'utf8')
+    expect(flow).toContain('perInputLatencies.push')
+    expect(fuzzy).toContain('const seed =')
+    expect(fuzzy).toContain('--seed ${seed}')
+    expect(fuzzy).toContain("event.event === 'input.dispatch'")
+    expect(fuzzy).toContain("event.event === 'state.work'")
+    expect(fuzzy).toContain("event.event === 'bridge.queueDepth'")
+    expect(fuzzy).not.toContain('Number(entry.id ?? 0) + 1')
   })
 
   it('at least one step exercises each major state', () => {

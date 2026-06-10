@@ -213,6 +213,17 @@ async function executeStep(step, _url) {
   const target = step.target
   const expect = step.expect ?? {}
   const budgetMs = step.budgetMs ?? 1000
+  const targetContract = catalog.screens[target] ?? {}
+  const expectedState = isFixtureMode
+    ? { ...(targetContract.state ?? {}), ...(expect.state ?? {}) }
+    : null
+  const expectedRender = isFixtureMode ? targetContract.render ?? null : null
+
+  // Flush all events from the previous step before establishing this step's
+  // boundary. Index boundaries are deterministic even when the browser and
+  // harness clocks drift, which is common on phone hardware.
+  await pollConsole()
+  const eventStartIndex = testEvents.length
 
   if (step.input === 'testSlowChat') {
     await sendTestCommand({ kind: 'setMode', mode: 'slow' })
@@ -229,10 +240,12 @@ async function executeStep(step, _url) {
     await sendTestCommand({ kind: 'injectAudioChunks', pcmBase64: pcm.toString('base64') })
     await postInput('double_click', {})
   }
+  const perInputLatencies = []
   if (step.input === 'click' || step.input === 'double_click' || step.input === 'up' || step.input === 'down') {
     const dispatchStart = Date.now()
     await postInput(step.input, {})
     const dispatchMs = Date.now() - dispatchStart
+    perInputLatencies.push({ action: step.input, ms: dispatchMs })
     if (!isFixtureMode) {
       realModePerInputLatencies.push({ name, action: step.input, ms: dispatchMs, screen: currentScreen })
       if (currentScreen === 'asleep' && step.input !== 'double_click') {
@@ -240,7 +253,6 @@ async function executeStep(step, _url) {
       }
     }
   }
-  const perInputLatencies = []
   if (typeof step.input === 'string' && step.input.startsWith('pressSequence:')) {
     const tokens = step.input.slice('pressSequence:'.length).split(',')
     for (const token of tokens) {
@@ -248,8 +260,9 @@ async function executeStep(step, _url) {
       if (mapped) {
         const startedAt = Date.now()
         await postInput(mapped, {})
-        await sleep(60)
         const dispatchMs = Date.now() - startedAt
+        perInputLatencies.push({ action: mapped, ms: dispatchMs })
+        await sleep(60)
         if (!isFixtureMode) {
           realModePerInputLatencies.push({ name, action: mapped, ms: dispatchMs, screen: currentScreen })
           if (currentScreen === 'asleep' && mapped !== 'double_click') {
@@ -260,36 +273,36 @@ async function executeStep(step, _url) {
     }
   }
 
-  // Capture the timestamp boundary AFTER all inputs are posted so the event filter
-  // (`event.ts >= eventStartTime`) excludes pre-input events (e.g. the inactivity
-  // state transition that fires while the harness was running the previous step's
-  // background work). The 100ms back-buffer covers the simulator→Vite round-trip
-  // for the input's controller reaction events.
-  //
-  // Steps with NO input use a wide-open filter (0) so the controller's startup or
-  // injection events (e.g. testSlowChat, testNotify) are still findable.
-  const stepHasInput = typeof step.input === 'string' && (
-    step.input === 'click' || step.input === 'double_click' || step.input === 'up' || step.input === 'down'
-    || step.input.startsWith('pressSequence:')
-  )
-  const eventStartTime = stepHasInput ? Date.now() - 100 : 0
+  // Input and fixture-command steps use the deterministic event index captured
+  // before the action. Observation-only steps use the full event history because
+  // they intentionally validate async work started by the previous step.
+  const stepHasInput = step.input !== null && step.input !== undefined
+  const eventStartTime = stepHasInput ? eventStartIndex : 0
   const startedAt = Date.now()
   // All `waitForTestEvent` calls in this step share a single deadline so the
   // total step latency is bounded by `budgetMs` instead of `budgetMs * callCount`.
   const stepDeadline = Date.now() + budgetMs
-  if (expect.state && isFixtureMode) {
+  if (expectedState && Object.keys(expectedState).length > 0) {
     // Strict state predicates are fixture-shaped. In real mode, the catalog still
     // emits them so a no-op can be detected, but we do not fail the run if a real
     // chat/topic/message happens to be present.
-    const predicate = makeStatePredicate(expect.state)
-    await waitForTestEvent(name, predicate, stepDeadline, eventStartTime)
+    const predicate = makeStatePredicate(expectedState)
+    await waitForTestEvent(`${name}: state ${JSON.stringify(expectedState)}`, predicate, stepDeadline, eventStartTime)
+  }
+  if (expectedRender) {
+    await waitForTestEvent(
+      `${name}: render contract ${JSON.stringify(expectedRender)}`,
+      (event) => event.event === 'render' && matchesRenderContract(event.model, expectedRender),
+      stepDeadline,
+      eventStartTime,
+    )
   }
   if (expect.renderBodyContains && isFixtureMode) {
     // The catalog renderBodyContains strings reference fixture-only chat/topic titles
     // and message bodies. Skipping in real mode keeps the harness useful for parity
     // checks without false negatives from the user's real Telegram data.
     await waitForTestEvent(
-      name,
+      `${name}: render contains ${expect.renderBodyContains.join(', ')}`,
       (event) => event.event === 'render' && expect.renderBodyContains.every((needle) => `${JSON.stringify(event.model ?? {})}`.includes(needle)),
       stepDeadline,
       eventStartTime,
@@ -320,11 +333,13 @@ async function executeStep(step, _url) {
       if (!seen.has(needle)) failures.push(`${name}: expected render content "${needle}" not found in any render during the step window`)
     }
   }
-  if (isFixtureMode && expect.apiCalls) {
-    const callsNeeded = new Set(expect.apiCalls)
+  const expectedApiCalls = isFixtureMode
+    ? [...new Set([...(step.apiCalls ?? []), ...(expect.apiCalls ?? [])])]
+    : []
+  for (const call of expectedApiCalls) {
     await waitForTestEvent(
-      name,
-      (event) => event.event === 'api' && callsNeeded.has(event.call),
+      `${name}: api ${call}`,
+      (event) => event.event === 'api' && matchesExpectedApiCall(event, call),
       stepDeadline,
       eventStartTime,
     )
@@ -332,7 +347,7 @@ async function executeStep(step, _url) {
   if (isFixtureMode && expect.apiCall) {
     const { call, args } = expect.apiCall
     await waitForTestEvent(
-      name,
+      `${name}: api ${call}`,
       (event) => event.event === 'api' && event.call === call && (!args || matchesArgs(event.args, args)),
       stepDeadline,
       eventStartTime,
@@ -347,7 +362,7 @@ async function executeStep(step, _url) {
   if (isFixtureMode && expect.bridgeCall) {
     const expected = expect.bridgeCall
     await waitForTestEvent(
-      name,
+      `${name}: bridge ${expected.method}`,
       (event) => event.event === 'bridge' && event.method === expected.method && (expected.args === undefined || JSON.stringify(event.args) === JSON.stringify(expected.args)),
       stepDeadline,
       eventStartTime,
@@ -358,6 +373,15 @@ async function executeStep(step, _url) {
     await sleep(50)
     const seen = testEvents.some((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'bridge' && event.method === forbidden)
     if (seen) failures.push(`${name}: forbidden bridge call ${forbidden} was made`)
+  }
+  for (const requiredEvent of step.eventMustEmit ?? []) {
+    await waitForTestEvent(
+      `${name}: event ${requiredEvent.event}${requiredEvent.kind ? `/${requiredEvent.kind}` : ''}`,
+      (event) => event.event === requiredEvent.event
+        && (requiredEvent.kind === undefined || event.kind === requiredEvent.kind),
+      stepDeadline,
+      eventStartTime,
+    )
   }
   if (isFixtureMode && expect.noRenderEvents) {
     const renderCount = testEvents.filter((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'render' && !event.partial).length
@@ -391,7 +415,7 @@ async function executeStep(step, _url) {
   await sleep(150)
   await pollConsole()
   const captureStartedAt = Date.now()
-  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartTime })
+  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartTime, failuresBeforeStep })
   const totalMs = Date.now() - startedAt
   const captureMs = Date.now() - captureStartedAt
   latencies.push({ name, totalMs, captureMs, budgetMs, perInputLatencies })
@@ -426,6 +450,22 @@ function matchesArgs(actual, expected) {
   if (!expected) return true
   for (const [key, value] of Object.entries(expected)) {
     if (JSON.stringify(actual?.[key]) !== JSON.stringify(value)) return false
+  }
+  return true
+}
+
+function matchesExpectedApiCall(event, expected) {
+  const spec = String(expected)
+  const [call] = spec.split(' with ')
+  if (event.call !== call) return false
+  if (spec.includes('beforeId')) return event.args?.beforeId !== undefined && event.args?.beforeId !== null
+  return true
+}
+
+function matchesRenderContract(model, expected) {
+  if (!model) return false
+  for (const key of ['kind', 'title', 'focus', 'fullWidth']) {
+    if (expected[key] !== undefined && model[key] !== expected[key]) return false
   }
   return true
 }
@@ -491,6 +531,8 @@ async function captureStep(name, expectations, extras = {}) {
     latestRender,
     latestState,
     contentMatches,
+    failures: failures.slice(extras.failuresBeforeStep ?? failures.length),
+    events: testEvents.filter((event) => eventMatchesFrom(event, eventStartTime)),
     perInputLatencies: extras.perInputLatencies ?? [],
     glasses: {
       path: glassesPath,
@@ -532,6 +574,7 @@ function latestTestEvent(eventName, from = 0) {
   // 0 keeps the legacy "look at every event" behavior.
   const matches = (event) => {
     if (typeof from === 'number' && from > 1_000_000_000_000) return typeof event.ts === 'number' && event.ts >= from
+    if (typeof from === 'number' && from > 0) return Number(event._harnessIndex) >= from
     return true
   }
   for (let i = testEvents.length - 1; i >= 0; i -= 1) {
@@ -546,6 +589,7 @@ function eventMatchesFrom(event, from) {
   if (typeof from === 'number' && from > 1_000_000_000_000) {
     return typeof event.ts === 'number' && event.ts >= from
   }
+  if (typeof from === 'number' && from > 0) return Number(event._harnessIndex) >= from
   return true
 }
 
@@ -561,7 +605,7 @@ async function validateGolden(name, actual, blank) {
   const expected = await readPng(goldenPath)
   const diff = pixelDiff(expected, actual)
   if (diff.differentPixels > 120) {
-    warnings.push(`${name}: golden mismatch (${diff.differentPixels} pixels changed, within 120 budget)`)
+    failures.push(`${name}: golden mismatch (${diff.differentPixels} pixels changed; budget is 120)`)
   }
 }
 
@@ -594,6 +638,7 @@ async function pollConsole() {
     captureContainerFailure(entry)
     const event = parseTestEvent(entry.message)
     if (event) {
+      event._harnessIndex = testEvents.length
       testEvents.push(event)
       if (event.event === 'api') {
         fixtureApiCalls.push(event)

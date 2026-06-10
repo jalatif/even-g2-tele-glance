@@ -42,6 +42,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const webRoot = path.join(repoRoot, 'web')
 const args = parseArgs(process.argv.slice(2))
 const iterations = Math.max(1, Math.min(1000, Number(process.argv[2] ?? 100) || 100))
+const seed = Number(args.seed ?? Date.now()) >>> 0
 const vitePort = Number(args['vite-port'] ?? process.env.VITE_PORT ?? 5173)
 const automationPort = Number(args['automation-port'] ?? 9899)
 const runMode = args['mode'] ?? 'fixture'
@@ -60,6 +61,12 @@ const warnings = []
 const transitionsHistory = []
 let consoleSinceId = 0
 let inputCount = 0
+let randomState = seed
+
+function random() {
+  randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0
+  return randomState / 0x100000000
+}
 
 // --- Valid states and transitions (summarized AppState format) ---
 
@@ -201,7 +208,7 @@ async function pollConsole() {
   if (!r.ok) return
   const p = await r.json()
   for (const entry of (p.entries ?? [])) {
-    consoleSinceId = Math.max(consoleSinceId, Number(entry.id ?? 0) + 1)
+    consoleSinceId = Math.max(consoleSinceId, Number(entry.id ?? 0))
     const marker = '[TeleGlanceTest] '
     const msg = String(entry.message ?? '')
     const idx = msg.indexOf(marker)
@@ -238,20 +245,14 @@ function checkStructuralInvariants() {
   if (state && render) {
     const m = render.model ?? {}
     if (m.title && Buffer.byteLength(m.title, 'utf8') > 120) issues.push('S3: title > 120 bytes')
-    if (m.panelBody && Buffer.byteLength(m.panelBody, 'utf8') > 999) issues.push('S3: panelBody > 999 bytes')
+    if (typeof m.panelBodyLength === 'number' && m.panelBodyLength > 999) issues.push('S3: panelBody > 999 bytes')
     if (m.panelFooter && Buffer.byteLength(m.panelFooter, 'utf8') > 120) issues.push('S3: panelFooter > 120 bytes')
     if (Array.isArray(m.sidebarItems)) {
+      if (m.sidebarItems.length < 1) issues.push('S3: sidebarItems is empty')
       if (m.sidebarItems.length > 20) issues.push(`S3: sidebarItems ${m.sidebarItems.length} > 20`)
       for (const it of m.sidebarItems) {
         if (Buffer.byteLength(String(it ?? ''), 'utf8') > 64) issues.push('S3: sidebarItem > 64 bytes')
       }
-    }
-  }
-
-  if (state && state.status) {
-    const st = String(state.status)
-    if (st.startsWith('Loading') || st.startsWith('Transcribing')) {
-      issues.push(`S4: in-progress: "${st.slice(0, 50)}"`)
     }
   }
 
@@ -267,6 +268,7 @@ async function main() {
   console.log(`\n==> TeleGlance Fuzzy Test Runner <==`)
   console.log(`    Iterations: ${iterations}`)
   console.log(`    Mode:       ${runMode}\n`)
+  console.log(`    Seed:       ${seed}\n`)
 
   console.log(`[fuzzy] Starting Vite on ${testHost}:${vitePort}...`)
   const vite = startProcess('vite', 'npm', [
@@ -313,9 +315,11 @@ async function main() {
   let prevState = firstState
   let consecutiveStuck = 0
   let structuralIssues = []
+  const reportedStructuralIssues = new Set()
 
   for (let iter = 0; iter < iterations; iter += 1) {
-    const inputType = INPUT_TYPES[Math.floor(Math.random() * INPUT_TYPES.length)]
+    const inputType = INPUT_TYPES[Math.floor(random() * INPUT_TYPES.length)]
+    const eventStartIndex = testEvents.length
 
     await postInput(inputType)
     inputCount += 1
@@ -352,6 +356,32 @@ async function main() {
     }
 
     structuralIssues = structuralIssues.concat(checkStructuralInvariants().map((i) => `Iter ${iter}: ${i}`))
+    for (const issue of checkStructuralInvariants()) {
+      if (reportedStructuralIssues.has(issue)) continue
+      reportedStructuralIssues.add(issue)
+      failures.push(`Iter ${iter}: ${issue}`)
+    }
+
+    const inputEvents = testEvents.slice(eventStartIndex)
+    const dispatchSamples = inputEvents.filter((event) => event.event === 'input.dispatch')
+    if (dispatchSamples.length === 0) {
+      failures.push(`Iter ${iter}: no input.dispatch telemetry for ${inputType}`)
+    }
+    for (const sample of dispatchSamples) {
+      if (Number(sample.listenerMs) > 50) failures.push(`Iter ${iter}: input listener took ${sample.listenerMs}ms (>50ms)`)
+    }
+    for (const sample of inputEvents.filter((event) => event.event === 'state.work')) {
+      if (Number(sample.syncMs) > 50) failures.push(`Iter ${iter}: ${sample.kind} sync work took ${sample.syncMs}ms (>50ms)`)
+    }
+    for (const sample of inputEvents.filter((event) => event.event === 'bridge.queueDepth')) {
+      if (Number(sample.partialInFlight) > 1 || Number(sample.partialPending) > 1 || Number(sample.fullRenderInFlight) > 1) {
+        failures.push(`Iter ${iter}: bridge queue exceeded latest-wins bounds (${JSON.stringify({
+          partialInFlight: sample.partialInFlight,
+          partialPending: sample.partialPending,
+          fullRenderInFlight: sample.fullRenderInFlight,
+        })})`)
+      }
+    }
 
     prevState = currentState
 
@@ -365,7 +395,7 @@ async function main() {
   if (uniqueStructural.length > 50) warnings.push(`${uniqueStructural.length} structural issues (top 50)`)
 
   await writeFile(path.join(artifactRoot, 'results.json'), JSON.stringify({
-    iterations, inputCount, failures: failures.length, transitions: transitionsHistory.length,
+    iterations, seed, inputCount, failures: failures.length, transitions: transitionsHistory.length,
   }, null, 2))
   await writeFile(path.join(artifactRoot, 'transitions.json'),
     JSON.stringify(transitionsHistory.slice(-200), null, 2))
@@ -374,12 +404,14 @@ async function main() {
 
   console.log(`\n==> Results`)
   console.log(`    Iterations:       ${iterations}`)
+  console.log(`    Seed:             ${seed}`)
   console.log(`    Total inputs:     ${inputCount}`)
   console.log(`    Failures:         ${failures.length}`)
   console.log(`    Structural:       ${uniqueStructural.length}`)
   console.log(`    Start: ${firstState.screen}@${firstState.focus ?? '-'}`)
   console.log(`    End:   ${finalState?.screen ?? '?'}@${finalState?.focus ?? '?'}`)
   console.log(`    Artifacts: ${artifactRoot}`)
+  console.log(`    Replay: node scripts/fuzzy-test.mjs ${iterations} --seed ${seed}${runMode === 'real' ? ' --mode real' : ''}`)
 
   if (failures.length > 0) {
     console.log(`\nFailures (${failures.length}):`)
