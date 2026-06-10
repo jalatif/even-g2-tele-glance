@@ -94,9 +94,9 @@ The frontend intentionally uses `fetch` streaming instead of browser `EventSourc
 
 The browser/debug pane and glasses display are not interchangeable for layout validation. The G2 display is not a true monospace grid, so long-message borders on glasses must use native `TextContainerProperty` borders rather than text-drawn rectangles.
 
-Hardware input can emit duplicate same-direction swipes. Event mapping debounces those bursts so one physical gesture advances one message page.
+Hardware input can emit duplicate same-direction swipes. Event mapping uses a narrow 30ms duplicate window so immediate duplicates are filtered without dropping deliberate rapid navigation.
 
-Native list input can also arrive with only a selected item name. The controller resolves item-name events against the visible chat/topic labels before falling back to stored selection state, and background refreshes avoid repainting the focused native list unless there is visible new activity.
+Chat/topic navigation uses a text-rendered sidebar and one full-screen event overlay. The controller owns the selected index and updates the visible marker and right-side preview together. Native item-name/index payloads remain compatibility inputs rather than the primary selection mechanism.
 
 The controller prefetches the first visible chat/topic message pages after startup in display order. These fetches are cached, deduped, and paced so common opens can render from cache while the input path stays responsive.
 

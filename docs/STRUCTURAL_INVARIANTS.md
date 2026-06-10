@@ -76,7 +76,8 @@ textObject.length <= 8 (firmware max)
 listObject.length === 1
 Each TextContainerProperty has containerID in 0..9
 When kind === 'sidebar' && focus === 'sidebar':
-  - listObject[0].isEventCapture === 1
+  - exactly one text object has `isEventCapture === 1`
+  - listObject[0].isEventCapture === 0
   - listObject[0].containerID === 8
 When kind === 'sidebar' && focus === 'panel':
   - listObject[0].containerID === 8
@@ -96,10 +97,10 @@ Render events should not arrive more than 3s after the triggering state change
 ## S5. Input coalescer invariants
 
 ```
-A 'press' event must be followed by at most one matching press or doublePress within 220ms
-A 'doublePress' must not be followed by a 'press' within 140ms
-A 'swipeUp' must not be followed by another 'swipeUp' within 220ms
-A 'swipeDown' must not be followed by another 'swipeDown' within 220ms
+A duplicate `press` payload within 90ms may be suppressed
+A duplicate `doublePress` payload within 140ms may be suppressed
+A `press` within 30ms after `doublePress` may be suppressed
+Same-direction swipes less than 30ms apart may be suppressed; deliberate rapid swipes at or above 30ms must be preserved
 ```
 
 ## S6. Timed-state invariants

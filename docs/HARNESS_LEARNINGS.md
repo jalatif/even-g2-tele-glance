@@ -1,5 +1,11 @@
 # TeleGlance Simulator Harness — Learnings & Behavior Coverage
 
+> Historical snapshot from June 2, 2026. Superseded by
+> [`validate_prompt_fixes.md`](../validate_prompt_fixes.md) for the current input,
+> rendering, and harness architecture. In particular, blank glasses captures are
+> no longer replaced with desktop screenshots, and chat/topic navigation no longer
+> relies on a visible native list.
+
 This document captures everything the simulator harness (`npm run test:simulator --prefix web`) actually exercises, what passed, what failed, and what the failures tell us about the underlying app. Run on commit `2026-06-02T08-00-41-629Z` against `@evenrealities/evenhub-simulator@0.7.2` and `VITE_TELEGLANCE_FIXTURE=1`.
 
 ## 1. Test infrastructure

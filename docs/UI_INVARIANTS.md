@@ -10,13 +10,13 @@ The glasses display is `576 x 288` pixels. The Even Hub SDK imposes these hard l
 | -------------- | ----------------------------------------------- | ---------- | ------------------ | ---------------------------------------------- |
 | `title`        | `TextContainerProperty`                         | 120        | 1-2                | full width                                     |
 | `outer`        | `TextContainerProperty`                         | 0          | n/a                | 2 px border, color 8                           |
-| `sidebar`      | `ListContainerProperty` (focus=sidebar) or `TextContainerProperty` (focus=panel) | 999  | 206 px tall        | left x=2, y=38, width=168                      |
+| `sidebar`      | `TextContainerProperty`                         | 999        | 7 visible rows      | left x=2, y=38, width=166                      |
 | `separator`    | `TextContainerProperty`                         | 0          | n/a                | x=168, width=2, height=206                     |
 | `panelBody`    | `TextContainerProperty`                         | 999        | up to 12 compact rows | right x=170, y=38, width=404                |
 | `panelBox`     | `TextContainerProperty`                         | 999        | up to 8 rows       | x=184, y=54, width=376, 1 px border            |
 | `panelFooter`  | `TextContainerProperty`                         | 120        | 1-2                | x=2, y=248, width=572                          |
 | `eventOverlay` | `TextContainerProperty`                         | 0          | n/a                | full size, capture 1 when focus=panel          |
-| native list    | `ListContainerProperty`                         | n/a        | 1-20 items         | x=2, y=38, width=166, height=206, `isItemSelectBorderEn=1` |
+| hidden list    | `ListContainerProperty`                         | n/a        | 1 empty item       | hidden 1x1 compatibility container, capture disabled |
 
 Harness invariants on every render:
 - `model.title` UTF-8 bytes <= 120
@@ -47,12 +47,14 @@ Container IDs are shared across `TextContainerProperty`, `ListContainerProperty`
 - When `focus === 'panel'`, `listObject[0]` is hidden (1x1, no capture) and `textObject` contains ID 5 with sidebar content
 - `containerTotalNum` equals `textObject.length + listObject.length + imageObject.length`
 
-**Native list invariants** (when `focus === 'sidebar'`):
+**Sidebar input invariants** (when `focus === 'sidebar'`):
 - `listObject[0].containerID === 8`
-- `listObject[0].isEventCapture === 1`
-- `listObject[0].itemContainer.itemCount` equals `model.sidebarItems.length`
-- `listObject[0].itemContainer.itemName` matches `model.sidebarItems`
-- `listObject[0].itemContainer.isItemSelectBorderEn === 1`
+- `eventOverlay.isEventCapture === 1`
+- `listObject[0].isEventCapture === 0`
+- `listObject[0].itemContainer.itemCount === 1`
+- `listObject[0].itemContainer.itemName` is empty
+- `listObject[0].itemContainer.isItemSelectBorderEn === 0`
+- the visible `> ` marker in the sidebar text matches the controller-selected index
 - `listObject[0].itemContainer.itemWidth === 0` (auto-fill)
 - No `TextContainerProperty` has `containerID === 8`
 
@@ -91,11 +93,11 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 
 - Opening a chat or topic MUST render a loading state (right panel only) within `maxLoadingStateMs` before any network I/O blocks the controller
 - Chat/topic list swipes MUST update `selectedIndex` within `maxSwipeSelectionMs` without triggering a render event
-- Topic preview fetching MUST NOT block list scroll input; the left native list remains responsive during right-panel loading
+- Topic preview fetching MUST NOT block sidebar scroll input; controller selection moves before preview loading completes
 - Startup prefetching MUST NOT delay the first visible chat list render past `maxInitialRenderMs`
-- Background refreshes (polling, SSE updates) MUST NOT cause the native list selection to snap back to row 0
+- Background refreshes MUST NOT overwrite the controller-owned sidebar marker
 - Async results from stale requests (previous chat open that was abandoned by backing out) MUST be discarded silently
-- Chat/topic list scroll MUST dispatch a sidebar panel partial render through `bridge.enqueueSidebarPanel` (NOT a full `bridge.render` or awaited `bridge.renderSidebarPanel`). The native list (container 8) MUST stay untouched so the firmware highlight cannot snap back to row 0. Rapid swipes MUST coalesce: only the most recent panel model ever reaches the glasses
+- Chat/topic scroll MUST dispatch a partial render through `bridge.enqueueSidebarPanel` rather than a full rebuild. The partial update includes the text sidebar marker and right panel. Rapid swipes MUST coalesce so only the latest model reaches the glasses
 - The bridge exposes `render.partial.enqueue` and `render.partial.flush` events for the harness to verify coalescing. `getPartialRenderStats().dropped > 0` is expected during a swipe streak
 
 ### 4.1 `loading`
@@ -140,7 +142,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
   - `sidebarTitle`: `'Chats'`
   - `sidebarItems.exact`: `['Fixture Alpha', 'Fixture Forum (3)', 'Fixture Ops', 'Fixture Research', 'Fixture Archive']`
   - `sidebarItems.markerAt`: equals `state.selectedChatIndex`
-  - The native list `ListContainerProperty` must include `isItemSelectBorderEn: 1`
+  - The hidden list must have `isEventCapture: 0`; the text overlay is the only active listener
   - `panelTitle`: `state.chats[selectedChatIndex].title` truncated to 20 chars
   - `panelBody.contains`: `state.chats[selectedChatIndex].lastMessage` (fallback) OR the cached messages of `state.chats[selectedChatIndex]` (e.g. `fixture-ops-body` for `fixture-chat-2`). The startup prefetch MUST populate the right panel for the first five chats so the initial render never shows the `lastMessage` fallback alone.
   - `panelBody.notContains`: stale messages from any non-selected chat, AND the `lastMessage` of any other chat while the selected chat has cached messages. This is the regression that hid D2 — the right panel was stuck on the first chat's messages while the user scrolled.

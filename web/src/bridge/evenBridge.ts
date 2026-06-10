@@ -85,6 +85,9 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     const listenerToken = Symbol('even-hub-listener')
     activeEventListenerToken = listenerToken
     const unsubscribeEvents = sdk.onEvenHubEvent((event) => {
+      // Some SDK hosts do not actually remove the first listener during React
+      // StrictMode cleanup. Only the newest bridge instance may dispatch input.
+      if (activeEventListenerToken !== listenerToken) return
       // `input.dispatch` event so the harness can attribute input latency to the
       // JS bridge callback rather than to the harness's automation roundtrip.
       const listenerStart = nowMs()
@@ -377,7 +380,6 @@ function buildPage(model: ScreenModel, Container: PageContainerClass) {
 
 function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Container: PageContainerClass) {
   const hasPanelBox = Boolean(model.panelBox)
-  const sidebarHasFocus = model.focus === 'sidebar'
 
   const outerBorder = new TextContainerProperty({
     containerID: 0,
@@ -416,7 +418,7 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     borderWidth: 0,
     borderColor: 8,
     paddingLength: 0,
-    isEventCapture: sidebarHasFocus ? 0 : 1,
+    isEventCapture: 1,
   })
   const sidebarSeparator = new TextContainerProperty({
     containerID: 3,
@@ -483,18 +485,24 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     paddingLength: 4,
     isEventCapture: 0,
   })
-  // Always include the native list at the chat-list position. Hiding the list on
-  // focus='panel' (messages) would force a full rebuild for the focus change,
-  // which resets the firmware-side list selection on real G2 hardware. Keeping
-  // the list at the same position lets the partial-render path in `setState`
-  // update the right-panel text containers without ever touching the list, so
-  // the user-visible highlight stays on the row they selected.
-  // the user-visible highlight stays on the row they selected.
-  const list = sidebarListContainer(model)
-  // The text-rendered sidebar (containerID 5) is deliberately excluded — the
-  // native list is always visible now, and on the simulator the two would
-  // overlap causing ghost text.
-  const textObjects = [outerBorder, title, overlay, sidebarSeparator, panelBody, panelBox, footer]
+  const sidebar = new TextContainerProperty({
+    containerID: 5,
+    containerName: 'sidebar',
+    content: trimForContainer(formatSidebarAsText(model), 999),
+    xPosition: 2,
+    yPosition: 38,
+    width: 166,
+    height: 206,
+    borderWidth: 0,
+    borderColor: 8,
+    paddingLength: 4,
+    isEventCapture: 0,
+  })
+  // The SDK native list moves its highlight without reporting each movement to
+  // the app, so it cannot keep the right-side preview in sync. Use one event
+  // overlay plus an app-rendered sidebar marker instead.
+  const list = hiddenListContainer()
+  const textObjects = [outerBorder, title, overlay, sidebarSeparator, sidebar, panelBody, panelBox, footer]
   return new Container({
     containerTotalNum: textObjects.length + 1,
     textObject: textObjects,
@@ -504,11 +512,9 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
 
 /**
  * Build the right-panel `TextContainerUpgrade` payloads that the partial-render path
- * Build the right-panel `TextContainerUpgrade` payloads that the partial-render path
  * sends to the glasses. We mirror the trim rules used by `buildSidebarPage` so the
- * partial update looks identical to a full rebuild, but we never touch the native
- * list (container ID 8) or the left-side text containers (IDs 0/2/3/5) — the SDK
- * is instructed to keep them stable so the list selection does not snap.
+ * partial update looks identical to a full rebuild. The hidden native list stays
+ * untouched while the app-rendered sidebar marker and right panel are updated.
  */
 function buildSidebarPanelUpdates(model: Extract<ScreenModel, { kind: 'sidebar' }>): TextContainerUpgrade[] {
   const updates: TextContainerUpgrade[] = []
@@ -518,6 +524,13 @@ function buildSidebarPanelUpdates(model: Extract<ScreenModel, { kind: 'sidebar' 
     content: trimForContainer(model.title, 100),
     contentOffset: 0,
     contentLength: trimForContainer(model.title, 100).length,
+  }))
+  updates.push(new TextContainerUpgrade({
+    containerID: 5,
+    containerName: 'sidebar',
+    content: trimForContainer(formatSidebarAsText(model), 999),
+    contentOffset: 0,
+    contentLength: trimForContainer(formatSidebarAsText(model), 999).length,
   }))
   updates.push(new TextContainerUpgrade({
     containerID: 6,
@@ -716,28 +729,6 @@ function hiddenListContainer() {
   })
 }
 
-function sidebarListContainer(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
-  const items = (model.sidebarItems.length ? model.sidebarItems : ['']).slice(0, 20).map((item) => trimForContainer(item, 64))
-  return new ListContainerProperty({
-    containerID: 8,
-    containerName: 'sidebar-list',
-    xPosition: 2,
-    yPosition: 38,
-    width: 166,
-    height: 206,
-    borderWidth: 0,
-    borderColor: 8,
-    paddingLength: 4,
-    itemContainer: new ListItemContainerProperty({
-      itemCount: items.length,
-      itemWidth: 0,
-      itemName: items,
-      isItemSelectBorderEn: 1,
-    }),
-    isEventCapture: 1,
-  })
-}
-
 function hiddenFooterContainer() {
   return new TextContainerProperty({
     containerID: 4,
@@ -785,6 +776,18 @@ function formatListAsText(model: Extract<ScreenModel, { kind: 'list' }>) {
     }),
   ]
   return lines.join('\n')
+}
+
+function formatSidebarAsText(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
+  const items = model.sidebarItems.length > 0 ? model.sidebarItems : ['']
+  const visible = visibleListWindow(items, model.sidebarSelected, 7)
+  return [
+    model.sidebarTitle,
+    ...visible.map((item, index) => {
+      const itemIndex = visible.start + index
+      return `${itemIndex === model.sidebarSelected ? '> ' : '  '}${trimForContainer(item, 22)}`
+    }),
+  ].join('\n')
 }
 
 function visibleListWindow(items: string[], selectedIndex: number, maxVisible: number) {

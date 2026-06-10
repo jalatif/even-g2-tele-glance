@@ -370,12 +370,12 @@ describe('screenModel', () => {
       // not the full message thread (the user kept confusing
       // the two on real G2 hardware).
       expect(model.panelTitle).toBe('> Stock-Analyst')
-      expect(model.panelBody).toBe('Loading...')
+      expect(model.panelBody).toBe('Loading messages...')
       expect(model.panelBody).not.toContain('General')
       // The footer is the primary signal that this is a preview
       // and not the full thread; see the comment on
       // `sidebar.topics` in `model.ts`.
-      expect(model.panelFooter).toBe('Loading...')
+      expect(model.panelFooter).toBe('Loading messages...')
     }
   })
 

@@ -197,13 +197,23 @@ Automated fixture validation is available:
 npm run test:simulator --prefix web
 ```
 
-This starts a fixture-mode Vite app, launches `@evenrealities/evenhub-simulator@0.7.2` with its automation API, drives chat/topic up/down/click/double-click flows, validates deterministic message content, compares glasses screenshots against `web/test/simulator-goldens`, and writes video/report artifacts under `artifacts/simulator-flow/<timestamp>/`.
+This starts a fixture-mode Vite app, launches `@evenrealities/evenhub-simulator@0.7.2` with its automation API, drives chat/topic up/down/click/double-click flows, validates deterministic state and message content, and writes report artifacts under `artifacts/simulator-flow/<timestamp>/`. Blank glasses framebuffer captures are reported directly and are never replaced with desktop screenshots.
 
-After intentional visual changes, inspect the generated `report.md`, step screenshots, and `flow.mp4`, then update goldens with:
+After intentional visual changes, inspect the generated `report.md` and valid glasses screenshots, then update goldens with:
 
 ```sh
 npm run test:simulator --prefix web -- --update-goldens
 ```
+
+For a state/content-focused run that does not fail only because the simulator
+glasses screenshot endpoint returned a blank framebuffer:
+
+```sh
+node scripts/simulator-flow.mjs --fast --skip-latency-check
+```
+
+See [`validate_prompt_fixes.md`](validate_prompt_fixes.md) for the June 10, 2026
+simulator investigation, implemented fixes, and remaining harness work.
 
 ## Package For G2
 

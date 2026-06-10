@@ -193,12 +193,12 @@ export function screenModel(state: AppState): ScreenModel {
             panelBody: previewLoaded
               ? (msg?.box ? '' : trimUtf8Bytes(msg?.body ?? '', TEXT_CONTAINER_BYTE_LIMIT))
               : selectedTopic
-                ? 'Loading...'
+                ? 'Loading messages...'
                 : formatTopicPreviews(state.topics),
             // The footer is the primary signal. "TAP TO OPEN" is
             // unambiguous and the previous "Swipe topics" wording
             // was being misread as "the right side scrolls".
-            panelFooter: previewLoaded ? 'TAP TO OPEN TOPIC' : 'Loading...',
+            panelFooter: previewLoaded ? 'TAP TO OPEN TOPIC' : 'Loading messages...',
             panelBox: msg?.box,
             focus: 'sidebar',
           }

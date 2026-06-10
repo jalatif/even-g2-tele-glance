@@ -1144,78 +1144,16 @@ describe('TelegramAppController', () => {
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
   })
 
-  it('drops an idle system doublePress from the chat list when the firmware has been spamming events', async () => {
-    // The G2 firmware and @evenrealities/evenhub-simulator@0.7.2 fire
-    // a tight cluster of press / swipe / doublePress / press events
-    // with `eventSource: 1` every 50-200ms when nothing is happening.
-    // A genuine user-driven `doublePress` is preceded by ≥2s of
-    // silence, so the cluster-window filter is what distinguishes
-    // idle firmware noise from a deliberate user action. See
-    // AGENTS.md "Idle doublePress events on the G2 / simulator can
-    // mimic user input."
+  it('honors a source-tagged double press immediately after a press', async () => {
     const api = fakeApi({ authorized: true })
     const bridge = fakeBridge()
     const controller = new TelegramAppController(api, bridge)
 
     await controller.init()
     expect(controller.snapshot.screen).toBe('sidebar')
-    // The harness's pressSequence:click path triggers a selectIndex
-    // -> synthetic press with no eventSource. That doesn't move the
-    // lastSystemEventAt clock. Then the simulator fires a system
-    // press (source=1) followed by a system doublePress (source=1)
-    // ~50-200ms later. The press is what opens the cluster window;
-    // the doublePress inside it is dropped regardless of which
-    // sidebar focus the controller is currently in.
-    const ctrl = controller as unknown as { lastSystemEventAt: number }
-    await controller.dispatch({ type: 'press', eventSource: 1 })
-    ctrl.lastSystemEventAt = Date.now()
-    const screenBefore = controller.snapshot.screen
-    await controller.dispatch({ type: 'doublePress', eventSource: 1 })
-    expect(controller.snapshot.screen).toBe(screenBefore)
-    expect(vi.mocked(bridge.turnScreenOff ?? (() => undefined))).not.toHaveBeenCalled()
-  })
-
-  it('honors a user doublePress after the cluster window has elapsed', async () => {
-    // Companion: a system-source doublePress that arrives in silence
-    // (≥2s after the previous system event) is treated as a real
-    // user action and is allowed to transition the screen.
-    const api = fakeApi({ authorized: true })
-    const bridge = fakeBridge()
-    const controller = new TelegramAppController(api, bridge)
-
-    await controller.init()
-    const ctrl = controller as unknown as { lastSystemEventAt: number }
-    // Mark a system event 6s ago — outside the 5s cluster window so
-    // the controller treats this `doublePress` as a real user action.
-    ctrl.lastSystemEventAt = Date.now() - 6000
-
-    await controller.dispatch({ type: 'doublePress', eventSource: 1 })
-    expect(controller.snapshot.screen).toBe('asleep')
-  })
-
-  it('keeps the screen asleep across a cluster of system events', async () => {
-    // Even after a real user double-press puts the screen into
-    // `asleep`, a subsequent cluster of system events must not
-    // wake the device, or the controller would oscillate between
-    // asleep and awake forever. Without this filter the screen
-    // would turn on and off every 4-9s.
-    const api = fakeApi({ authorized: true })
-    const bridge = fakeBridge()
-    const controller = new TelegramAppController(api, bridge)
-
-    await controller.init()
-    // Real user double-press: cluster window is empty, so it lands
-    // in `asleep`.
-    await controller.dispatch({ type: 'doublePress' })
-    expect(controller.snapshot.screen).toBe('asleep')
-
-    // Now the simulator fires a cluster of idle system events. None
-    // of them should wake the device.
     await controller.dispatch({ type: 'press', eventSource: 1 })
     await controller.dispatch({ type: 'doublePress', eventSource: 1 })
-    await controller.dispatch({ type: 'press', eventSource: 1 })
-    await controller.dispatch({ type: 'swipeUp', eventSource: 1 })
-    expect(controller.snapshot.screen).toBe('asleep')
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
   })
 
   it('still honors a real user doublePress (no eventSource) regardless of recent system activity', async () => {
@@ -1231,10 +1169,6 @@ describe('TelegramAppController', () => {
     await controller.dispatch({ type: 'doublePress' })
     expect(controller.snapshot.screen).toBe('asleep')
 
-    const ctrl = controller as unknown as { lastSystemEventAt: number }
-    ctrl.lastSystemEventAt = Date.now()
-    // A user doublePress with no eventSource is always honored,
-    // even if the cluster window is open.
     await controller.dispatch({ type: 'doublePress' })
     expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'chats' })
   })

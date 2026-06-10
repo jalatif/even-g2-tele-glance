@@ -196,6 +196,7 @@ async function runFlow() {
 }
 
 async function executeStep(step, _url) {
+  const failuresBeforeStep = failures.length
   currentStepName = step.name
   // If the simulator subprocess died earlier, every subsequent fetch / poll
   // would time out and produce a misleading "timed out waiting for
@@ -359,8 +360,8 @@ async function executeStep(step, _url) {
     if (seen) failures.push(`${name}: forbidden bridge call ${forbidden} was made`)
   }
   if (isFixtureMode && expect.noRenderEvents) {
-    const renderCount = testEvents.filter((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'render').length
-    if (renderCount > 0) failures.push(`${name}: expected zero render events during chat list scroll, saw ${renderCount}`)
+    const renderCount = testEvents.filter((event) => eventMatchesFrom(event, eventStartTime) && event.event === 'render' && !event.partial).length
+    if (renderCount > 0) failures.push(`${name}: expected zero full render events during chat list scroll, saw ${renderCount}`)
   }
   if (isFixtureMode && expect.noLifecycles) {
     // The G2 simulator (and to a lesser extent the real G2 hardware) can fire
@@ -403,10 +404,11 @@ async function executeStep(step, _url) {
   } else if (!skipLatencyCheck && totalMs > budgetMs) {
     failures.push(`${name}: total ${totalMs}ms exceeds budget ${budgetMs}ms (latency budget violated)`)
   }
-  if (glasses.blank) {
+  if (glasses.blank && !fastMode) {
     failures.push(`${name}: glasses screenshot is blank (only ${glasses.uniqueColors} unique colors, all near selection-border green)`)
   }
-  console.log(`[flow] ok ${name}: ${totalMs}ms`)
+  const stepFailed = failures.length > failuresBeforeStep
+  console.log(`[flow] ${stepFailed ? 'fail' : 'ok'} ${name}: ${totalMs}ms`)
   currentStepName = null
 }
 
@@ -459,33 +461,8 @@ async function captureStep(name, expectations, extras = {}) {
   const analysis = analyzePng(glassesPng)
   let blank = isBlankScreenshot(analysis)
   await validateGolden(name, glassesPng, blank)
-  if (blank) {
-    // The simulator's glasses API often produces blank captures when the window
-    // isn't in the foreground. Fall back to a full-screen macOS screencapture
-    // which includes the simulator window if it's visible on the desktop.
-    const fullScreenPath = path.join(stepDir, `${name}.fullscreen.png`)
-    const { execFileSync } = await import('node:child_process')
-    try {
-      execFileSync('screencapture', ['-x', '-t', 'png', fullScreenPath], { timeout: 3000 })
-      const fullPng = await readPng(fullScreenPath)
-      const fullAnalysis = analyzePng(fullPng)
-      if (!isBlankScreenshot(fullAnalysis)) {
-        // The full-screen capture has visible content. Use it instead.
-        console.log(`  [fallback] ${name}: full-screen capture has ${fullAnalysis.uniqueColors} colors (glasses had ${analysis.uniqueColors})`)
-        // Copy the full-screen analysis into the glasses analysis so blank detection
-        // and the step JSON report use the fallback data.
-        Object.assign(analysis, fullAnalysis)
-        await writeFile(glassesPath, await readFile(fullScreenPath))
-        blank = false
-        // Do not call validateGolden for full-screen captures — the dimensions differ
-        // from the 576×288 simulator goldens and the comparison is meaningless.
-      } else {
-        console.log(`  [fallback] ${name}: full-screen capture also blank (${fullAnalysis.uniqueColors} colors)`)
-      }
-    } catch (e) {
-      console.log(`  [fallback] ${name}: full-screen capture failed: ${e.message ?? e}`)
-    }
-  }
+  // Do not substitute a desktop screenshot for the glasses surface. It can show
+  // unrelated windows and turn a failed glasses capture into a false pass.
   const latestRender = latestTestEvent('render', eventStartTime)
   const latestState = latestTestEvent('state', eventStartTime)
   const contentMatches = isFixtureMode ? checkContentMatches(expectations, latestRender, latestState) : true
@@ -610,7 +587,9 @@ async function pollConsole() {
   const payload = await response.json()
   const entries = payload.entries ?? []
   for (const entry of entries) {
-    consoleSinceId = Math.max(consoleSinceId, Number(entry.id ?? 0) + 1)
+    // The simulator endpoint returns entries with id > since_id. Advancing to
+    // id + 1 skips the immediately following console entry on the next poll.
+    consoleSinceId = Math.max(consoleSinceId, Number(entry.id ?? 0))
     if (isConsoleError(entry)) failures.push(`console ${entry.level}: ${entry.message}`)
     captureContainerFailure(entry)
     const event = parseTestEvent(entry.message)

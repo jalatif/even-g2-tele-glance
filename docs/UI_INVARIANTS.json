@@ -47,9 +47,9 @@
     "rules": [
       "Chat/topic list scroll MUST update selectedIndex within maxSwipeSelectionMs without triggering a full bridge.render.",
       "Chat/topic list scroll MUST dispatch a sidebar panel partial render through bridge.enqueueSidebarPanel, NOT a full bridge.render or awaited bridge.renderSidebarPanel.",
-      "The native list (container 8) MUST stay untouched during list scroll so the firmware highlight cannot snap back to row 0.",
+      "The hidden native list (container 8) MUST remain non-capturing; partial renders update the app-rendered sidebar marker and panel without relying on firmware-owned selection.",
       "Rapid list swipes MUST coalesce: only the most recent panel model ever reaches the glasses. getPartialRenderStats().dropped > 0 is expected during a swipe streak.",
-      "Background refreshes (polling, SSE updates) MUST NOT cause the native list selection to snap back to row 0.",
+      "Background refreshes (polling, SSE updates) MUST NOT overwrite controller-owned sidebar selection or force an unnecessary full rebuild.",
       "Async results from stale requests (previous chat open that was abandoned) MUST be discarded silently."
     ],
     "events": [
@@ -812,7 +812,7 @@
     },
     {
       "name": "08-chats-open-forum-topics",
-      "input": "pressSequence:down,click",
+      "input": "click",
       "target": "sidebar.topics.noPreview",
       "expect": {
         "state": {

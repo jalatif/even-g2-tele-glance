@@ -90,13 +90,13 @@ These notes capture hardware-specific implementation details and quirks observed
   - Near-duplicate tap payloads are ignored.
   - Native `DOUBLE_CLICK_EVENT` maps to double press/back.
 - Avoid synchronously rebuilding the page or starting audio on the first tap when that same screen also supports double-click. On G2 hardware, changing page state immediately after the first tap can prevent the native double-click event from being generated. Delay only the conflicting single-tap action briefly; keep list/chat selection immediate.
-- Caduceus-style debounce constants that worked well:
+- Current debounce constants:
   - duplicate tap debounce around `90ms`
   - duplicate double-tap debounce around `140ms`
-  - tap cooldown around `220ms`
+  - post-double-tap cooldown around `30ms`
 - Scroll events may also duplicate on hardware. Caduceus suppresses repeated same-direction scrolls for a short window and suppresses spurious scrolls shortly after text updates.
-- Same-direction swipe bursts should be debounced before reaching the controller. Without this, a single physical Up gesture can emit multiple `swipeUp` inputs and skip through all pages of a long boxed message.
-- Background state refreshes can reset native list selection even when they are not caused by direct user input. No-activity chat polling, topic previews, and read-badge bookkeeping should update controller/cache state without repainting the focused native list.
+- Same-direction swipe duplicates inside 30ms are suppressed. Longer rapid swipe sequences must remain intact for fast navigation.
+- Background state refreshes must not overwrite the controller-owned text sidebar selection.
 - Startup prefetch should warm the first visible chats/topics in display order, but it must be deduped and paced with small yields so the phone WebView input thread remains responsive while Telegram responses decrypt and parse.
 
 ## Audio

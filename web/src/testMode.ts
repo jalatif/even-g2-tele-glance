@@ -322,6 +322,7 @@ export function summarizeAppState(state: AppState): Record<string, unknown> {
         screen: state.screen,
         focus: state.focus,
         selectedChatIndex: state.selectedChatIndex,
+        selectedTopicIndex: state.selectedTopicIndex ?? null,
         chatTitle: state.chat.title,
         topicTitle: state.topic?.title ?? null,
         messageCount: state.messages.length,

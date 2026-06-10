@@ -1,5 +1,10 @@
 # Even Hub SDK bug: native list selection is non-deterministic across full page rebuilds
 
+> Superseded for TeleGlance navigation as of June 10, 2026. TeleGlance no longer
+> uses a visible native list for chat/topic selection. It renders the sidebar and
+> marker in a text container under controller ownership and uses one full-screen
+> text event overlay. The SDK analysis below remains historical context.
+
 **Affected SDK**: `@evenrealities/even_hub_sdk` (verified against
 the version pinned in `web/package.json`, currently `0.7.2` of
 `evenhub-simulator` running the same proto schema as the G2
@@ -300,20 +305,10 @@ so taps/swipes still flow through, but the visible highlight is
 under JavaScript control and cannot desync from the controller
 state.
 
-**Status**: this approach was attempted in this session and
-**broke scroll on the simulator**. The empty `itemName` in the
-list caused the firmware to stop routing swipes to the list;
-the swipes then went to the body container. So the workaround
-itself has firmware-side cost: the firmware needs items in the
-list to recognize it as a list and to route scroll events to it.
-
-This workaround is **not viable as-is**. It would need a
-different angle: a non-empty list (so the firmware still routes
-swipes) with a `textContainerProperty` overlay for the highlight.
-But the firmware's `isItemSelectBorderEn: 1` is what draws the
-border around the selected row, and turning it off makes the
-visible highlight disappear entirely. Without that border, the
-user has no visual feedback for which row is selected.
+**Current status**: implemented with a full-screen text event overlay rather than
+an event-capturing native list. The visible sidebar and `> ` marker are rendered
+in a text container. This gives JavaScript every up/down event and keeps the
+controller, marker, and preview synchronized.
 
 ### 4.3 SDK-side: add a `selectedIndex` field
 
@@ -333,13 +328,8 @@ glasses.
    - Fix the firmware's reset-on-rebuild behavior (the
      underlying bug)
 
-2. Until the SDK ships a fix, do **not** try to work around the
-   bug in `evenBridge.ts`. The list needs items for the firmware
-   to route swipes; removing the items or the selection border
-   regresses the input path. The current behavior (firmware
-   highlights row 0 after a rebuild, controller opens the
-   firmware-reported row) is the only one that keeps swipes
-   working.
+2. TeleGlance should keep its app-rendered sidebar until a native list API can
+   report every selection movement and accept a controlled selected index.
 
 3. Add a harness invariant that captures this bug at the
    structural level: after any `rebuildPageContainer` event

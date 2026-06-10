@@ -98,7 +98,7 @@ describe('EvenHubGlassesBridge', () => {
     expect(output).toContain('"containerName":"panel-box"')
   })
 
-  it('uses a visible event-capturing native list while the sidebar has focus', async () => {
+  it('uses one event overlay and an app-rendered sidebar while the sidebar has focus', async () => {
     let rendered: unknown
     const bridge = new EvenHubGlassesBridge({
       async createStartUpPageContainer(container: unknown) {
@@ -129,15 +129,12 @@ describe('EvenHubGlassesBridge', () => {
     })
 
     const output = JSON.stringify(rendered)
-    // Native list is always present (kept at the same containerID+position so the
-    // firmware-side list selection survives chats↔messages focus changes).
-    expect(output).toContain('"containerName":"sidebar-list"')
-    expect(output).toContain('"itemName":["Alice","Project"]')
-    expect(output).toContain('"isItemSelectBorderEn":1')
-    expect(output).toContain('"isEventCapture":1')
+    expect(output).toContain('"containerName":"sidebar"')
+    expect(output).toContain('Chats\\n> Alice\\n  Project')
+    expect(activeEventCaptureCount(rendered)).toBe(1)
   })
 
-  it('uses text sidebar and panel event capture while messages have focus', async () => {
+  it('uses only the panel event capture while messages have focus', async () => {
     let rendered: unknown
     const bridge = new EvenHubGlassesBridge({
       async createStartUpPageContainer(container: unknown) {
@@ -168,11 +165,10 @@ describe('EvenHubGlassesBridge', () => {
     })
 
     const output = JSON.stringify(rendered)
-    // The native list is kept at the same position so the firmware-side
-    // list selection survives the chats↔messages focus change.
-    expect(output).toContain('"containerName":"sidebar-list"')
-    // list selection survives the focus change.
-    expect(output).toContain('"isEventCapture":1')
+    expect(output).toContain('"containerName":"sidebar"')
+    expect(activeEventCaptureCount(rendered)).toBe(1)
+    const page = rendered as { listObject?: Array<{ isEventCapture?: number }> }
+    expect(page.listObject?.[0]?.isEventCapture).toBe(0)
   })
 
   it('disposes the Even Hub event listener when available', () => {
@@ -242,8 +238,8 @@ describe('EvenHubGlassesBridge', () => {
 
     // Advance past the idle window. The timer fires the single coalesced flush.
     await flushAsync(160)
-    // Resolve the blocked render cycle (4 textContainerUpgrade calls per flush).
-    for (let i = 0; i < 4; i++) {
+    // Resolve the blocked render cycle (5 textContainerUpgrade calls per flush).
+    for (let i = 0; i < 5; i++) {
       resolveNext?.()
       await flushAsync(0)
     }
@@ -253,3 +249,12 @@ describe('EvenHubGlassesBridge', () => {
     expect(lastBody?.content).toContain('bob-again')
   })
 })
+
+function activeEventCaptureCount(value: unknown): number {
+  if (Array.isArray(value)) return value.reduce((sum, item) => sum + activeEventCaptureCount(item), 0)
+  if (!value || typeof value !== 'object') return 0
+  return Object.entries(value).reduce((sum, [key, item]) => {
+    if (key === 'isEventCapture' && item === 1) return sum + 1
+    return sum + activeEventCaptureCount(item)
+  }, 0)
+}

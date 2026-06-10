@@ -32,8 +32,8 @@ type EventRecord = Record<string, unknown>
 export function createInputCoalescer(
   onInput: (input: AppInput) => void | Promise<void>,
   duplicateTapDebounceMs = 90,
-  tapCooldownMs = 220,
-  duplicateSwipeDebounceMs = 220,
+  tapCooldownMs = 30,
+  duplicateSwipeDebounceMs = 30,
 ) {
   let lastTapTime = 0
   let lastTapKind: 'press' | 'doublePress' | undefined

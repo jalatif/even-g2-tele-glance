@@ -155,7 +155,7 @@ describe('mapEvenHubEvent', () => {
     const coalesce = createInputCoalescer(onInput)
 
     coalesce({ type: 'swipeDown' })
-    vi.advanceTimersByTime(150)
+    vi.advanceTimersByTime(20)
     coalesce({ type: 'swipeDown' })
 
     expect(onInput).toHaveBeenCalledTimes(1)
@@ -169,7 +169,7 @@ describe('mapEvenHubEvent', () => {
     const coalesce = createInputCoalescer(onInput)
 
     coalesce({ type: 'swipeDown' })
-    vi.advanceTimersByTime(221)
+    vi.advanceTimersByTime(31)
     coalesce({ type: 'swipeDown' })
 
     expect(onInput).toHaveBeenCalledTimes(2)

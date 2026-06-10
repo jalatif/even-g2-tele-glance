@@ -41,7 +41,9 @@
 
 - Comprehensive invariant catalog: see `docs/UI_INVARIANTS.md` (human-readable) and `docs/UI_INVARIANTS.json` (machine-readable, consumed by the harness).
 - Automated fixture flow: `npm run test:simulator --prefix web`.
+- State/content-focused fixture flow: `node scripts/simulator-flow.mjs --fast --skip-latency-check`.
 - Golden update flow: `npm run test:simulator --prefix web -- --update-goldens`.
+- Current simulator investigation and remaining harness gaps: `validate_prompt_fixes.md`.
 - The automated flow starts Vite with `VITE_TELEGLANCE_FIXTURE=1`, launches `@evenrealities/evenhub-simulator@0.7.2` with `--automation-port`, drives glasses inputs, writes `artifacts/simulator-flow/<timestamp>/report.md`, `latency.json`, `console.json`, `fixture.json`, step screenshots, and `flow.mp4`.
 - The flow covers every state in `UI_INVARIANTS.md`: loading, auth, sidebar.chats, sidebar.topics (no preview, preview), sidebar.messages (normal, topic, loading), sidebarRecording, sidebarTranscribing, sidebarConfirm (send, cancel), sidebarSending, sidebarSent, asleep, newMessage, error. A 39th step (`39-perf-budget-chat-list`) intentionally exceeds the 1 s chat-load budget to prove the harness enforces it.
 - Each step asserts (a) the expected controller state, (b) the expected screen model content (`renderBodyContains` checks for both left and right side), (c) the expected API calls with the right arguments, (d) the expected bridge calls, (e) the 1 s latency budget.
