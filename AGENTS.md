@@ -129,7 +129,7 @@ Requirements:
   - `npm run typecheck --prefix web`
   - `npm test --prefix web`
   - `npm run build:tailscale --prefix web`
-- `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o tele-glance-1.0.33.ehpk`
+- `npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o tele-glance-1.0.34.ehpk`
 - Even Hub simulator smoke validation passes for startup rendering, automation health, screenshot capture, and click input. With no Telegram credentials configured, the expected phone-code setup screen renders cleanly.
 - Forum topic message history/sending uses the forum `topic.id` for Telethon 1.43; `topMessageId` remains in the DTO for display/debug context.
 - Even Hub page rebuilds now use stable title/body/list container IDs so stale topic-list containers do not remain visible after transitioning to message history in the simulator.
@@ -146,8 +146,8 @@ Requirements:
 - Sending a message refreshes the newest page before display; incoming replies detected while reading older pages automatically jump the message view back to the newest/bottom page, while unchanged polls leave older pages in place.
 - Tailscale is the default device-test backend route. `TAILSCALE_ENABLED=true` enables CORS for Tailscale 100.64.0.0/10 origins, and `npm run configure:tailscale --prefix web` updates `app.json` with the detected backend origin and prints the URL to enter in Settings.
 - Device input mapping now runs raw Even Hub events through the SDK parser and a fallback mapper that accepts proto-style keys, snake_case keys, numeric strings, and press/tap aliases. This is intended to handle real G2 payloads where list scrolling works but single-click selection is not shaped like the simulator event.
-- The app manifest version has been bumped to `1.0.33` so the packaged `.ehpk` metadata matches the file name.
-- A hardware-test package has been built at `tele-glance-1.0.33.ehpk` after the simulator input and validation-harness fixes.
+- The app manifest version has been bumped to `1.0.34` so the packaged `.ehpk` metadata matches the file name.
+- A hardware-test package has been built at `tele-glance-1.0.34.ehpk` after the Settings UI banner and shared-test-secret changes.
 - Real Telegram login has succeeded and `server/data/telegram.session` is present locally.
 - Real chat loading, forum topic listing, and forum topic message loading have been validated against the Akira Agents group. For Telethon 1.43, forum message history uses the forum `topic.id`, not `topMessageId`; `topMessageId` remains part of the DTO for display/debug context.
 - Frontend now ignores too-short/all-zero simulator audio recordings instead of invoking Whisper on silent audio.
@@ -191,10 +191,17 @@ Requirements:
 - Real-mode harness profile added to `simulator-flow.mjs`: `--mode real` skips `renderBodyContains` and `state` content assertions, tracks `currentScreen`/`currentFocus` from state events, logs per-input dispatch latency, asleep no-op inputs, partial-render timings, and `api.timing` events. The `latency.json` artifact includes a `realMode` block; the report includes "Real-mode latency buckets", "Asleep no-op inputs", and "Real-mode API timings" sections.
 - `InstrumentedTelegramApi` now emits `api.timing` events in real mode with timing-only data (call name, ids, duration, ok/error). Sensitive fields (phone, code, session, message text) are redacted.
 - LVGL unsupported glyphs U+2757 and U+26A0 are now stripped in `sanitizeGlassesText`. Unit test added.
-- Latest validation after the June 10 responsiveness and full-width UI fixes: 114/114 frontend tests pass, frontend typecheck is clean, and the production frontend build succeeds.
+- Latest validation after the shared-test-secret and Settings UI banner changes: 117/117 frontend tests pass, frontend typecheck is clean, and the production frontend build succeeds.
 - Hardware latency telemetry: four new `[TeleGlanceTest]` event types instrument the controller and bridge — `input.dispatch` (listener callback time + dispatch context), `state.work` (setState sync work by kind), `bridge.queueDepth` (partial/full render queue depth), plus existing `prefetch` events now include `backgroundWorkActive` context. The harness report (`scripts/simulator-flow.mjs`) captures all four in new sections: Input dispatch latency, setState sync work, Bridge queue depth. `latency.json` includes `inputDispatch`, `stateWork`, and `bridgeQueueDepth` arrays. To collect real G2 firmware latency data, capture `[TeleGlanceTest]` console events from the device; the harness can post-process a JSON dump to produce the same report. To collect real-data simulator timing, start the backend and run `npm run test:simulator:real --prefix web`.
 - Glasses text sanitization now strips unsupported emoji ranges after replacing known status-circle emoji, avoiding LVGL unsupported-glyph warnings observed in simulator runs.
 - Automated simulator fixture validation is implemented with `npm run test:simulator --prefix web`. It launches fixture-mode Vite plus `@evenrealities/evenhub-simulator@0.7.2`, drives chat indexes 1-3 and forum topics 1-3, validates deterministic message content, compares `web/test/simulator-goldens`, and writes report/video artifacts under `artifacts/simulator-flow/<timestamp>/`.
+
+- Settings UI now shows a prominent red-bordered box with red asterisk when the
+  `https://teleglance.akira-os.net` shared testing backend is active, warning that
+  no user secret is needed and the testing URL may be unstable. The banner sits
+  below the shared-secret input and is hidden for custom backends.
+- `scripts/start-backend.sh` accepts `--local` to bind to `127.0.0.1` instead of
+  `0.0.0.0`.
 
 - The shared testing backend at `https://teleglance.akira-os.net` uses an
   internal `test-secret-token` for wire encryption. The user's
