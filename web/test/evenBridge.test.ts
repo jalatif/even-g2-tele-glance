@@ -171,6 +171,35 @@ describe('EvenHubGlassesBridge', () => {
     expect(page.listObject?.[0]?.isEventCapture).toBe(0)
   })
 
+  it('hides the split sidebar and expands message content in full-width mode', async () => {
+    let rendered: unknown
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer(container: unknown) { rendered = container; return 0 },
+      async rebuildPageContainer() { return true },
+      async audioControl() { return undefined },
+      onEvenHubEvent() { return undefined },
+    })
+
+    await bridge.render({
+      kind: 'sidebar',
+      title: 'Launch',
+      sidebarTitle: 'Topics',
+      sidebarItems: ['Launch', 'Support'],
+      sidebarSelected: 0,
+      panelTitle: '',
+      panelBody: 'Full-width message',
+      panelFooter: 'Double click back',
+      focus: 'panel',
+      fullWidth: true,
+    })
+
+    const page = rendered as { textObject?: Array<Record<string, unknown>> }
+    const sidebar = page.textObject?.find((item) => item.containerName === 'sidebar')
+    const body = page.textObject?.find((item) => item.containerID === 6)
+    expect(sidebar).toMatchObject({ width: 1, height: 1, content: '' })
+    expect(body).toMatchObject({ xPosition: 2, width: 572 })
+  })
+
   it('disposes the Even Hub event listener when available', () => {
     const unsubscribe = vi.fn()
     const bridge = new EvenHubGlassesBridge({
@@ -247,6 +276,7 @@ describe('EvenHubGlassesBridge', () => {
     expect(upgrades.length).toBeGreaterThan(0)
     const lastBody = upgrades.filter((u) => u.id === 6).at(-1)
     expect(lastBody?.content).toContain('bob-again')
+    expect(new Set(upgrades.map((update) => update.id))).toEqual(new Set([5, 6]))
   })
 })
 

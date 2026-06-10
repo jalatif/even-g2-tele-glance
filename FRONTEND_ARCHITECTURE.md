@@ -98,7 +98,9 @@ Hardware input can emit duplicate same-direction swipes. Event mapping uses a na
 
 Chat/topic navigation uses a text-rendered sidebar and one full-screen event overlay. The controller owns the selected index and updates the visible marker and right-side preview together. Native item-name/index payloads remain compatibility inputs rather than the primary selection mechanism.
 
-The controller prefetches the first visible chat/topic message pages after startup in display order. These fetches are cached, deduped, and paced so common opens can render from cache while the input path stays responsive.
+The initial chat list renders before speculative work. A delayed idle prefetch warms only the next two chats, and forum warming is limited to one topic. Hardware input is collapsed to the latest gesture in a 20 ms delivery burst so SDK/native stalls cannot release a long sequence onto later screens.
+
+Chat and topic selection retain the split sidebar/preview layout. Opening the selected thread expands messages across the full glasses width; double click restores the saved split-view back target. Voice transcription confirmation is a standalone text page containing the transcript and `Send`/`Cancel` choices.
 
 ## Validation
 

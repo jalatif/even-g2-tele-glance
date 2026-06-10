@@ -86,6 +86,37 @@ export function createInputCoalescer(
   }
 }
 
+/**
+ * Bound hardware input bursts released together after an SDK/native stall. At most one
+ * gesture is dispatched per short window, and the latest gesture replaces earlier pending
+ * input instead of replaying a backlog across later screens. Audio chunks bypass this gate
+ * because dropping PCM would corrupt recordings.
+ */
+export function createBoundedInputDispatcher(
+  onInput: (input: AppInput) => void | Promise<void>,
+  dispatchWindowMs = 20,
+) {
+  let pending: AppInput | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  return (input: AppInput) => {
+    if (input.type === 'audioChunk') {
+      void onInput(input)
+      return
+    }
+    pending = input
+    if (timer) return
+    timer = setTimeout(() => {
+      timer = undefined
+      const next = pending
+      pending = undefined
+      if (next) void onInput(next)
+    }, dispatchWindowMs)
+    const maybeNodeTimeout = timer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  }
+}
+
 export function mapEvenHubEvent(event: EvenHubEventLike | unknown): AppInput | undefined {
   const rawEventType = readRawEventType(event)
   const rawRecord = readRawRecord(event)

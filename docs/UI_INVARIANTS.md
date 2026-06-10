@@ -94,7 +94,8 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - Opening a chat or topic MUST render a loading state (right panel only) within `maxLoadingStateMs` before any network I/O blocks the controller
 - Chat/topic list swipes MUST update `selectedIndex` within `maxSwipeSelectionMs` without triggering a render event
 - Topic preview fetching MUST NOT block sidebar scroll input; controller selection moves before preview loading completes
-- Startup prefetching MUST NOT delay the first visible chat list render past `maxInitialRenderMs`
+- Startup prefetching MUST NOT delay the first visible chat list render past `maxInitialRenderMs`; speculative warming begins after 1.2 seconds and is bounded to chats 2-3 plus at most one forum topic
+- A burst of SDK-delivered gestures inside 20 ms MUST dispatch only the latest gesture so stale input cannot replay on a later screen
 - Background refreshes MUST NOT overwrite the controller-owned sidebar marker
 - Async results from stale requests (previous chat open that was abandoned by backing out) MUST be discarded silently
 - Chat/topic scroll MUST dispatch a partial render through `bridge.enqueueSidebarPanel` rather than a full rebuild. The partial update includes the text sidebar marker and right panel. Rapid swipes MUST coalesce so only the latest model reaches the glasses
@@ -144,7 +145,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
   - `sidebarItems.markerAt`: equals `state.selectedChatIndex`
   - The hidden list must have `isEventCapture: 0`; the text overlay is the only active listener
   - `panelTitle`: `state.chats[selectedChatIndex].title` truncated to 20 chars
-  - `panelBody.contains`: `state.chats[selectedChatIndex].lastMessage` (fallback) OR the cached messages of `state.chats[selectedChatIndex]` (e.g. `fixture-ops-body` for `fixture-chat-2`). The startup prefetch MUST populate the right panel for the first five chats so the initial render never shows the `lastMessage` fallback alone.
+  - `panelBody.contains`: `state.chats[selectedChatIndex].lastMessage` (fallback) OR cached messages for the selected chat. The selected chat preview loads on demand; startup does not block on warming every visible chat.
   - `panelBody.notContains`: stale messages from any non-selected chat, AND the `lastMessage` of any other chat while the selected chat has cached messages. This is the regression that hid D2 — the right panel was stuck on the first chat's messages while the user scrolled.
   - `panelFooter`: `'Swipe chats | Press open'`
   - `panelBox`: `null`
@@ -194,11 +195,8 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 ### 4.8 `sidebar.messages.normal` (normal chat messages, no loading)
 - **state**: `{ screen: 'sidebar', focus: 'messages', chat, messages: [...], cursor, isNewestPage: true, scrollOffset: 0, back }`
 - **render**: `{ kind: 'sidebar', focus: 'panel' }`
-- **left**:
-  - `sidebarTitle`: `'Chats'`
-  - `sidebarItems`: chat list, marker at `state.selectedChatIndex`
-  - `sidebarItems.markerAt`: equals `state.selectedChatIndex`
-- **right**:
+- **layout**: `fullWidth === true`; the sidebar and separator are hidden and message content spans the full display width
+- **content**:
   - `panelBody.contains`: each visible message's `text`. For `fixture-chat-0`: `'Alpha message page contains fixture-alpha-body for startup testing.'` and `'Alpha outgoing marker for visual validation.'`
   - `panelBody.byteLength`: <= 999
   - `panelFooter`: `'Swipe scroll | Click record | Double click back'`
@@ -237,11 +235,8 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 
 ### 4.11 `sidebarRecording` (recording in progress)
 - **state**: `{ screen: 'sidebarRecording', focus: 'messages', chat, topic?, messages, back, chunks: [...Uint8Array], startedAt }`
-- **render**: `{ kind: 'sidebar', title: 'Recording reply', focus: 'panel' }`
-- **left**:
-  - `sidebarTitle`: `'Chats'` or `'Topics'`
-  - `sidebarItems`: same list as active thread
-- **right**:
+- **render**: `{ kind: 'sidebar', title: 'Recording reply', focus: 'panel', fullWidth: true }`
+- **content**:
   - `panelTitle`: `'Recording'`
   - `panelBody`: empty or last visible message
   - `panelFooter`: `'Click stop | Double click cancel'`
@@ -254,12 +249,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 
 ### 4.12 `sidebarTranscribing`
 - **state**: `{ screen: 'sidebarTranscribing', focus: 'messages', chat, topic?, messages, back }`
-- **render**: `{ kind: 'sidebar', title: 'Transcribing', focus: 'panel' }`
-- **left**: empty (`sidebarItems: []`, `sidebarTitle: ''`)
-- **right**:
-  - `panelTitle`: `'Converting voice...'`
-  - `panelBody`: empty
-  - `panelFooter`: empty
+- **render**: `{ kind: 'text', title: 'Transcribing', body: 'Converting voice...' }`
 - **transitions**: automatic -> `sidebarConfirm` once `api.transcribe` returns
 - **budget**: 1000 ms
 - **apiCalls**: `transcribe(wav)`
@@ -267,12 +257,9 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 
 ### 4.13 `sidebarConfirm.send` (Send highlighted)
 - **state**: `{ screen: 'sidebarConfirm', focus: 'messages', chat, topic?, messages, transcript, selectedIndex: 0, back }`
-- **render**: `{ kind: 'sidebar', title: 'Reply: <transcript truncated 30>', focus: 'panel' }`
-- **right**:
-  - `panelBody.contains`: `['> Send']`
-  - `panelBody.contains`: `['  Cancel']`
-  - `panelBody.notContains`: `['> Cancel']`
-  - `panelFooter`: `'Swipe select | Press confirm'`
+- **render**: `{ kind: 'text', title: 'Confirm reply' }`
+- **body**: contains the transcript followed by `> Send` and `  Cancel`; it MUST NOT contain message-history content
+- **footer**: `'Swipe select | Press confirm'`
 - **transitions**:
   - `press` -> `sidebarSending` -> `sidebar.messages` with `state.status === 'Sent'`
   - `swipeUp` / `swipeDown` -> `sidebarConfirm.cancel`
@@ -282,10 +269,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 
 ### 4.14 `sidebarConfirm.cancel` (Cancel highlighted)
 - **state**: same as `sidebarConfirm.send` but `selectedIndex: 1`
-- **right**:
-  - `panelBody.contains`: `['> Cancel']`
-  - `panelBody.contains`: `['  Send']`
-  - `panelBody.notContains`: `['> Send']`
+- **body**: contains the transcript followed by `  Send` and `> Cancel`; it MUST NOT contain message-history content
 - **transitions**:
   - `press` -> back to `sidebar.messages`; `api.sendMessage` MUST NOT have been called
   - `swipeUp` / `swipeDown` -> back to `sidebarConfirm.send`
@@ -293,11 +277,8 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 
 ### 4.15 `sidebarSending`
 - **state**: `{ screen: 'sidebarSending', focus: 'messages', chat, topic?, messages, transcript, back }`
-- **render**: `{ kind: 'sidebar', title: 'Sending reply', focus: 'panel' }`
-- **right**:
-  - `panelTitle`: `'Sending...'`
-  - `panelBody.contains`: `state.transcript`
-  - `panelFooter`: empty
+- **render**: `{ kind: 'text', title: 'Sending reply' }`
+- **body**: contains `Sending...` and `state.transcript`
 - **transitions**: automatic -> `sidebar.messages` with `state.status === 'Sent'`
 - **budget**: 2000 ms
 - **apiCalls**: `sendMessage`

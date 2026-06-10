@@ -318,12 +318,12 @@
       },
       "render": {
         "kind": "sidebar",
-        "focus": "panel"
+        "focus": "panel",
+        "fullWidth": true
       },
       "left": {
-        "sidebarTitle": "Chats",
-        "sidebarItemsFromState": "chats",
-        "markerAtFromState": "selectedChatIndex"
+        "sidebarTitle": "",
+        "hidden": true
       },
       "right": {
         "panelBodyContains": {
@@ -350,12 +350,12 @@
       },
       "render": {
         "kind": "sidebar",
-        "focus": "panel"
+        "focus": "panel",
+        "fullWidth": true
       },
       "left": {
-        "sidebarTitle": "Topics",
-        "sidebarItemsFromState": "topics",
-        "markerAtFromState": "selectedTopicIndex"
+        "sidebarTitle": "",
+        "hidden": true
       },
       "right": {
         "panelBodyContains": {
@@ -382,10 +382,12 @@
       },
       "render": {
         "kind": "sidebar",
-        "focus": "panel"
+        "focus": "panel",
+        "fullWidth": true
       },
       "left": {
-        "sidebarTitle": "Chats"
+        "sidebarTitle": "",
+        "hidden": true
       },
       "right": {
         "panelBodyContains": [
@@ -408,10 +410,12 @@
       "render": {
         "kind": "sidebar",
         "title": "Recording reply",
-        "focus": "panel"
+        "focus": "panel",
+        "fullWidth": true
       },
       "left": {
-        "sidebarTitle": "Chats"
+        "sidebarTitle": "",
+        "hidden": true
       },
       "right": {
         "panelTitle": "Recording",
@@ -438,18 +442,9 @@
         "screen": "sidebarTranscribing"
       },
       "render": {
-        "kind": "sidebar",
+        "kind": "text",
         "title": "Transcribing",
-        "focus": "panel"
-      },
-      "left": {
-        "sidebarTitle": "",
-        "sidebarItemsExact": []
-      },
-      "right": {
-        "panelTitle": "Converting voice...",
-        "panelBody": "",
-        "panelFooter": ""
+        "body": "Converting voice..."
       },
       "transitions": {
         "auto": "sidebarConfirm"
@@ -471,21 +466,16 @@
         "selectedIndex": 0
       },
       "render": {
-        "kind": "sidebar",
-        "focus": "panel"
-      },
-      "left": {
-        "sidebarTitle": "Chats"
-      },
-      "right": {
-        "panelBodyContains": [
+        "kind": "text",
+        "title": "Confirm reply",
+        "bodyContains": [
           "> Send",
           "  Cancel"
         ],
-        "panelBodyNotContains": [
+        "bodyNotContains": [
           "> Cancel"
         ],
-        "panelFooterDefault": "Swipe select | Press confirm"
+        "footer": "Swipe select | Press confirm"
       },
       "transitions": {
         "press": "sidebarSending",
@@ -504,18 +494,13 @@
         "selectedIndex": 1
       },
       "render": {
-        "kind": "sidebar",
-        "focus": "panel"
-      },
-      "left": {
-        "sidebarTitle": "Chats"
-      },
-      "right": {
-        "panelBodyContains": [
+        "kind": "text",
+        "title": "Confirm reply",
+        "bodyContains": [
           "> Cancel",
           "  Send"
         ],
-        "panelBodyNotContains": [
+        "bodyNotContains": [
           "> Send"
         ]
       },
@@ -532,19 +517,11 @@
         "screen": "sidebarSending"
       },
       "render": {
-        "kind": "sidebar",
+        "kind": "text",
         "title": "Sending reply",
-        "focus": "panel"
-      },
-      "left": {
-        "sidebarTitle": "Chats"
-      },
-      "right": {
-        "panelTitle": "Sending...",
-        "panelBodyContains": {
+        "bodyContains": {
           "fromState": "transcript"
-        },
-        "panelFooter": ""
+        }
       },
       "transitions": {
         "auto": "sidebar.messages"

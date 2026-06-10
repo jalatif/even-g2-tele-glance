@@ -21,6 +21,7 @@ export interface GlassesBridge {
   setLocalStorage?(key: string, value: string): Promise<boolean>
   showExitConfirmation?(): Promise<void>
   turnScreenOff?(): Promise<void>
+  dispose?(): void
 }
 
 const MESSAGE_PAGE_LIMIT = 8
@@ -99,6 +100,7 @@ export class TelegramAppController {
   private readAckMaxIds = new Map<string, Id>()
   private pendingReadAcks = new Map<string, { chat: Chat; topic?: Topic; maxId: Id }>()
   private readAckFlushTimer: ReturnType<typeof setTimeout> | undefined
+  private startupPrefetchTimer: ReturnType<typeof setTimeout> | undefined
   private selectionOnlyPressReadyAt = 0
   private lastSelectIndexPressAt = 0
   // Wall-clock timestamp of the most recent swipe (up or down). Used to suppress
@@ -167,6 +169,36 @@ export class TelegramAppController {
       this.stopChatPolling()
       this.syncChatPolling()
     }
+  }
+
+  dispose() {
+    this.openRequestId += 1
+    this.stopMessagePolling()
+    this.stopChatPolling()
+    for (const timer of [
+      this.pendingMessagePress,
+      this.topicPreviewDebounce,
+      this.deferredRootRefreshTimer,
+      this.deferredMessageRefreshTimer,
+      this.chatPreviewDebounce,
+      this.readAckFlushTimer,
+      this.startupPrefetchTimer,
+      this.renderTimer,
+      this.notifyTimer,
+    ]) {
+      if (timer) clearTimeout(timer)
+    }
+    this.pendingMessagePress = undefined
+    this.topicPreviewDebounce = undefined
+    this.deferredRootRefreshTimer = undefined
+    this.deferredMessageRefreshTimer = undefined
+    this.chatPreviewDebounce = undefined
+    this.readAckFlushTimer = undefined
+    this.startupPrefetchTimer = undefined
+    this.renderTimer = undefined
+    this.notifyTimer = undefined
+    this.pendingRenderState = undefined
+    this.listeners.clear()
   }
 
   async sendTextFromPhone(text: string) {
@@ -1312,21 +1344,27 @@ export class TelegramAppController {
   }
 
   private prefetchVisibleChats(chats: Chat[]) {
-    void this.prefetchVisibleChatsInBackground(chats.slice(0, 5)).catch(() => undefined)
+    if (this.startupPrefetchTimer) clearTimeout(this.startupPrefetchTimer)
+    this.startupPrefetchTimer = setTimeout(() => {
+      this.startupPrefetchTimer = undefined
+      void this.prefetchVisibleChatsInBackground(chats.slice(1, 3)).catch(() => undefined)
+    }, 1200)
+    const maybeNodeTimeout = this.startupPrefetchTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
   }
 
   private async prefetchVisibleChatsInBackground(chats: Chat[]) {
     for (const chat of chats) {
+      if (this.isInputQuiet()) await sleep(this.msUntilQuiet())
       if (chat.isForum) {
         const topics = await this.prefetchTopics(chat).catch(() => [])
-        for (const topic of topics.slice(0, 5)) {
+        for (const topic of topics.slice(0, 1)) {
           await this.prefetchMessages(chat, topic).catch(() => [])
-          await sleep(25)
         }
       } else {
         await this.prefetchMessages(chat, undefined).catch(() => [])
       }
-      await sleep(25)
+      await sleep(100)
     }
   }
 
@@ -1957,7 +1995,6 @@ export class TelegramAppController {
     this.pendingReadAcks.clear()
     for (const ack of pending) {
       void this.api.markRead(ack.chat.id, { topicId: topicThreadId(ack.topic), maxId: ack.maxId }).catch(() => undefined)
-    void this.api.markRead(ack.chat.id, { topicId: topicThreadId(ack.topic), maxId: ack.maxId }).catch(() => undefined)
     }
   }
 

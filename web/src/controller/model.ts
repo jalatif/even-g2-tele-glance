@@ -38,6 +38,7 @@ export type ScreenModel =
       sidebarTitle: string; sidebarItems: string[]; sidebarSelected: number;
       panelTitle: string; panelBody: string; panelFooter: string;
       panelBox?: BoxedText;
+      fullWidth?: boolean;
       focus: 'sidebar' | 'panel'; }
 
 export type BoxedText = {
@@ -224,6 +225,7 @@ export function screenModel(state: AppState): ScreenModel {
             // the chats list footer at line 139 for consistency.
             panelFooter: footerText(state.status, 'Swipe scroll | Click record | Double click back'),
             panelBox: loadingBody ? undefined : msg.box,
+            fullWidth: true,
             focus: 'panel',
           }
         }
@@ -254,47 +256,30 @@ export function screenModel(state: AppState): ScreenModel {
         panelBody: msg.box ? '' : msg.body,
         panelFooter: footerText(state.status, 'Click stop | Double click cancel'),
         panelBox: msg.box,
+        fullWidth: true,
         focus: 'panel',
       }
     }
     case 'sidebarTranscribing':
       return {
-        kind: 'sidebar',
+        kind: 'text',
         title: 'Transcribing',
-        sidebarTitle: '',
-        sidebarItems: [],
-        sidebarSelected: 0,
-        panelTitle: 'Converting voice...',
-        panelBody: '',
-        panelFooter: '',
-        focus: 'panel',
+        body: 'Converting voice...',
       }
     case 'sidebarConfirm': {
-      const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
+      const actions = `${state.selectedIndex === 0 ? '> ' : '  '}Send\n${state.selectedIndex === 1 ? '> ' : '  '}Cancel`
       return {
-        kind: 'sidebar',
-        title: sanitizeGlassesText(`Reply: ${state.transcript.slice(0, 30)}`),
-        sidebarTitle: state.topic ? 'Topics' : 'Chats',
-        sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
-        sidebarSelected: state.selectedChatIndex,
-        panelTitle: '',
-        panelBody: `${state.selectedIndex === 0 ? '> ' : '  '}Send\n${state.selectedIndex === 1 ? '> ' : '  '}Cancel`,
-        panelFooter: 'Swipe select | Press confirm',
-        panelBox: msg.box,
-        focus: 'panel',
+        kind: 'text',
+        title: 'Confirm reply',
+        body: trimUtf8Bytes(`${sanitizeGlassesText(state.transcript)}\n\n${actions}`, TEXT_CONTAINER_BYTE_LIMIT),
+        footer: 'Swipe select | Press confirm',
       }
     }
     case 'sidebarSending':
       return {
-        kind: 'sidebar',
+        kind: 'text',
         title: 'Sending reply',
-        sidebarTitle: '',
-        sidebarItems: [],
-        sidebarSelected: 0,
-        panelTitle: 'Sending...',
-        panelBody: state.transcript,
-        panelFooter: '',
-        focus: 'panel',
+        body: sanitizeGlassesText(`Sending...\n\n${state.transcript}`),
       }
     case 'sidebarSent': {
       const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
@@ -310,6 +295,7 @@ export function screenModel(state: AppState): ScreenModel {
         // user knows they can swipe-scroll even after sending.
         panelFooter: footerText(state.status, 'Swipe scroll | Click record | Double click back'),
         panelBox: msg.box,
+        fullWidth: true,
         focus: 'panel',
       }
     }
@@ -448,7 +434,6 @@ function formatCompactMessageRows(sender: string, text: string) {
   return rows
 }
 function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
-  console.log('[DEBUG-FMB] called, sender=', sender, 'text.length=', text.length, 'wordCount=', wordCount(text))
   const topBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
   const midBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
   const bottomBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`

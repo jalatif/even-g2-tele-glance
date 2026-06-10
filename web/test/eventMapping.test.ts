@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createInputCoalescer, mapEvenHubEvent } from '../src/bridge/eventMapping'
+import { createBoundedInputDispatcher, createInputCoalescer, mapEvenHubEvent } from '../src/bridge/eventMapping'
 
 describe('mapEvenHubEvent', () => {
   it('maps press, double press, and swipes from text events', () => {
@@ -175,6 +175,35 @@ describe('mapEvenHubEvent', () => {
     expect(onInput).toHaveBeenCalledTimes(2)
     expect(onInput).toHaveBeenNthCalledWith(1, { type: 'swipeDown' })
     expect(onInput).toHaveBeenNthCalledWith(2, { type: 'swipeDown' })
+    vi.useRealTimers()
+  })
+
+  it('keeps only the latest gesture from a burst-delivered SDK input batch', () => {
+    vi.useFakeTimers()
+    const onInput = vi.fn()
+    const dispatch = createBoundedInputDispatcher(onInput)
+
+    dispatch({ type: 'press' })
+    dispatch({ type: 'swipeDown' })
+    dispatch({ type: 'doublePress' })
+    vi.advanceTimersByTime(20)
+
+    expect(onInput).toHaveBeenCalledTimes(1)
+    expect(onInput).toHaveBeenCalledWith({ type: 'doublePress' })
+    vi.useRealTimers()
+  })
+
+  it('starts a new bounded batch after the dispatch window', () => {
+    vi.useFakeTimers()
+    const onInput = vi.fn()
+    const dispatch = createBoundedInputDispatcher(onInput, 20)
+
+    dispatch({ type: 'press' })
+    vi.advanceTimersByTime(20)
+    dispatch({ type: 'swipeDown' })
+    vi.advanceTimersByTime(20)
+
+    expect(onInput).toHaveBeenCalledTimes(2)
     vi.useRealTimers()
   })
 })

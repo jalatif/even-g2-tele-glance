@@ -97,7 +97,11 @@ These notes capture hardware-specific implementation details and quirks observed
 - Scroll events may also duplicate on hardware. Caduceus suppresses repeated same-direction scrolls for a short window and suppresses spurious scrolls shortly after text updates.
 - Same-direction swipe duplicates inside 30ms are suppressed. Longer rapid swipe sequences must remain intact for fast navigation.
 - Background state refreshes must not overwrite the controller-owned text sidebar selection.
-- Startup prefetch should warm the first visible chats/topics in display order, but it must be deduped and paced with small yields so the phone WebView input thread remains responsive while Telegram responses decrypt and parse.
+- Render the initial chat list before speculative prefetch. Delay warming until the startup/input path is idle, bound the number of chats/topics warmed, and dispose delayed work on React remount.
+- Native/SDK stalls can release multiple buffered gestures together. Collapse each short delivery burst to the latest gesture; never allow a backlog to replay after the app has transitioned to another screen.
+- Skip unchanged `TextContainerUpgrade` calls. Each native upgrade can take hundreds of milliseconds on hardware, so updating title/footer/box when their content did not change directly increases input starvation.
+- Open message threads should use the full 576 px width. Keep the split layout only for chat/topic selection and restore it with double click.
+- Confirmation after transcription must be a standalone screen with transcript and actions, not controls painted over the active message page.
 
 ## Audio
 

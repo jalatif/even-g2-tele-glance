@@ -402,6 +402,8 @@ describe('screenModel', () => {
     expect(recording.kind).toBe('sidebar')
     expect(sent.kind).toBe('sidebar')
     if (recording.kind === 'sidebar' && sent.kind === 'sidebar') {
+      expect(recording.fullWidth).toBe(true)
+      expect(sent.fullWidth).toBe(true)
       expect(recording.panelBox).toBeDefined()
       expect(recording.panelBody).toBe('')
       expect(sent.panelBox).toBeDefined()
@@ -422,11 +424,23 @@ describe('screenModel', () => {
     const sendSelected = screenModel(baseState)
     const cancelSelected = screenModel({ ...baseState, selectedIndex: 1 })
 
-    expect(sendSelected.kind).toBe('sidebar')
-    expect(cancelSelected.kind).toBe('sidebar')
-    if (sendSelected.kind === 'sidebar' && cancelSelected.kind === 'sidebar') {
-      expect(sendSelected.panelBody).toBe('> Send\n  Cancel')
-      expect(cancelSelected.panelBody).toBe('  Send\n> Cancel')
+    expect(sendSelected.kind).toBe('text')
+    expect(cancelSelected.kind).toBe('text')
+    if (sendSelected.kind === 'text' && cancelSelected.kind === 'text') {
+      expect(sendSelected.body).toBe('reply\n\n> Send\n  Cancel')
+      expect(cancelSelected.body).toBe('reply\n\n  Send\n> Cancel')
     }
+  })
+
+  it('renders an opened message thread across the full glasses width', () => {
+    const model = screenModel({
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: 'hello' }],
+    })
+
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') expect(model.fullWidth).toBe(true)
   })
 })

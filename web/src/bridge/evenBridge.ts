@@ -19,7 +19,7 @@ import {
   summarizeScreenModel,
   type BridgeQueueDepthReason,
 } from '../testMode'
-import { createInputCoalescer, mapEvenHubEvent } from './eventMapping'
+import { createBoundedInputDispatcher, createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
 export const APP_BUILD_VERSION: string = (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0') as string
@@ -64,12 +64,13 @@ export class EvenHubGlassesBridge implements GlassesBridge {
   private partialRenderDropped = 0
   private partialRenderFlushed = 0
   private panelRenderTimer: ReturnType<typeof setTimeout> | undefined
+  private lastSidebarModel: Extract<ScreenModel, { kind: 'sidebar' }> | undefined
   // `panelRenderIdleMs` is the scroll-idle window for the partial-render queue. On real
   // G2 hardware each `textContainerUpgrade` call is a 150-400ms firmware roundtrip. If
   // we flush on every microtask boundary, rapid scrolling chains firmware calls and the
   // glasses feel sluggish. This delay holds the latest panel model until the user stops
-  // scrolling, so 10 rapid swipes produce exactly one firmware roundtrip. The native
-  // list (container ID 8) is firmware-managed and moves instantly regardless.
+  // scrolling, so 10 rapid swipes produce one latest-state update instead of a queue
+  // of stale sidebar and preview updates.
   private readonly panelRenderIdleMs = 150
 
   constructor(
@@ -80,7 +81,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
 
   static async create(onInput: (input: AppInput) => void | Promise<void>, options: EvenBridgeOptions = {}) {
     const sdk = (await waitForEvenAppBridge()) as unknown as EvenBridgeInstance
-    const dispatchInput = createInputCoalescer(onInput)
+    const dispatchInput = createInputCoalescer(createBoundedInputDispatcher(onInput))
     let debugLogInFlight = false
     const listenerToken = Symbol('even-hub-listener')
     activeEventListenerToken = listenerToken
@@ -162,6 +163,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
         const container = buildPage(model, RebuildPageContainer)
         logTeleGlanceTest('bridge', { method: 'rebuildPageContainer', args: { sequence, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
         await this.sdk.rebuildPageContainer(container)
+        this.lastSidebarModel = model.kind === 'sidebar' ? model : undefined
         logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
         return
       }
@@ -169,6 +171,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       logTeleGlanceTest('bridge', { method: 'createStartUpPageContainer', args: { sequence, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
       await this.sdk.createStartUpPageContainer(container)
       this.hasRendered = true
+      this.lastSidebarModel = model.kind === 'sidebar' ? model : undefined
       logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
     } finally {
       this.fullRenderInFlight = false
@@ -177,13 +180,9 @@ export class EvenHubGlassesBridge implements GlassesBridge {
   }
 
   /**
-   * Partial render that updates only the right-panel text containers (title, body, box, footer)
-   * without rebuilding the native list container. This is the key to updating the right panel
-   * after a chat/topic swipe without snapping the list selection back to row 0.
-   *
-   * The native list (container ID 8) is firmware-managed, so we leave it alone and only push
-   * fresh text into the right-side containers. If `hasRendered` is false (first render) or the
-   * SDK does not support `textContainerUpgrade`, we fall back to a full rebuild.
+   * Partial render that updates the app-owned sidebar marker and right-panel text without
+   * rebuilding the page. If `hasRendered` is false or the SDK lacks
+   * `textContainerUpgrade`, fall back to a full rebuild.
    */
   async renderSidebarPanel(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
     const sequence = ++this.renderSequence
@@ -192,11 +191,12 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       await this.render(model)
       return
     }
-    const updates = buildSidebarPanelUpdates(model)
+    const updates = buildSidebarPanelUpdates(model, this.lastSidebarModel)
     logTeleGlanceTest('bridge', { method: 'textContainerUpgrade', args: { sequence, count: updates.length, hasPanelBox: Boolean(model.panelBox) } })
     for (const update of updates) {
       await this.sdk.textContainerUpgrade(update)
     }
+    this.lastSidebarModel = model
     this.partialRenderFlushed += 1
     logTeleGlanceTest('render', { sequence, partial: true, model: summarizeScreenModel(model) })
   }
@@ -313,6 +313,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       this.panelRenderTimer = undefined
     }
     this.pendingPanelModel = undefined
+    this.lastSidebarModel = undefined
     this.panelRenderInFlight = false
     this.panelRenderQueuedAfter = false
     this.fullRenderInFlight = false
@@ -380,6 +381,7 @@ function buildPage(model: ScreenModel, Container: PageContainerClass) {
 
 function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Container: PageContainerClass) {
   const hasPanelBox = Boolean(model.panelBox)
+  const fullWidth = model.fullWidth === true
 
   const outerBorder = new TextContainerProperty({
     containerID: 0,
@@ -424,11 +426,11 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     containerID: 3,
     containerName: 'separator',
     content: '',
-    xPosition: 168,
-    yPosition: 38,
-    width: 2,
-    height: 206,
-    borderWidth: 1,
+    xPosition: fullWidth ? 0 : 168,
+    yPosition: fullWidth ? 287 : 38,
+    width: fullWidth ? 1 : 2,
+    height: fullWidth ? 1 : 206,
+    borderWidth: fullWidth ? 0 : 1,
     borderColor: 8,
     paddingLength: 0,
     isEventCapture: 0,
@@ -436,9 +438,9 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
   const panelBody = new TextContainerProperty({
     containerID: 6,
     content: trimForContainer(fillToContainer(model.panelBody || ' '), 999),
-    xPosition: 170,
+    xPosition: fullWidth ? 2 : 170,
     yPosition: 38,
-    width: 404,
+    width: fullWidth ? 572 : 404,
     height: 206,
     borderWidth: 0,
     borderColor: 8,
@@ -450,9 +452,9 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
         containerID: 7,
         containerName: 'panel-box',
         content: trimForContainer(formatBoxContent(model.panelBox!), 999),
-        xPosition: 184,
+        xPosition: fullWidth ? 14 : 184,
         yPosition: 54,
-        width: 376,
+        width: fullWidth ? 548 : 376,
         height: 190,
         borderWidth: 1,
         borderColor: 8,
@@ -488,11 +490,11 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
   const sidebar = new TextContainerProperty({
     containerID: 5,
     containerName: 'sidebar',
-    content: trimForContainer(formatSidebarAsText(model), 999),
-    xPosition: 2,
-    yPosition: 38,
-    width: 166,
-    height: 206,
+    content: fullWidth ? '' : trimForContainer(formatSidebarAsText(model), 999),
+    xPosition: fullWidth ? 0 : 2,
+    yPosition: fullWidth ? 287 : 38,
+    width: fullWidth ? 1 : 166,
+    height: fullWidth ? 1 : 206,
     borderWidth: 0,
     borderColor: 8,
     paddingLength: 4,
@@ -516,45 +518,58 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
  * partial update looks identical to a full rebuild. The hidden native list stays
  * untouched while the app-rendered sidebar marker and right panel are updated.
  */
-function buildSidebarPanelUpdates(model: Extract<ScreenModel, { kind: 'sidebar' }>): TextContainerUpgrade[] {
+function buildSidebarPanelUpdates(
+  model: Extract<ScreenModel, { kind: 'sidebar' }>,
+  previous?: Extract<ScreenModel, { kind: 'sidebar' }>,
+): TextContainerUpgrade[] {
   const updates: TextContainerUpgrade[] = []
-  updates.push(new TextContainerUpgrade({
+  const title = trimForContainer(model.title, 100)
+  if (!previous || title !== trimForContainer(previous.title, 100)) updates.push(new TextContainerUpgrade({
     containerID: 1,
     containerName: 'title',
-    content: trimForContainer(model.title, 100),
+    content: title,
     contentOffset: 0,
-    contentLength: trimForContainer(model.title, 100).length,
+    contentLength: title.length,
   }))
-  updates.push(new TextContainerUpgrade({
+  const sidebar = model.fullWidth ? '' : trimForContainer(formatSidebarAsText(model), 999)
+  const previousSidebar = previous?.fullWidth ? '' : previous ? trimForContainer(formatSidebarAsText(previous), 999) : undefined
+  if (sidebar !== previousSidebar) updates.push(new TextContainerUpgrade({
     containerID: 5,
     containerName: 'sidebar',
-    content: trimForContainer(formatSidebarAsText(model), 999),
+    content: sidebar,
     contentOffset: 0,
-    contentLength: trimForContainer(formatSidebarAsText(model), 999).length,
+    contentLength: sidebar.length,
   }))
-  updates.push(new TextContainerUpgrade({
+  const panelBody = trimForContainer(fillToContainer(model.panelBody || ' '), 999)
+  const previousPanelBody = previous ? trimForContainer(fillToContainer(previous.panelBody || ' '), 999) : undefined
+  if (panelBody !== previousPanelBody) updates.push(new TextContainerUpgrade({
     containerID: 6,
     containerName: 'panel-body',
-    content: trimForContainer(fillToContainer(model.panelBody || ' '), 999),
+    content: panelBody,
     contentOffset: 0,
-    contentLength: trimForContainer(fillToContainer(model.panelBody || ' '), 999).length,
+    contentLength: panelBody.length,
   }))
   const boxContent = model.panelBox
     ? trimForContainer(formatBoxContent(model.panelBox), 999)
     : ''
-  updates.push(new TextContainerUpgrade({
+  const previousBoxContent = previous?.panelBox
+    ? trimForContainer(formatBoxContent(previous.panelBox), 999)
+    : ''
+  if (boxContent !== previousBoxContent) updates.push(new TextContainerUpgrade({
     containerID: 7,
     containerName: 'panel-box',
     content: boxContent,
     contentOffset: 0,
     contentLength: boxContent.length,
   }))
-  updates.push(new TextContainerUpgrade({
+  const footer = trimForContainer(model.panelFooter, 120)
+  const previousFooter = previous ? trimForContainer(previous.panelFooter, 120) : undefined
+  if (footer !== previousFooter) updates.push(new TextContainerUpgrade({
     containerID: 4,
     containerName: 'footer',
-    content: trimForContainer(model.panelFooter, 120),
+    content: footer,
     contentOffset: 0,
-    contentLength: trimForContainer(model.panelFooter, 120).length,
+    contentLength: footer.length,
   }))
   return updates
 }

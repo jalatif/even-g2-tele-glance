@@ -696,6 +696,7 @@ describe('TelegramAppController', () => {
     flushReadAcks(controller)
 
     expect(api.markRead).toHaveBeenCalledWith('1', { topicId: undefined, maxId: 100 })
+    expect(api.markRead).toHaveBeenCalledTimes(1)
     expect(controller.snapshot).toMatchObject({
       screen: 'sidebar',
       focus: 'messages',
@@ -718,6 +719,7 @@ describe('TelegramAppController', () => {
     flushReadAcks(controller)
 
     expect(api.markRead).toHaveBeenCalledWith('2', { topicId: '10', maxId: 100 })
+    expect(api.markRead).toHaveBeenCalledTimes(1)
     expect(controller.snapshot).toMatchObject({
       screen: 'sidebar',
       focus: 'topics',

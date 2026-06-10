@@ -52,13 +52,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let active = true
     let unsubscribe: (() => void) | undefined
     let unsubscribeUpdates: (() => void) | undefined
+    let glasses: GlassesBridge | undefined
+    let controller: TelegramAppController | undefined
 
     async function start() {
       try {
-        const glasses = await EvenHubGlassesBridge.create(
-          (input) => {
-            void controllerRef.current?.dispatch(input)
-          },
+        glasses = await EvenHubGlassesBridge.create(
+          (input) => controllerRef.current?.dispatch(input),
           {
             debugEventsEnabled: () => settingsRef.current.debugEventsEnabled,
             authConfig: () => settingsRef.current,
@@ -89,7 +89,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const api = new InstrumentedTelegramApi(baseApi)
         apiRef.current = api
         if (fixtureMode) logLifecycleEvent('start', {})
-        const controller = new TelegramAppController(
+        const createdController = new TelegramAppController(
           api,
           glasses,
           runtimeConfig(settingsRef.current),
@@ -102,14 +102,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           },
           () => fixtureMode || Boolean(settingsRef.current.backendSharedSecret.trim() && settingsRef.current.telegramApiId.trim() && settingsRef.current.telegramApiHash.trim()),
         )
-        controllerRef.current = controller
-        unsubscribe = controller.subscribe((next) => {
+        controller = createdController
+        controllerRef.current = createdController
+        unsubscribe = createdController.subscribe((next) => {
           logTeleGlanceTest('state', summarizeAppState(next))
           if (active) setState(next)
         })
-        await controller.init()
+        await createdController.init()
         unsubscribeUpdates = api.subscribeUpdates((update) => {
-          void controller.handleTelegramUpdate(update)
+          void createdController.handleTelegramUpdate(update)
         })
       } catch (error) {
         if (active) setStartupError(error instanceof Error ? error.message : 'Startup failed')
@@ -121,6 +122,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       active = false
       unsubscribe?.()
       unsubscribeUpdates?.()
+      controller?.dispose()
+      glasses?.dispose?.()
+      if (controllerRef.current === controller) controllerRef.current = null
     }
   }, [])
 
