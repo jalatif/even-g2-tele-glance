@@ -396,8 +396,10 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 |37|`37-error-inject`|`error` mode then `init`|`error`|body contains `Error` and `Press to retry`|
 |38|`38-error-retry`|`press`|(re-runs `init`)|`authStatus` called again|
 |39|`39-perf-budget-chat-list`|`slow` mode then `init`|`sidebar.chats` after 1200 ms|harness FAILS with clear latency-budget message|
-
-## 6. Fixture data dictionary
+|50|`50-exhaustive-scroll-topic-4`|navigate to topic 4, swipe up 30x|`sidebar.messages.topic`|`renderBodyContainsAny` finds every `topic-4-m<M>` anchor (M=1..12) across the step window — proves the controller can scroll through all 12 fixture messages of a forum topic end-to-end. The fixture embeds `topic-N-m<M>` in every message so the harness can assert exhaustive coverage without parsing `state.messages`.|
+|51|`51-exhaustive-scroll-topic-5`|back, navigate to topic 5, swipe up 30x|`sidebar.messages.topic`|same exhaustive-scroll assertion for topic 5|
+|52|`52-exhaustive-scroll-topic-6`|back, navigate to topic 6, swipe up 30x|`sidebar.messages.topic`|same exhaustive-scroll assertion for topic 6|
+ ## 6. Fixture data dictionary
 
 | Field | Value |
 | --- | --- |

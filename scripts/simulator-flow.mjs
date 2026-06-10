@@ -294,6 +294,31 @@ async function executeStep(step, _url) {
       eventStartTime,
     )
   }
+  if (isFixtureMode && expect.renderBodyContainsAny) {
+    // For multi-page scroll tests: every needle must appear in
+    // SOME render during the step window. The fixture embeds
+    // `topic-N-m<M>` anchors in each message so the harness can
+    // assert "I saw message M of topic N" without parsing the
+    // controller's state.messages structure. `stepDeadline` is
+    // already an absolute future timestamp set by executeStep;
+    // do not add `Date.now()` to it again.
+    const seen = new Set()
+    while (Date.now() < stepDeadline && seen.size < expect.renderBodyContainsAny.length) {
+      for (const event of testEvents) {
+        if (!eventMatchesFrom(event, eventStartTime)) continue
+        if (event.event !== 'render') continue
+        const haystack = JSON.stringify(event.model ?? {})
+        for (const needle of expect.renderBodyContainsAny) {
+          if (haystack.includes(needle)) seen.add(needle)
+        }
+      }
+      if (seen.size >= expect.renderBodyContainsAny.length) break
+      await sleep(80)
+    }
+    for (const needle of expect.renderBodyContainsAny) {
+      if (!seen.has(needle)) failures.push(`${name}: expected render content "${needle}" not found in any render during the step window`)
+    }
+  }
   if (isFixtureMode && expect.apiCalls) {
     const callsNeeded = new Set(expect.apiCalls)
     await waitForTestEvent(

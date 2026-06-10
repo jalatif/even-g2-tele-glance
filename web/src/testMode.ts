@@ -179,11 +179,40 @@ export function logBridgeQueueDepth(payload: BridgeQueueDepthPayload) {
   })
 }
 
-export function logTeleGlanceTest(event: string, payload: Record<string, unknown>) {
-  if (!isTestLoggingEnabled()) return
-  console.log(`${TELEGLANCE_TEST_LOG_PREFIX} ${JSON.stringify({ event, ts: Date.now(), ...payload })}`)
+const IN_PAGE_EVENT_BUFFER_LIMIT = 2_000
+const inPageEventBuffer: Array<{ event: string; ts: number; [key: string]: unknown }> = []
+let inPageFlushTimer: ReturnType<typeof setInterval> | undefined
+
+function startInPageEventFlush() {
+  if (inPageFlushTimer) return
+  if (typeof window === 'undefined') return
+  inPageFlushTimer = setInterval(() => {
+    if (inPageEventBuffer.length === 0) return
+    const events = inPageEventBuffer.splice(0, inPageEventBuffer.length)
+    fetch('/api/test/fixture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'events', events }),
+    }).catch(() => {
+      // If the dev server is gone (e.g. test cleanup), drop
+      // the events. They're useful for the harness but not
+      // required for the app to run.
+    })
+  }, 100)
+  const maybeNodeInterval = inPageFlushTimer as unknown as { unref?: () => void }
+  maybeNodeInterval.unref?.()
 }
 
+export function logTeleGlanceTest(event: string, payload: Record<string, unknown>) {
+  if (!isTestLoggingEnabled()) return
+  const entry = { event, ts: Date.now(), ...payload }
+  console.log(`${TELEGLANCE_TEST_LOG_PREFIX} ${JSON.stringify(entry)}`)
+  inPageEventBuffer.push(entry)
+  if (inPageEventBuffer.length > IN_PAGE_EVENT_BUFFER_LIMIT) {
+    inPageEventBuffer.splice(0, inPageEventBuffer.length - IN_PAGE_EVENT_BUFFER_LIMIT)
+  }
+  startInPageEventFlush()
+}
 export function logApiEvent<T>(call: string, args: unknown, startedAt: number, endedAt: number, ok: boolean, result?: T, error?: unknown) {
   logTeleGlanceTest('api', {
     call,
@@ -215,7 +244,6 @@ export function logApiTiming(call: string, args: unknown, startedAt: number, end
     result: ok ? result : undefined,
   })
 }
-
 function previewApiResult(result: unknown): unknown {
   if (result === undefined || result === null) return result
   if (Array.isArray(result)) return { __array: true, length: result.length, first: result[0] }
@@ -379,6 +407,15 @@ export function summarizeScreenModel(model: ScreenModel): Record<string, unknown
         selectedIndex: model.selectedIndex,
       }
     case 'sidebar':
+      // The harness-driven topic-scroll test
+      // (`scripts/simulator-topic-scroll.mjs`) relies on the
+      // actual panel body text to assert "I saw message N of
+      // topic T". `panelBodyLength` is not enough — we need
+      // the rendered content. Truncate to 600 chars so a single
+      // render event stays under a few KB even for long-message
+      // topics. The simulator's harness parses this and searches
+      // for the topic-N-m<M> anchors embedded in each fixture
+      // message.
       return {
         kind: model.kind,
         title: model.title,
@@ -386,10 +423,10 @@ export function summarizeScreenModel(model: ScreenModel): Record<string, unknown
         sidebarItemCount: model.sidebarItems.length,
         sidebarSelected: model.sidebarSelected,
         panelBodyLength: model.panelBody.length,
+        panelBodyExcerpt: model.panelBody.slice(0, 600),
         panelFooter: model.panelFooter,
-        panelBox: model.panelBox ? { heading: model.panelBox.heading, contentLength: model.panelBox.content.length } : null,
+        panelBox: model.panelBox ? { heading: model.panelBox.heading, contentLength: model.panelBox.content.length, contentExcerpt: model.panelBox.content.slice(0, 400) } : null,
       }
-    default:
       return { kind: 'unknown' }
   }
 }

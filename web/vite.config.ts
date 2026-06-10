@@ -12,20 +12,39 @@ type FixtureCommand =
   | { kind: 'setInjectedNotification'; chatId: string; message: string; topicId?: string | null }
   | { kind: 'injectAudioChunks'; pcmBase64: string }
   | { kind: 'reset' }
+  | { kind: 'drainEvents' }
 
 let pendingFixtureCommands: FixtureCommand[] = []
+let pendingFixtureEvents: unknown[] = []
 
 function teleGlanceFixtureBridge(): Plugin {
   return {
     name: 'teleGlance-fixture-bridge',
     apply: 'serve',
     configureServer(server) {
+      // GET /api/test/fixture-commands — the in-page poller
+      // fetches this every 100ms. The response carries any
+      // pending commands (queued via POST /api/test/fixture)
+      // AND any events the in-page script has pushed back via
+      // POST { kind: 'events', events: [...] }. The events
+      // field is what makes the
+      // `scripts/simulator-topic-scroll.mjs` harness possible:
+      // the page never exposes its in-memory render log to the
+      // outside, so we round-trip it through the dev server.
       server.middlewares.use('/api/test/fixture-commands', (_req, res) => {
         const commands = [...pendingFixtureCommands]
         pendingFixtureCommands = []
+        const events = pendingFixtureEvents.splice(0, pendingFixtureEvents.length)
         res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ commands }))
+        res.end(JSON.stringify({ commands, events }))
       })
+      // POST /api/test/fixture — accepts either:
+      //   { kind: 'command', command: <FixtureCommand> }
+      //   { kind: 'events', events: [...] }
+      // The original (legacy) contract was a bare `FixtureCommand`
+      // body, but new clients should use the explicit envelope.
+      // The bridge still parses a bare command for backward
+      // compatibility with the existing harness.
       server.middlewares.use('/api/test/fixture', (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405
@@ -37,17 +56,30 @@ function teleGlanceFixtureBridge(): Plugin {
           body += chunk.toString('utf8')
         })
         req.on('end', () => {
-          let command: FixtureCommand
           try {
-            command = JSON.parse(body) as FixtureCommand
+            const parsed = JSON.parse(body) as { kind?: string } & Record<string, unknown>
+            if (parsed.kind === 'events' && Array.isArray(parsed.events)) {
+              for (const event of parsed.events as unknown[]) {
+                pendingFixtureEvents.push(event)
+              }
+              // Cap the buffer at 5_000 events so a long-running
+              // harness doesn't OOM the dev server.
+              if (pendingFixtureEvents.length > 5_000) {
+                pendingFixtureEvents.splice(0, pendingFixtureEvents.length - 5_000)
+              }
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ ok: true, accepted: parsed.events.length }))
+              return
+            }
+            // Legacy: treat the body as a bare FixtureCommand.
+            const command = parsed as FixtureCommand
+            pendingFixtureCommands.push(command)
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ ok: true, command: command.kind }))
           } catch {
             res.statusCode = 400
             res.end('Invalid JSON')
-            return
           }
-          pendingFixtureCommands.push(command)
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ ok: true, command: command.kind }))
         })
       })
       server.middlewares.use('/api/test/console-marker', (_req, res) => {

@@ -65,6 +65,29 @@ const fixtureTopics: Topic[] = [
     unreadCount: 1,
     lastMessage: 'Topic three expected content preview.',
   },
+  {
+    id: 'fixture-topic-4',
+    title: 'Fixture Topic Four',
+    topMessageId: 'fixture-topic-4-top',
+    lastMessage: 'Topic four expected content preview.',
+  },
+  {
+    id: 'fixture-topic-5',
+    title: 'Fixture Topic Five',
+    topMessageId: 'fixture-topic-5-top',
+    lastMessage: 'Topic five expected content preview.',
+  },
+  {
+    id: 'fixture-topic-6',
+    title: 'Fixture Topic Six',
+    topMessageId: 'fixture-topic-6-top',
+    lastMessage: 'Topic six expected content preview.',
+  },
+  // Anchor strings used by the simulator-driven scroll test
+  // (scripts/simulator-topic-scroll.mjs). Each message in the
+  // three new topics embeds its index in the body so the harness
+  // can assert "I saw message N of topic T" without parsing the
+  // structure of the controller's `state.messages` array.
 ]
 
 const LONG_ALPHA_BODY = [
@@ -106,6 +129,57 @@ const messagePages = new Map<string, Message[]>([
   [threadKey('fixture-chat-1', 'fixture-topic-3'), [
     msg(130, 'Topic Three', LONG_TOPIC_BODY),
     msg(131, 'Reviewer', 'Topic three second message validates double-click back.'),
+  ]],
+  // simulator-driven scroll test
+  // (`scripts/simulator-topic-scroll.mjs`) opens each topic
+  // and exhaustively swipes to confirm every message renders.
+  // The initial listMessages call returns 8 messages (the
+  // controller's `MESSAGE_PAGE_LIMIT`); the remaining 4 require
+  // the user to swipe up to trigger `loadOlderMessages`.
+  // Each message body embeds a unique anchor of the form
+  // `topic-N-m<M>` so the harness can assert "I saw message M
+  // of topic N" without parsing `state.messages`.
+  [threadKey('fixture-chat-1', 'fixture-topic-4'), [
+    msg(140, 'Topic Four', 'topic-4-m1: First message of topic four.'),
+    msg(141, 'Topic Four', 'topic-4-m2: Second message of topic four.'),
+    msg(142, 'Topic Four', 'topic-4-m3: Third message of topic four.'),
+    msg(143, 'Topic Four', 'topic-4-m4: Fourth message of topic four.'),
+    msg(144, 'Topic Four', 'topic-4-m5: Fifth message of topic four.'),
+    msg(145, 'Topic Four', 'topic-4-m6: Sixth message of topic four.'),
+    msg(146, 'Topic Four', 'topic-4-m7: Seventh message of topic four.'),
+    msg(147, 'Topic Four', 'topic-4-m8: Eighth message of topic four.'),
+    msg(148, 'Topic Four', 'topic-4-m9: Ninth message of topic four.'),
+    msg(149, 'Topic Four', 'topic-4-m10: Tenth message of topic four.'),
+    msg(14, 'Topic Four', 'topic-4-m11: Eleventh message of topic four.'),
+    msg(15, 'Topic Four', 'topic-4-m12: Twelfth message of topic four.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-5'), [
+    msg(150, 'Topic Five', 'topic-5-m1: First message of topic five.'),
+    msg(151, 'Topic Five', 'topic-5-m2: Second message of topic five.'),
+    msg(152, 'Topic Five', 'topic-5-m3: Third message of topic five.'),
+    msg(153, 'Topic Five', 'topic-5-m4: Fourth message of topic five.'),
+    msg(154, 'Topic Five', 'topic-5-m5: Fifth message of topic five.'),
+    msg(155, 'Topic Five', 'topic-5-m6: Sixth message of topic five.'),
+    msg(156, 'Topic Five', 'topic-5-m7: Seventh message of topic five.'),
+    msg(157, 'Topic Five', 'topic-5-m8: Eighth message of topic five.'),
+    msg(158, 'Topic Five', 'topic-5-m9: Ninth message of topic five.'),
+    msg(159, 'Topic Five', 'topic-5-m10: Tenth message of topic five.'),
+    msg(25, 'Topic Five', 'topic-5-m11: Eleventh message of topic five.'),
+    msg(26, 'Topic Five', 'topic-5-m12: Twelfth message of topic five.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-6'), [
+    msg(160, 'Topic Six', 'topic-6-m1: First message of topic six.'),
+    msg(161, 'Topic Six', 'topic-6-m2: Second message of topic six.'),
+    msg(162, 'Topic Six', 'topic-6-m3: Third message of topic six.'),
+    msg(163, 'Topic Six', 'topic-6-m4: Fourth message of topic six.'),
+    msg(164, 'Topic Six', 'topic-6-m5: Fifth message of topic six.'),
+    msg(165, 'Topic Six', 'topic-6-m6: Sixth message of topic six.'),
+    msg(166, 'Topic Six', 'topic-6-m7: Seventh message of topic six.'),
+    msg(167, 'Topic Six', 'topic-6-m8: Eighth message of topic six.'),
+    msg(168, 'Topic Six', 'topic-6-m9: Ninth message of topic six.'),
+    msg(169, 'Topic Six', 'topic-6-m10: Tenth message of topic six.'),
+    msg(36, 'Topic Six', 'topic-6-m11: Eleventh message of topic six.'),
+    msg(37, 'Topic Six', 'topic-6-m12: Twelfth message of topic six.'),
   ]],
 ])
 
