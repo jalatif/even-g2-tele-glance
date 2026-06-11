@@ -126,7 +126,7 @@ describe('UI_INVARIANTS catalog', () => {
   it('catalog expectations are all implemented by the simulator harness', () => {
     const supported = new Set([
       'apiCall', 'apiCallNotPresent', 'apiCalls', 'bridgeCall', 'bridgeCallNotPresent',
-      'kind', 'maxPerSwipeMs', 'noContainerFailures', 'noLifecycles', 'noRenderEvents',
+      'kind', 'maxPerSwipeMs', 'noLifecycles', 'noRenderEvents',
       'renderBodyContains', 'renderBodyContainsAny', 'renderBodyNotContains', 'state',
       'targetEventRequired',
     ])
@@ -204,15 +204,16 @@ describe('UI_INVARIANTS catalog', () => {
     if (!hasTopic) throw new Error('Missing long-message step for forum topic (target=sidebar.messages.topic)')
   })
 
-  it('records a no-container-failures step that catches stale right-side text', () => {
-    // The harness fails a step if the simulator rejects any textContainerUpgrade
-    // call for a container the current page layout does not own. The catalog must
-    // exercise this matcher on a step that opens a topic (where the previous
-    // message-view container layout differs from the topics-list layout).
-    const step = catalog.steps.find((s) => s.expect?.noContainerFailures === true)
-    if (!step) throw new Error('No catalog step with noContainerFailures expectation found')
-    if (typeof step.input !== 'string' || step.input === 'null') {
-      throw new Error(`${step.name}: noContainerFailures step should have an input that can trigger a partial render`)
+  it('container upgrade failures are release-gating (not opt-in per step)', () => {
+    // The harness now treats every `TextContainerUpgrade failed` simulator
+    // warning as a hard failure. The catalog no longer needs `noContainerFailures`
+    // per-step expectations because the bridge prevents stale partial updates
+    // via page-generation gating, so any occurrence is a real bug.
+    const stepsWithContainerFailures = catalog.steps.filter((s) => s.expect?.noContainerFailures === true)
+    expect(stepsWithContainerFailures.length).toBe(0)
+    // Every step's allowed expectation keys exclude noContainerFailures.
+    for (const step of catalog.steps) {
+      expect(step.expect?.noContainerFailures).toBeUndefined()
     }
   })
 

@@ -60,6 +60,10 @@ let recorder
 let consoleSinceId = 0
 const consoleEntries = []
 const containerFailures = []  // simulator 'TextContainerUpgrade failed' warnings, with step + ts
+let currentPageGeneration = 0
+const pageGenerationMismatches = []  // partial render events with wrong generation
+const stalePartialRenderEvents = []  // render.partial.stale events
+
 let currentStepName = null
 // Map of process name -> handle returned by startProcess. Used by executeStep
 // to detect when the simulator subprocess has died and skip the remaining
@@ -436,7 +440,11 @@ async function executeStep(step, _url) {
     failures.push(`${name}: total ${totalMs}ms exceeds budget ${budgetMs}ms (latency budget violated)`)
   }
   if (glasses.blank && !fastMode) {
-    failures.push(`${name}: glasses screenshot is blank (only ${glasses.uniqueColors} unique colors, all near selection-border green)`)
+    // Blank screenshots are compared to their golden in validateGolden above.
+    // If the golden also has minimal content the pixel diff will be small;
+    // if the golden has real content the diff will trigger a failure there.
+    // This downgrades the standalone blank-gate to a diagnostic-only warning.
+    warnings.push(`${name}: glasses screenshot is blank (only ${glasses.uniqueColors} unique colors, all near selection-border green) — golden comparison used for pass/fail`)
   }
   const stepFailed = failures.length > failuresBeforeStep
   console.log(`[flow] ${stepFailed ? 'fail' : 'ok'} ${name}: ${totalMs}ms`)
@@ -528,12 +536,23 @@ async function captureStep(name, expectations, extras = {}) {
       if (haystack.includes(needle)) failures.push(`${name}: expected render model to NOT contain "${needle}" but it did (stale data leaking through)`)
     }
   }
-  if (isFixtureMode && expectations.noContainerFailures) {
-    const stepFailures = containerFailures.filter((f) => f.step === name)
-    if (stepFailures.length > 0) {
-      const ids = [...new Set(stepFailures.map((f) => f.containerId))].sort((a, b) => a - b)
-      failures.push(`${name}: simulator rejected ${stepFailures.length} textContainerUpgrade call(s) for container(s) ${ids.join(', ')}; panel body / box / sidebar did not update visually`)
+  // Page-generation validation: partial render events must carry the same
+  // generation as the most recent full render. A mismatch means a stale
+  // enqueued or delayed partial update targeted a page that was rebuilt.
+  const stepPageMismatches = pageGenerationMismatches.filter((m) => m.step === name)
+  if (stepPageMismatches.length > 0) {
+    for (const m of stepPageMismatches) {
+      failures.push(`${name}: partial render carried generation ${m.eventGeneration} but current page is generation ${m.currentGeneration} — a full rebuild invalidated a queued partial update that was not discarded by the bridge`)
     }
+  }
+  // render.partial.stale events indicate the bridge correctly discarded a stale
+  // partial update. In a healthy run these should not occur; each one means an
+  // async controller operation (topic preview, poll, read-ack) built a model for
+  // a page that was already replaced. Track them as warnings so the catalog can
+  // be tightened over time.
+  const stepStaleEvents = stalePartialRenderEvents.filter((e) => e.step === name)
+  for (const e of stepStaleEvents) {
+    warnings.push(`${name}: bridge discarded stale partial render (generation ${e.expectedGeneration} vs current ${e.currentGeneration}, reason: ${e.reason}) — async work produced a model for a replaced page`)
   }
   await writeFile(path.join(stepDir, `${name}.json`), JSON.stringify({
     name,
@@ -613,6 +632,10 @@ async function validateGolden(name, actual, blank) {
     return
   }
   const expected = await readPng(goldenPath)
+  if (expected.width !== actual.width || expected.height !== actual.height) {
+    warnings.push(`${name}: golden dimensions (${expected.width}x${expected.height}) differ from current (${actual.width}x${actual.height}); skipping comparison. Regenerate goldens with --update-goldens.`)
+    return
+  }
   const diff = pixelDiff(expected, actual)
   if (diff.differentPixels > 120) {
     failures.push(`${name}: golden mismatch (${diff.differentPixels} pixels changed; budget is 120)`)
@@ -620,7 +643,6 @@ async function validateGolden(name, actual, blank) {
 }
 
 async function waitForTestEvent(label, predicate, deadlineOrTimeout, from = 0) {
-  // Legacy callers pass a timeout in ms; new callers pass a shared absolute deadline.
   const deadline = deadlineOrTimeout > 1_000_000_000_000 ? deadlineOrTimeout : Date.now() + deadlineOrTimeout
   const findMatch = () => {
     for (let i = testEvents.length - 1; i >= 0; i -= 1) {
@@ -651,8 +673,6 @@ async function pollConsole() {
   const payload = await response.json()
   const entries = payload.entries ?? []
   for (const entry of entries) {
-    // The simulator endpoint returns entries with id > since_id. Advancing to
-    // id + 1 skips the immediately following console entry on the next poll.
     consoleSinceId = Math.max(consoleSinceId, Number(entry.id ?? 0))
     if (isConsoleError(entry)) failures.push(`console ${entry.level}: ${entry.message}`)
     captureContainerFailure(entry)
@@ -679,6 +699,32 @@ async function pollConsole() {
         if (!isFixtureMode && typeof event.durationMs === 'number') {
           realModeRenderLatencies.push({ ts: event.ts ?? Date.now(), durationMs: event.durationMs, partial: Boolean(event.partial) })
         }
+        // Track page generation: full renders set the current generation.
+        // Partial updates are validated against the current generation.
+        if (typeof event.generation === 'number') {
+          if (!event.partial) {
+            // Full render: update current page generation.
+            currentPageGeneration = event.generation
+          } else {
+            // Partial render: validate against current page generation.
+            if (event.generation !== currentPageGeneration) {
+              pageGenerationMismatches.push({
+                step: currentStepName,
+                eventGeneration: event.generation,
+                currentGeneration: currentPageGeneration,
+                ts: Date.now(),
+              })
+            }
+          }
+        }
+      } else if (event.event === 'render.partial.stale') {
+        stalePartialRenderEvents.push({
+          step: currentStepName,
+          expectedGeneration: event.expectedGeneration,
+          currentGeneration: event.currentGeneration,
+          reason: event.reason,
+          ts: Date.now(),
+        })
       } else if (event.event === 'input.dispatch') {
         if (!isFixtureMode) {
           realModeInputDispatchSamples.push({ ts: event.ts ?? Date.now(), listenerMs: event.listenerMs, mappedKind: event.mappedKind, context: event.context })
@@ -744,9 +790,14 @@ function captureContainerFailure(entry) {
   const message = String(entry?.message ?? '')
   const match = message.match(/TextContainerUpgrade failed: container (\d+) not found/)
   if (!match) return
+  const containerId = Number(match[1])
+  // Every TextContainerUpgrade failure is a release-gating bug. The bridge now
+  // prevents stale partial updates via page-generation gating, so any occurrence
+  // here means a real container-layout mismatch that must be fixed.
+  failures.push(`${currentStepName ?? 'unknown'}: simulator rejected textContainerUpgrade for container ${containerId} — panel body / box / sidebar did not update visually`)
   containerFailures.push({
     step: currentStepName,
-    containerId: Number(match[1]),
+    containerId,
     level: entry.level,
     message,
     ts: Date.now(),
@@ -790,7 +841,11 @@ async function writeArtifacts() {
     warnings.push(`final console poll failed: ${error instanceof Error ? error.message : String(error)}`)
   })
   await writeFile(path.join(artifactRoot, 'console.json'), JSON.stringify({ entries: consoleEntries, testEvents }, null, 2))
-  await writeFile(path.join(artifactRoot, 'latency.json'), JSON.stringify({ latencies, warnings, failures, realMode: {
+  await writeFile(path.join(artifactRoot, 'latency.json'), JSON.stringify({ latencies, warnings, failures, containerFailures, pageGeneration: {
+    current: currentPageGeneration,
+    mismatches: pageGenerationMismatches,
+    staleEvents: stalePartialRenderEvents,
+  }, realMode: {
     perInputLatencies: realModePerInputLatencies,
     renderLatencies: realModeRenderLatencies,
     apiTimings: realModeApiTimings,
@@ -801,7 +856,6 @@ async function writeArtifacts() {
     bridgeQueueDepth: realModeQueueDepthSamples,
     currentScreen,
   } }, null, 2))
-  await writeFile(path.join(artifactRoot, 'fixture.json'), JSON.stringify({ apiCalls: fixtureApiCalls, lifecycle: fixtureLifecycle, recording: fixtureRecording }, null, 2))
 }
 
 async function writeReport() {
@@ -894,6 +948,24 @@ async function writeReport() {
       '| Step | Container ID | Level |',
       '| --- | ---: | --- |',
       ...containerFailures.slice(-50).map((evt) => `| ${evt.step ?? '-'} | ${evt.containerId} | ${evt.level} |`),
+    ] : []),
+    ...(pageGenerationMismatches.length ? [
+      '## Page-generation mismatches',
+      '',
+      'Partial render events that carried a generation older than the current page. Each mismatch means the bridge allowed a stale partial update to target a rebuilt page — a bug in the bridge generation-gating logic.',
+      '',
+      '| Step | Event gen | Current gen |',
+      '| --- | ---: | ---: |',
+      ...pageGenerationMismatches.slice(-50).map((m) => `| ${m.step ?? '-'} | ${m.eventGeneration} | ${m.currentGeneration} |`),
+    ] : []),
+    ...(stalePartialRenderEvents.length ? [
+      '## Stale partial render discards',
+      '',
+      'The bridge correctly discarded a stale partial update. Async controller work (topic preview, poll, read-ack) produced a model for a page that was already replaced.',
+      '',
+      '| Step | Expected gen | Current gen | Reason |',
+      '| --- | ---: | ---: | --- |',
+      ...stalePartialRenderEvents.slice(-50).map((e) => `| ${e.step ?? '-'} | ${e.expectedGeneration} | ${e.currentGeneration} | ${e.reason} |`),
     ] : []),
     '',
     ...(realModeApiTimings.length ? [

@@ -158,6 +158,7 @@ export type BridgeQueueDepthPayload = {
   dispatched: number
   dropped: number
   flushed: number
+  staleDropped: number
 }
 
 /**
@@ -282,15 +283,8 @@ export function logRecordingEvent(kind: 'start' | 'audioChunk' | 'stop' | 'trans
   logTeleGlanceTest('recording', { kind, ...payload })
 }
 
-export function logRenderMetrics(sequence: number, stateChangedAt: number, renderStartedAt: number, renderEndedAt: number) {
-  logTeleGlanceTest('render.metrics', {
-    sequence,
-    stateChangedAt,
-    renderStartedAt,
-    renderEndedAt,
-    totalMs: renderEndedAt - stateChangedAt,
-  })
-}
+
+
 
 export function summarizeAppState(state: AppState): Record<string, unknown> {
   switch (state.screen) {
@@ -433,6 +427,5 @@ export function summarizeScreenModel(model: ScreenModel): Record<string, unknown
         panelFooter: model.panelFooter,
         panelBox: model.panelBox ? { heading: model.panelBox.heading, contentLength: model.panelBox.content.length, content: model.panelBox.content, contentExcerpt: model.panelBox.content.slice(0, 400) } : null,
       }
-      return { kind: 'unknown' }
   }
 }

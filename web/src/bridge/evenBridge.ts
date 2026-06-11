@@ -22,7 +22,7 @@ import {
 import { createBoundedInputDispatcher, createInputCoalescer, mapEvenHubEvent } from './eventMapping'
 
 const encoder = new TextEncoder()
-export const APP_BUILD_VERSION: string = (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0') as string
+export const APP_BUILD_VERSION: string = (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0')
 
 type DispatchContextSnapshot = { inputQuiet: boolean; backgroundWorkActive: boolean }
 type EvenBridgeOptions = {
@@ -55,14 +55,16 @@ type EvenBridgeInstance = {
 
 export class EvenHubGlassesBridge implements GlassesBridge {
   private hasRendered = false
+  private pageGeneration = 0
   private renderSequence = 0
-  private pendingPanelModel: Extract<ScreenModel, { kind: 'sidebar' }> | undefined
+  private pendingPanelModel: { model: Extract<ScreenModel, { kind: 'sidebar' }>; generation: number } | undefined
   private panelRenderInFlight = false
   private panelRenderQueuedAfter = false
   private fullRenderInFlight = false
   private partialRenderDispatched = 0
   private partialRenderDropped = 0
   private partialRenderFlushed = 0
+  private stalePartialRenderDropped = 0
   private panelRenderTimer: ReturnType<typeof setTimeout> | undefined
   private lastSidebarModel: Extract<ScreenModel, { kind: 'sidebar' }> | undefined
   // `panelRenderIdleMs` is the scroll-idle window for the partial-render queue. On real
@@ -72,7 +74,6 @@ export class EvenHubGlassesBridge implements GlassesBridge {
   // scrolling, so 10 rapid swipes produce one latest-state update instead of a queue
   // of stale sidebar and preview updates.
   private readonly panelRenderIdleMs = 150
-
   constructor(
     private readonly sdk: EvenBridgeInstance,
     private unsubscribeEvents?: () => void,
@@ -151,28 +152,44 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       dispatched: this.partialRenderDispatched,
       dropped: this.partialRenderDropped,
       flushed: this.partialRenderFlushed,
+      staleDropped: this.stalePartialRenderDropped,
     })
   }
 
   async render(model: ScreenModel) {
+    const generation = ++this.pageGeneration
     const sequence = ++this.renderSequence
+    // A full page rebuild invalidates every pending partial update. Clear the
+    // queued panel model and cancel the idle timer so that enqueued scroll
+    // updates or topic-preview renders from a previous page layout cannot
+    // target containers that no longer exist.
+    if (this.panelRenderTimer) {
+      clearTimeout(this.panelRenderTimer)
+      this.panelRenderTimer = undefined
+    }
+    this.pendingPanelModel = undefined
+    this.panelRenderQueuedAfter = false
+    // Do NOT reset panelRenderInFlight here — an in-flight partial update that
+    // started before the full render will be rejected by the generation check
+    // inside renderSidebarPanel when it resolves, and we want it to finish
+    // naturally rather than leave the SDK in a half-updated state.
     this.fullRenderInFlight = true
     this.emitQueueDepth('full-render-start')
     try {
       if (this.hasRendered) {
         const container = buildPage(model, RebuildPageContainer)
-        logTeleGlanceTest('bridge', { method: 'rebuildPageContainer', args: { sequence, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
+        logTeleGlanceTest('bridge', { method: 'rebuildPageContainer', args: { sequence, generation, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
         await this.sdk.rebuildPageContainer(container)
         this.lastSidebarModel = model.kind === 'sidebar' ? model : undefined
-        logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
+        logTeleGlanceTest('render', { sequence, generation, model: summarizeScreenModel(model) })
         return
       }
       const container = buildPage(model, CreateStartUpPageContainer)
-      logTeleGlanceTest('bridge', { method: 'createStartUpPageContainer', args: { sequence, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
+      logTeleGlanceTest('bridge', { method: 'createStartUpPageContainer', args: { sequence, generation, hasPanelBox: model.kind === 'sidebar' ? Boolean(model.panelBox) : false } })
       await this.sdk.createStartUpPageContainer(container)
       this.hasRendered = true
       this.lastSidebarModel = model.kind === 'sidebar' ? model : undefined
-      logTeleGlanceTest('render', { sequence, model: summarizeScreenModel(model) })
+      logTeleGlanceTest('render', { sequence, generation, model: summarizeScreenModel(model) })
     } finally {
       this.fullRenderInFlight = false
       this.emitQueueDepth('full-render-end')
@@ -183,22 +200,44 @@ export class EvenHubGlassesBridge implements GlassesBridge {
    * Partial render that updates the app-owned sidebar marker and right-panel text without
    * rebuilding the page. If `hasRendered` is false or the SDK lacks
    * `textContainerUpgrade`, fall back to a full rebuild.
+   *
+   * When `expectedGeneration` is provided, the update is silently dropped if the
+   * page has been rebuilt since the model was created. When called directly from
+   * the controller (no generation passed), the call is inherently valid because the
+   * controller built the model for the current page state.
    */
-  async renderSidebarPanel(model: Extract<ScreenModel, { kind: 'sidebar' }>) {
+  async renderSidebarPanel(model: Extract<ScreenModel, { kind: 'sidebar' }>, expectedGeneration?: number) {
+    if (expectedGeneration !== undefined && expectedGeneration !== this.pageGeneration) {
+      this.stalePartialRenderDropped += 1
+      logTeleGlanceTest('render.partial.stale', {
+        expectedGeneration,
+        currentGeneration: this.pageGeneration,
+        reason: 'generation-mismatch',
+      })
+      return
+    }
+    if (this.fullRenderInFlight) {
+      this.stalePartialRenderDropped += 1
+      logTeleGlanceTest('render.partial.stale', {
+        expectedGeneration: expectedGeneration ?? 'none',
+        currentGeneration: this.pageGeneration,
+        reason: 'full-render-in-flight',
+      })
+      return
+    }
     const sequence = ++this.renderSequence
     if (!this.hasRendered || typeof this.sdk.textContainerUpgrade !== 'function') {
-      // Fall back to a full render on first paint or when the SDK lacks partial updates.
       await this.render(model)
       return
     }
     const updates = buildSidebarPanelUpdates(model, this.lastSidebarModel)
-    logTeleGlanceTest('bridge', { method: 'textContainerUpgrade', args: { sequence, count: updates.length, hasPanelBox: Boolean(model.panelBox) } })
+    logTeleGlanceTest('bridge', { method: 'textContainerUpgrade', args: { sequence, generation: this.pageGeneration, count: updates.length, hasPanelBox: Boolean(model.panelBox) } })
     for (const update of updates) {
       await this.sdk.textContainerUpgrade(update)
     }
     this.lastSidebarModel = model
     this.partialRenderFlushed += 1
-    logTeleGlanceTest('render', { sequence, partial: true, model: summarizeScreenModel(model) })
+    logTeleGlanceTest('render', { sequence, generation: this.pageGeneration, partial: true, model: summarizeScreenModel(model) })
   }
 
   /**
@@ -221,12 +260,14 @@ export class EvenHubGlassesBridge implements GlassesBridge {
    */
   enqueueSidebarPanel(model: Extract<ScreenModel, { kind: 'sidebar' }>): void {
     this.partialRenderDispatched += 1
+    const generation = this.pageGeneration
     const previous = this.pendingPanelModel
-    this.pendingPanelModel = model
+    this.pendingPanelModel = { model, generation }
     if (previous) this.partialRenderDropped += 1
     if (this.panelRenderInFlight) {
       this.panelRenderQueuedAfter = true
       logTeleGlanceTest('render.partial.enqueue', {
+        generation,
         dropped: previous ? 1 : 0,
         coalesced: previous ? 1 : 0,
         inFlight: true,
@@ -235,16 +276,15 @@ export class EvenHubGlassesBridge implements GlassesBridge {
       return
     }
     if (this.panelRenderTimer) {
-      // Reset the idle deadline — each scroll pushes the flush further into the future
-      // so that rapid scrolling never triggers a firmware roundtrip until the user stops.
       clearTimeout(this.panelRenderTimer)
       this.panelRenderTimer = setTimeout(() => {
         this.panelRenderTimer = undefined
         void this.flushPanelQueue()
-      }, this.panelRenderIdleMs) as unknown as ReturnType<typeof setTimeout>
+      }, this.panelRenderIdleMs)
       const maybeNodeTimeout = this.panelRenderTimer as unknown as { unref?: () => void }
       maybeNodeTimeout.unref?.()
       logTeleGlanceTest('render.partial.enqueue', {
+        generation,
         dropped: previous ? 1 : 0,
         coalesced: previous ? 1 : 0,
         inFlight: false,
@@ -259,6 +299,7 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     const maybeNodeTimeout = this.panelRenderTimer as unknown as { unref?: () => void }
     maybeNodeTimeout.unref?.()
     logTeleGlanceTest('render.partial.enqueue', {
+      generation,
       dropped: previous ? 1 : 0,
       coalesced: previous ? 1 : 0,
       inFlight: false,
@@ -270,22 +311,22 @@ export class EvenHubGlassesBridge implements GlassesBridge {
    * Drain the latest queued panel model through the partial-render path. If a newer model
    * arrives while we are rendering, the trailing flag is set so the queue re-renders once.
    */
-  private async flushPanelQueue(): Promise<void> {
+  async flushPanelQueue(): Promise<void> {
     if (this.panelRenderInFlight) return
-    const model = this.pendingPanelModel
-    if (!model) return
+    const entry = this.pendingPanelModel
+    if (!entry) return
     this.pendingPanelModel = undefined
     this.panelRenderInFlight = true
     this.panelRenderQueuedAfter = false
     this.emitQueueDepth('flush-start')
     const startedAt = Date.now()
     try {
-      await this.renderSidebarPanel(model)
+      await this.renderSidebarPanel(entry.model, entry.generation)
     } catch {
       // Rendering failures must not stall the queue.
     } finally {
       const durationMs = Date.now() - startedAt
-      logTeleGlanceTest('render.partial.flush', { durationMs })
+      logTeleGlanceTest('render.partial.flush', { generation: entry.generation, durationMs })
       this.panelRenderInFlight = false
       this.emitQueueDepth('flush-end')
       if (this.pendingPanelModel) {
@@ -297,8 +338,6 @@ export class EvenHubGlassesBridge implements GlassesBridge {
         const maybeNodeTimeout = this.panelRenderTimer as unknown as { unref?: () => void }
         maybeNodeTimeout.unref?.()
       } else if (this.panelRenderQueuedAfter) {
-        // Trailing flag with no fresh model means a stale coalesced drop was tracked but no
-        // new data arrived. We deliberately do nothing here; the next enqueue will start fresh.
         this.panelRenderQueuedAfter = false
       }
     }
@@ -317,16 +356,18 @@ export class EvenHubGlassesBridge implements GlassesBridge {
     this.panelRenderInFlight = false
     this.panelRenderQueuedAfter = false
     this.fullRenderInFlight = false
+    this.pageGeneration = 0
+    this.stalePartialRenderDropped = 0
     this.unsubscribeEvents?.()
     this.unsubscribeEvents = undefined
   }
-
   /** Test/debug introspection: returns counters of queued partial render activity. */
   getPartialRenderStats() {
     return {
       dispatched: this.partialRenderDispatched,
       dropped: this.partialRenderDropped,
       flushed: this.partialRenderFlushed,
+      staleDropped: this.stalePartialRenderDropped,
     }
   }
   async setAudioEnabled(enabled: boolean) {
@@ -380,7 +421,6 @@ function buildPage(model: ScreenModel, Container: PageContainerClass) {
 }
 
 function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Container: PageContainerClass) {
-  const hasPanelBox = Boolean(model.panelBox)
   const fullWidth = model.fullWidth === true
 
   const outerBorder = new TextContainerProperty({
@@ -447,11 +487,11 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     paddingLength: 4,
     isEventCapture: 0,
   })
-  const panelBox = hasPanelBox
+  const panelBox = model.panelBox
     ? new TextContainerProperty({
         containerID: 7,
         containerName: 'panel-box',
-        content: trimForContainer(formatBoxContent(model.panelBox!), 999),
+        content: trimForContainer(formatBoxContent(model.panelBox), 999),
         xPosition: fullWidth ? 14 : 184,
         yPosition: 54,
         width: fullWidth ? 548 : 376,

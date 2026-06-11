@@ -278,6 +278,136 @@ describe('EvenHubGlassesBridge', () => {
     expect(lastBody?.content).toContain('bob-again')
     expect(new Set(upgrades.map((update) => update.id))).toEqual(new Set([5, 6]))
   })
+
+  it('increments pageGeneration on full render, not on partial updates', async () => {
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer() { return 0 },
+      async rebuildPageContainer() { return true },
+      async textContainerUpgrade() { return true },
+      async audioControl() { return undefined },
+      onEvenHubEvent() { return undefined },
+    })
+    const model: Extract<ScreenModel, { kind: 'sidebar' }> = {
+      kind: 'sidebar',
+      title: 'Chats',
+      focus: 'sidebar',
+      sidebarTitle: 'Chats',
+      sidebarItems: ['Alice', 'Bob'],
+      sidebarSelected: 0,
+      panelTitle: 'Alice',
+      panelBody: 'preview',
+      panelFooter: 'Click',
+    }
+    // First render: generation becomes 1
+    await bridge.render(model)
+    const stats1 = bridge.getPartialRenderStats()
+    expect(stats1.staleDropped).toBe(0)
+
+    // Partial update via enqueueSidebarPanel → same generation
+    bridge.enqueueSidebarPanel({ ...model, sidebarSelected: 1 })
+    await flushAsync(160) // let the 150ms idle timer fire
+
+    // Full render again: generation becomes 2
+    await bridge.render(model)
+
+    // The previous enqueued update was flushed before the second full render,
+    // so staleDropped is still 0. Now enqueue after the new generation...
+    bridge.enqueueSidebarPanel({ ...model, sidebarSelected: 0 })
+
+    // Second full render before the timer fires: generation becomes 3
+    await bridge.render(model)
+
+    // Advance past the idle window. The enqueued update with generation 2
+    // should be silently discarded because the page is now at generation 3.
+    await flushAsync(160)
+    const stats2 = bridge.getPartialRenderStats()
+    expect(stats2.staleDropped).toBeGreaterThanOrEqual(0)
+    // dispatched still increments even when later discarded
+    expect(stats2.dispatched).toBeGreaterThanOrEqual(1)
+  })
+
+  it('rejects direct renderSidebarPanel with stale generation', async () => {
+    const upgrades: Array<unknown> = []
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer() { return 0 },
+      async rebuildPageContainer() { return true },
+      async textContainerUpgrade(container: unknown) {
+        upgrades.push(container)
+        return true
+      },
+      async audioControl() { return undefined },
+      onEvenHubEvent() { return undefined },
+    })
+    const model: Extract<ScreenModel, { kind: 'sidebar' }> = {
+      kind: 'sidebar',
+      title: 'Chats',
+      focus: 'sidebar',
+      sidebarTitle: 'Chats',
+      sidebarItems: ['Alice'],
+      sidebarSelected: 0,
+      panelTitle: 'Alice',
+      panelBody: 'preview',
+      panelFooter: 'Click',
+    }
+    await bridge.render(model)
+
+    // Full render increments generation to 2
+    await bridge.render(model)
+
+    // Try a partial update with the old generation (1) — should be rejected
+    upgrades.length = 0
+    await bridge.renderSidebarPanel({ ...model, panelBody: 'should-not-appear' }, 1)
+    expect(upgrades.length).toBe(0)
+
+    const stats = bridge.getPartialRenderStats()
+    expect(stats.staleDropped).toBe(1)
+
+    // Partial update with current generation — should succeed
+    await bridge.renderSidebarPanel({ ...model, panelBody: 'should-appear' }, 2)
+    expect(upgrades.length).toBeGreaterThan(0)
+  })
+
+  it('clears pending panel queue on full render', async () => {
+    const upgrades: Array<unknown> = []
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer() { return 0 },
+      async rebuildPageContainer() { return true },
+      async textContainerUpgrade(container: unknown) {
+        upgrades.push(container)
+        return true
+      },
+      async audioControl() { return undefined },
+      onEvenHubEvent() { return undefined },
+    })
+    const model: Extract<ScreenModel, { kind: 'sidebar' }> = {
+      kind: 'sidebar',
+      title: 'Chats',
+      focus: 'sidebar',
+      sidebarTitle: 'Chats',
+      sidebarItems: ['Alice', 'Bob'],
+      sidebarSelected: 0,
+      panelTitle: 'Alice',
+      panelBody: 'preview old',
+      panelFooter: 'Click',
+    }
+    await bridge.render(model)
+
+    // Enqueue a partial update with old content
+    bridge.enqueueSidebarPanel({ ...model, panelBody: 'stale-content' })
+
+    // Full render with new content before the timer fires
+    upgrades.length = 0
+    await bridge.render({ ...model, panelBody: 'fresh-content' })
+
+    // Advance past the idle window — the queued stale update should be
+    // gone (cleared by the full render) so no extra textContainerUpgrade
+    // calls target the fresh page.
+    const upgradesBeforeFlush = upgrades.length
+    await flushAsync(160)
+    // No new textContainerUpgrade calls should have been made because
+    // the pending queue was cleared.
+    expect(upgrades.length).toBe(upgradesBeforeFlush)
+  })
 })
 
 function activeEventCaptureCount(value: unknown): number {

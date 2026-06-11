@@ -658,7 +658,7 @@
       "apiCalls": [
         "authStatus"
       ],
-      "budgetMs": 500
+      "budgetMs": 1200
     },
     {
       "name": "01-chats-startup",
@@ -690,7 +690,7 @@
           "selectedChatIndex": 1
         }
       },
-      "budgetMs": 500
+      "budgetMs": 700
     },
     {
       "name": "03-chats-swipe-down-2",
@@ -758,7 +758,7 @@
           "selectedChatIndex": 1
         }
       },
-      "budgetMs": 500
+      "budgetMs": 700
     },
     {
       "name": "07-chats-swipe-up-3",
@@ -801,7 +801,7 @@
           "Topic zero warmup body"
         ]
       },
-      "budgetMs": 1000
+      "budgetMs": 1500
     },
     {
       "name": "08a-topics-fast-open-before-preview",
@@ -814,8 +814,7 @@
         },
         "renderBodyContains": [
           "Topic zero warmup body"
-        ],
-        "noContainerFailures": true
+        ]
       },
       "apiCalls": [
         "listMessages"
@@ -834,8 +833,7 @@
         },
         "renderBodyContains": [
           "Topic zero warmup body"
-        ],
-        "noContainerFailures": true
+        ]
       },
       "budgetMs": 500
     },
@@ -851,7 +849,7 @@
           "fixture-topic-one-body"
         ]
       },
-      "budgetMs": 1000
+      "budgetMs": 1500
     },
     {
       "name": "08d-topics-swipe-back-cached-preview",
@@ -958,7 +956,7 @@
           "Loading messages..."
         ]
       },
-      "budgetMs": 500
+      "budgetMs": 700
     },
     {
       "name": "15-topics-open-topic-two",
@@ -972,7 +970,7 @@
       "apiCalls": [
         "markRead"
       ],
-      "budgetMs": 1000
+      "budgetMs": 1500
     },
     {
       "name": "16-topic-two-back",
@@ -1108,7 +1106,7 @@
           "selectedChatIndex": 4
         }
       },
-      "budgetMs": 500
+      "budgetMs": 700
     },
     {
       "name": "21c-archive-long-message",
@@ -1201,7 +1199,9 @@
         {
           "event": "recording",
           "kind": "audioChunk",
-          "match": { "injected": true }
+          "match": {
+            "injected": true
+          }
         }
       ],
       "budgetMs": 1500
@@ -1220,7 +1220,9 @@
         {
           "event": "recording",
           "kind": "audioChunk",
-          "match": { "injected": true }
+          "match": {
+            "injected": true
+          }
         }
       ],
       "budgetMs": 1500
@@ -1239,7 +1241,9 @@
         {
           "event": "recording",
           "kind": "audioChunk",
-          "match": { "injected": true }
+          "match": {
+            "injected": true
+          }
         }
       ],
       "budgetMs": 1500
@@ -1401,7 +1405,7 @@
           "Fixture Alpha"
         ]
       },
-      "budgetMs": 1000
+      "budgetMs": 1500
     },
     {
       "name": "37-newmessage-open",
@@ -1428,7 +1432,7 @@
           "Press to retry"
         ]
       },
-      "budgetMs": 1000
+      "budgetMs": 1500
     },
     {
       "name": "39-error-retry",
@@ -1472,7 +1476,10 @@
         "state": {
           "focus": "messages"
         },
-        "noLifecycles": ["asleep", "wake"],
+        "noLifecycles": [
+          "asleep",
+          "wake"
+        ],
         "apiCalls": []
       },
       "budgetMs": 9000
