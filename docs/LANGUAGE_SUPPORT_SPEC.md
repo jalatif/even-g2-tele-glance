@@ -16,17 +16,50 @@ renders all scripts natively via CSS `font-family: Inter, ui-sans-serif`.
 
 ## Language scope
 
-| Language | Script | Glasses glyphs? | Glasses fallback |
-|---|---|---|---|
-| English | Latin | Yes | — |
-| Spanish | Latin | Yes (accents, ñ, ¿, ¡) | — |
-| French | Latin | Yes (accents, ç, œ) | — |
-| Japanese | Kanji + Kana | **No** | Latin transliteration (rōmaji) |
-| Korean | Hangul | **No** | Latin transliteration (romaja) |
-| Chinese | Hanzi | **No** | Latin transliteration (pīnyīn) |
+The Even Hub SDK v0.0.10 has no font API — the glasses LVGL build supports
+only basic Latin glyphs (ASCII + Latin-1 + Latin-extended blocks, U+0000–U+024F
+plus common Latin extensions). Every language that uses Latin script is
+supported **today**. Adding a new language requires only a locale file with
+translations; no SDK or app-code changes.
 
-Hindi is excluded — Devanagari script, same problems as CJK, would need its
-own transliteration library.
+### Latin-script languages (supported now)
+
+| Language | Code | Accented glyphs | Status |
+|---|---|---|---|
+| English | en | — | Done |
+| Spanish | es | áéíóúüñ¿¡ | Done |
+| French | fr | àâçèéêëîïôœùûÿ | Done |
+| German | de | äöüß | Planned |
+| Italian | it | àèéìòù | Planned |
+| Portuguese | pt | áàâãçéêíóôõú | Planned |
+| Dutch | nl | äëïöü | Planned |
+| Swedish | sv | åäö | Planned |
+| Norwegian | no | æøå | Planned |
+| Danish | da | æøå | Planned |
+| Finnish | fi | äö | Planned |
+| Polish | pl | ąćęłńóśźż | Planned |
+| Czech | cs | áčďéěíňóřšťúůýž | Planned |
+| Turkish | tr | çğıöşü | Planned |
+| Vietnamese | vi | ảãạáàâấầẩẫậăắằẳẵặđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ | Planned |
+| Indonesian | id | — | Planned |
+| Malay | ms | — | Planned |
+| Romanian | ro | ăâîşţ | Planned |
+| Hungarian | hu | áéíóöőúüű | Planned |
+| Catalan | ca | àçèéíòóúü | Planned |
+| Slovak | sk | áäčďéíĺľňóôŕšťúýž | Planned |
+
+### Non-Latin scripts (blocked on SDK font support)
+
+| Language | Script | Glasses fallback |
+|---|---|---|
+| Japanese | Kanji + Kana | Latin transliteration (rōmaji) |
+| Korean | Hangul | Latin transliteration (romaja) |
+| Chinese | Hanzi | Latin transliteration (pīnyīn) |
+| Russian | Cyrillic | Latin transliteration |
+| Arabic | Arabic + RTL | Not supported (LVGL cannot render RTL) |
+
+Hindi is excluded — Devanagari script, would need its own transliteration library
+and has no path to native rendering.
 
 ## Current state
 
@@ -233,33 +266,83 @@ replacement fails because:
    binding needed, each function manages its own locale reference.
 4. **Status strings** in the controller (e.g. `status: 'Sent'`) are NOT
    replaced directly. A `localizeStatus()` helper in model.ts translates
-   well-known English status strings to locale at render time, so the
-   controller stays in English.
+## Phase 3 — Latin-script locale files (Spanish, French, and all other Latin languages)
 
-The refactor is split into 10 steps, each verified by the full test suite
-(140 tests) before proceeding.
+**Goal**: Add UI translations for all 18 Latin-script languages listed in the
+Language Scope table. No SDK or app-code changes needed — only locale files
+and fixture data.
 
-### 1.3a Step 1: Import + `const l` binding
+### 3.1 Already done
 
-```typescript
-// Before
-import type { Chat, Id, Message, Topic } from '../types'
+| Language | Locale file | Fixture data | Catalog steps |
+|---|---|---|---|
+| English (`en`) | Done | Done (baseline) | 56 steps |
+| Spanish (`es`) | Done | Done (80/20 mix) | 2 steps |
+| French (`fr`) | Done | Done (80/20 mix) | 2 steps |
 
-// After
-import type { Chat, Id, Message, Topic } from '../types'
-import { getLocale } from '../locales'
+### 3.2 Remaining 15 languages
+
+Each language needs three files, created from the English template:
+
+1. **`web/src/locales/{code}.ts`** — Translations of all 93 `LocaleStrings` keys.
+   Use `es.ts` or `fr.ts` as a template. Outsource translations to the model
+   or use a translation table — no manual transcription needed.
+
+2. **`web/src/fixtureApi.ts`** — Add locale-gated fixture data arrays
+   (`fixtureChats{Code}`, `fixtureTopics{Code}`, `messagePages{Code}`) with
+   80/20 native/English mix. Chat names and message bodies in the target
+   language, with ~20% of fixture content kept in English for mixed-content
+   validation.
+
+3. **`web/src/contexts/AppContext.tsx`** — Add the locale to the `setLocale`
+   handler's if-else chain (import + `setLocale({code})` + `setFixtureLocale('{code}')`).
+
+4. **`docs/UI_INVARIANTS.json`** — Add one `l10n-{code}-startup` catalog step
+   validating the sidebar title and chat names in the target language.
+
+### 3.3 Minimal implementation order
+
+Priority languages (by speaker count + distinct accent coverage):
+
+| Priority | Languages | Distinct accents tested |
+|---|---|---|
+| Tier 1 | German, Italian, Portuguese | Already done: Spanish + French cover most accented Latin. German adds ß, Portuguese adds ã/õ. |
+| Tier 2 | Dutch, Swedish, Polish, Turkish | Wider accent variety: Polish has 9 accented chars, Turkish has ç/ğ/ı/ö/ş/ü |
+| Tier 3 | Czech, Romanian, Hungarian, Vietnamese, Finnish, Norwegian, Danish, Indonesian, Malay, Catalan, Slovak | Remaining coverage. Vietnamese has the most complex accents — good stress test for glyph rendering. |
+
+Tier 1 can be done in a single session (~15 minutes per language × 3 languages).
+Tiers 2-3 can be batched or done as needed — there is zero code risk since
+each language is purely additive (new files + one import + one catalog step).
+
+### 3.4 Test plan per language
+
+```
+npm test --prefix web                              # 140 tests (locale module structure)
+npm run test:simulator --prefix web -- --locale {code}  # All English + l10n-{code} step
 ```
 
-Then add `const l = getLocale()` as the first line inside `screenModel`:
+The English baseline steps run with locale-gated fixture data and skip
+content assertions (their expected strings are English). The dedicated
+`l10n-{code}-startup` step validates sidebar title and chat names in the
+target language.
+
+### Locale resolution
+
+In `web/src/locales/index.ts`, add all new locale modules to the
+`LANG_TO_LOCALE` map:
 
 ```typescript
-export function screenModel(state: AppState): ScreenModel {
-  const l = getLocale()
-  switch (state.screen) {
+const LANG_TO_LOCALE: Record<string, LocaleStrings> = {
+  en, es, fr,
+  de, it, pt,  // Tier 1
+  nl, sv, pl, tr,  // Tier 2
+  cs, ro, hu, vi, fi, nb, da, id, ms, ca, sk,  // Tier 3
+}
 ```
 
-**Verify**: `npm test --prefix web` — 140 pass.
-
+The `--locale` flag accepts any language code. The harness sends `setLocale`
+at flow start, and the AppContext handler maps the code to locale module +
+fixture data.
 ### 1.3b Step 2: `sanitizeGlassesText` locale binding
 
 Add `const l = getLocale()` to `sanitizeGlassesText` and replace the three
@@ -598,70 +681,6 @@ Default: `"auto"` (Whisper auto-detects).
 | `web/src/screens/SettingsScreen.tsx` | Add STT language dropdown |
 | `web/src/storage.ts` | Persist `sttLanguage` in frontend config |
 | `web/src/types.ts` | Add `language` to `TranscriptionResult` |
-
----
-
-## Phase 3 — Latin-script locale files (Spanish, French)
-
-**Goal**: Add Spanish and French UI translations. Auto-detect locale from
-Whisper language. All Latin-script glyphs render on glasses.
-
-### 3.1 Create locale files
-
-**`web/src/locales/es.ts`** — Spanish translations of all `LocaleStrings` keys.
-**`web/src/locales/fr.ts`** — French translations.
-
-Both follow the exact same key structure as `en.ts`. The `LocaleStrings` type
-from Phase 1 enforces this at compile time.
-
-### 3.2 Locale resolution
-
-In `web/src/locales/index.ts`, add auto-detection:
-
-```typescript
-const LANG_TO_LOCALE: Record<string, LocaleStrings> = {
-  en: en,
-  es: es,
-  fr: fr,
-}
-
-export function resolveLocale(detectedLanguage?: string, userOverride?: string): void {
-  const lang = userOverride || detectedLanguage || 'en'
-  // Map Whisper codes to locale modules
-  const locale = LANG_TO_LOCALE[lang] || LANG_TO_LOCALE[lang.split('-')[0]] || en
-  setLocale(locale)
-}
-```
-
-### 3.3 Settings UI: UI language selector
-
-Add to `screens/SettingsScreen.tsx`:
-
-```
-UI Language: [Auto] [English] [Spanish] [French]
-```
-
-Default: `"auto"` (resolved from detected STT language).
-
-### 3.4 Test plan
-
-- `model.test.ts`: add tests for Spanish/French locale string output
-- `controller.test.ts`: add test that transcription with `language: "es"`
-  sets `detectedLanguage` and resolves Spanish locale
-- Manual QA: switch UI language to Spanish, verify every glasses screen
-  shows Spanish text; verify accented characters render correctly
-
-### Files touched
-
-| File | Change |
-|---|---|
-| `web/src/locales/es.ts` | **New** — Spanish strings |
-| `web/src/locales/fr.ts` | **New** — French strings |
-| `web/src/locales/index.ts` | Add `resolveLocale()` |
-| `web/src/controller/appController.ts` | Call `resolveLocale()` after transcription / on init |
-| `web/src/screens/SettingsScreen.tsx` | Add UI language dropdown |
-| `web/src/storage.ts` | Persist `uiLanguage` |
-| `web/test/model.test.ts` | Locale-specific output tests |
 
 ---
 

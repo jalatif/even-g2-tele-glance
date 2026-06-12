@@ -6,18 +6,21 @@ that must change to validate multi-language support end-to-end.
 
 ## Design principle
 
-**Test the mechanism, not the matrix.** We do not run 56 catalog steps × 5
+**Test the mechanism, not the matrix.** We do not run 56 catalog steps × 20
 languages. Instead:
 
-1. Add a **sampling set** of ~8 catalog steps that exercise the key screens in
-   each Latin-script language (Spanish, French).
-2. Add a **locale-switch step** that toggles the locale mid-run and verifies
-   the UI re-renders.
-3. Add **locale-aware unit tests** that cover every locale string in isolation.
+1. **Global `--locale` override**: When `--locale {code}` is passed, the harness
+   sends `setLocale` at flow start and ALL 56 English baseline steps run with
+   locale-gated fixture data and UI strings. Content assertions on English-only
+   steps are automatically skipped; structural checks (state, screen, focus) still
+   pass. This validates the full UI flow in the target language with zero
+   additional catalog steps.
+2. **One `l10n-{code}-startup` step** per language validates locale-specific
+   content (sidebar title and chat names in the target language).
+3. **Locale-aware unit tests** cover every locale string in isolation.
 4. For CJK (Phase 4), add transliteration tests that verify output is Latin
    script with no `glyph dsc. not found` characters.
 5. Keep the existing 56-step catalog running in English — it is the baseline.
-
 ## Changes by layer
 
 ### 1. Fixture API (`web/src/fixtureApi.ts`)
