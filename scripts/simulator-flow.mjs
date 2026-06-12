@@ -263,6 +263,8 @@ async function executeStep(step, _url) {
       if (latest && reinitPredicate(latest)) break
       await sleep(200)
     }
+    // Let controller finish async init work before pressSequence fires.
+    await sleep(2000)
   }
   if (step.input === 'testSlowChat') {
     await sendTestCommand({ kind: 'setMode', mode: 'slow' })
