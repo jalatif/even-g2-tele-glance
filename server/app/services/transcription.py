@@ -1,6 +1,7 @@
 import os
 import tempfile
 from dataclasses import dataclass
+from typing import Optional
 
 from app.config import Settings
 from app.models import TranscriptionResponse
@@ -33,7 +34,7 @@ class WhisperTranscriptionService:
             )
         return self._model
 
-    async def transcribe_wav(self, wav_bytes: bytes) -> TranscriptionResponse:
+    async def transcribe_wav(self, wav_bytes: bytes, language: Optional[str] = None) -> TranscriptionResponse:
         if not wav_bytes:
             raise TranscriptionServiceError("audio payload is empty")
 
@@ -46,12 +47,12 @@ class WhisperTranscriptionService:
 
             segments, info = model.transcribe(
                 temp_path,
+                language=language,
                 beam_size=self.settings.whisper_beam_size,
                 best_of=self.settings.whisper_best_of,
                 temperature=self.settings.whisper_temperature,
                 condition_on_previous_text=self.settings.whisper_condition_on_previous_text,
             )
-            text = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
             return TranscriptionResponse(
                 text=text,
                 language=getattr(info, "language", None),

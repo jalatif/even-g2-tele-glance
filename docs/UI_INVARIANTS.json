@@ -1186,6 +1186,16 @@
       "budgetMs": 1000
     },
     {
+      "name": "22b-set-recording-transcript",
+      "input": "setNextTranscript",
+      "transcript": "Fixture transcript",
+      "target": "sidebarRecording",
+      "expect": {
+        "targetEventRequired": false
+      },
+      "budgetMs": 500
+    },
+    {
       "name": "24-alpha-record-audio-1",
       "input": "audioChunk",
       "target": "sidebarRecording",
@@ -1891,6 +1901,149 @@
         ]
       },
       "budgetMs": 10000
+    },
+    {
+      "name": "l10n-ja-startup",
+      "locale": "ja",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "ja"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chatto",
+          "Tereguramu",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-ko-startup",
+      "locale": "ko",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "ko"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chaeting",
+          "Tellegeuraem",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-zh-startup",
+      "locale": "zh",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "zh"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Liaotian",
+          "Telegram",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-ms-startup",
+      "locale": "ms",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "ms"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Sembang",
+          "Telegram",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "50-auth-needs-setup",
+      "input": "testAuthMissing",
+      "target": "auth.needsSetup",
+      "expect": {
+        "state": {
+          "screen": "auth",
+          "mode": "needsSetup"
+        },
+        "renderBodyContains": [
+          "Settings",
+          "Backend URL"
+        ]
+      },
+      "budgetMs": 5000
+    },
+    {
+      "name": "51-auth-signed-out",
+      "input": "testAuthSignedOut",
+      "target": "auth.signedOut",
+      "expect": {
+        "state": {
+          "screen": "auth",
+          "mode": "signedOut"
+        },
+        "renderBodyContains": [
+          "phone number"
+        ]
+      },
+      "budgetMs": 5000
+    },
+    {
+      "name": "52-newmessage-topic-inject",
+      "input": "testTopicNotify",
+      "target": "newMessage.topic",
+      "expect": {
+        "state": {
+          "screen": "newMessage"
+        },
+        "renderBodyContains": [
+          "Fixture Ops",
+          "Dev Discussion",
+          "New topic reply from Bob"
+        ]
+      },
+      "budgetMs": 3000
     }
   ]
 }

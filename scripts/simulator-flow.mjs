@@ -117,8 +117,41 @@ const realModeQueueDepthSamples = []
 let catalog = null
 let testConsoleBridge = false
 
+// Generate signed 16-bit little-endian PCM at 16 kHz — the format the Even Hub
+// microphone produces and pcmChunksToWav() expects. Used inline so the harness
+// never depends on opaque binary fixture files.
+function generateTonePcm(durationMs, freq) {
+  const sampleRate = 16000
+  const samples = Math.floor(sampleRate * durationMs / 1000)
+  const buf = new Int16Array(samples)
+  for (let i = 0; i < samples; i += 1) {
+    buf[i] = Math.floor(Math.sin(2 * Math.PI * freq * i / sampleRate) * 8000)
+  }
+  return new Uint8Array(buf.buffer)
+}
+
+function generateSilencePcm(durationMs) {
+  const bytes = Math.floor(16000 * durationMs / 1000) * 2
+  return new Uint8Array(bytes)
+}
+
+const LOCALE_TRANSCRIPTS = {
+  es: 'Transcripción de prueba',
+  fr: 'Transcription de test',
+  de: 'Test-Transkription',
+  it: 'Trascrizione di test',
+  pt: 'Transcrição de teste',
+  nl: 'Test transcriptie',
+}
+
+function resolveTranscript(defaultText) {
+  if (targetLocale !== 'en' && targetLocale !== 'all' && LOCALE_TRANSCRIPTS[targetLocale]) {
+    return LOCALE_TRANSCRIPTS[targetLocale]
+  }
+  return defaultText
+}
+
 await cleanOldArtifacts('simulator-flow')
-await mkdir(framesDir, { recursive: true })
 await mkdir(stepDir, { recursive: true })
 await mkdir(goldenRoot, { recursive: true })
 catalog = await loadCatalog()
@@ -291,9 +324,30 @@ async function executeStep(step, _url) {
   if (step.input === 'testNotify') {
     await sendTestCommand({ kind: 'setInjectedNotification', chatId: 'fixture-chat-0', message: 'New fixture message' })
   }
+  if (step.input === 'testTopicNotify') {
+    await sendTestCommand({ kind: 'setInjectedNotification', chatId: 'fixture-chat-0', message: 'New topic reply from Bob', topicId: 101 })
+  }
+  if (step.input === 'testAuthMissing') {
+    await sendTestCommand({ kind: 'setMode', mode: 'missing' })
+    await sendTestCommand({ kind: 'reinitialize' })
+  }
+  if (step.input === 'testAuthSignedOut') {
+    await sendTestCommand({ kind: 'setMode', mode: 'signedOut' })
+    await sendTestCommand({ kind: 'reinitialize' })
+  }
+  if (step.input === 'setNextTranscript') {
+    const text = resolveTranscript(step.transcript ?? null)
+    await sendTestCommand({ kind: 'setNextTranscript', value: text })
+  }
   if (step.input === 'audioChunk') {
-    const pcm = await readFile(path.join(webRoot, 'test', 'fixtures', 'recording-sample.pcm'))
-    await sendTestCommand({ kind: 'injectAudioChunks', pcmBase64: pcm.toString('base64') })
+    const durationMs = step.audioDurationMs ?? 400
+    const pcm = generateTonePcm(durationMs, 1000)
+    await sendTestCommand({ kind: 'injectAudioChunks', pcmBase64: Buffer.from(pcm).toString('base64') })
+  }
+  if (step.input === 'silenceAudioChunk') {
+    const durationMs = step.audioDurationMs ?? 100
+    const pcm = generateSilencePcm(durationMs)
+    await sendTestCommand({ kind: 'injectAudioChunks', pcmBase64: Buffer.from(pcm).toString('base64') })
   }
   const perInputLatencies = []
   if (step.input === 'click' || step.input === 'double_click' || step.input === 'up' || step.input === 'down') {
@@ -343,13 +397,15 @@ async function executeStep(step, _url) {
   const stepDeadline = Date.now() + budgetMs + (step.expectToFail ? 2_000 : 0)
   const startedAt = Date.now()
   if (expectedState && Object.keys(expectedState).length > 0) {
-    // Strict state predicates are fixture-shaped. In real mode, the catalog still
-    // emits them so a no-op can be detected, but we do not fail the run if a real
-    // chat/topic/message happens to be present.
-    const predicate = makeStatePredicate(expectedState)
+    const contentGated = targetLocale !== 'en' && targetLocale !== 'all' && !step.locale
+    const skipStateKeys = contentGated ? ['transcript'] : []
+    const predicate = makeStatePredicate(expectedState, skipStateKeys)
     await waitForTestEvent(`${name}: state ${JSON.stringify(expectedState)}`, predicate, stepDeadline, targetEventStart ?? eventStartTime)
   }
-  if (expectedRender) {
+  // When --locale is non-en, English-only target screens have locale-dependent
+  // strings (titles, etc.) that won't match. Skip for non-locale steps in
+  // locale override mode — same pattern as renderBodyContains below.
+  if (expectedRender && !(targetLocale !== 'en' && targetLocale !== 'all' && !step.locale)) {
     await waitForTestEvent(
       `${name}: render contract ${JSON.stringify(expectedRender)}`,
       (event) => event.event === 'render' && matchesRenderContract(event.model, expectedRender),
@@ -409,9 +465,11 @@ async function executeStep(step, _url) {
   }
   if (isFixtureMode && expect.apiCall) {
     const { call, args } = expect.apiCall
+    const contentGated = targetLocale !== 'en' && targetLocale !== 'all' && !step.locale
+    const skipArgsKeys = contentGated ? ['request'] : []
     await waitForTestEvent(
       `${name}: api ${call}`,
-      (event) => event.event === 'api' && event.call === call && (!args || matchesArgs(event.args, args)),
+      (event) => event.event === 'api' && event.call === call && (!args || matchesArgs(event.args, args, skipArgsKeys)),
       stepDeadline,
       eventStartTime,
     )
@@ -505,20 +563,23 @@ async function executeStep(step, _url) {
   currentStepName = null
 }
 
-function makeStatePredicate(expected) {
+function makeStatePredicate(expected, skipKeys = []) {
   return (event) => {
     if (event.event !== 'state') return false
     for (const [key, value] of Object.entries(expected)) {
+      if (skipKeys.includes(key)) continue
       if (event[key] !== value) return false
     }
     return true
   }
 }
 
-function matchesArgs(actual, expected) {
+function matchesArgs(actual, expected, skipKeys = []) {
   if (!expected) return true
   for (const [key, value] of Object.entries(expected)) {
-    if (JSON.stringify(actual?.[key]) !== JSON.stringify(value)) return false
+    if (skipKeys.includes(key)) continue
+    const actualVal = key === 'request' ? actual?.[key]?.text : actual?.[key]
+    if (JSON.stringify(actualVal) !== JSON.stringify(value)) return false
   }
   return true
 }

@@ -85,7 +85,7 @@ class FakeTranscriptionService:
     def __init__(self):
         self.payloads = []
 
-    async def transcribe_wav(self, wav_bytes):
+    async def transcribe_wav(self, wav_bytes, language=None):
         self.payloads.append(wav_bytes)
         return TranscriptionResponse(text="send the update", language="en", duration_seconds=0.5)
 

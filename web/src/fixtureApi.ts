@@ -276,7 +276,7 @@ export class FixtureTelegramApi implements TelegramApi {
     return undefined
   }
 
-  async transcribe(): Promise<TranscriptionResult> {
+  async transcribe(_wav?: Blob, _language?: string): Promise<TranscriptionResult> {
     await fixtureDelay(20)
     if (this.nextTranscript !== null) {
       const text = this.nextTranscript

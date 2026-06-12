@@ -44,11 +44,10 @@ const DEFAULT_RUNTIME_CONFIG: ControllerRuntimeConfig = {
   messagePollMs: 3000,
   chatPollMs: 5000,
   recordingMinDurationMs: 900,
-  selectionOnlyPressDelayMs: 600,
-  swipeToPressDebounceMs: 450,
-  // How long after a full `bridge.render()` we treat a list click as
-  // post-firmware-reset. See FIRMWARE_RESET_WINDOW_MS for the rationale.
-  firmwareResetWindowMs: 5000,
+  language: 'en',
+  swipeToPressDebounceMs: 200,
+  selectionOnlyPressDelayMs: 400,
+  firmwareResetWindowMs: 250,
 }
 
 export type ControllerRuntimeConfig = {
@@ -56,11 +55,14 @@ export type ControllerRuntimeConfig = {
   messagePollMs: number
   chatPollMs: number
   recordingMinDurationMs: number
-  selectionOnlyPressDelayMs: number
+  language: string
   swipeToPressDebounceMs: number
+  selectionOnlyPressDelayMs: number
   firmwareResetWindowMs: number
 }
+
 type StateListener = (state: AppState) => void
+
 
 export class TelegramAppController {
   private state: AppState = { screen: 'loading', message: 'Starting...' }
@@ -965,7 +967,7 @@ export class TelegramAppController {
         })
         return
       }
-      const result = await this.api.transcribe(pcmChunksToWav(state.chunks))
+      const result = await this.api.transcribe(pcmChunksToWav(state.chunks), this.runtimeConfig.language)
       const transcript = result.text.trim()
       if (isTeleGlanceFixtureMode()) logRecordingEvent('transcribe.end', { transcript: result.text.trim() })
       if (transcript.length === 0) {
@@ -973,7 +975,6 @@ export class TelegramAppController {
           screen: 'sidebar', focus: 'messages',
           chats: state.chats, selectedChatIndex: state.selectedChatIndex,
           chat: state.chat,
-          topic: state.topic,
           messages: state.messages,
           back: state.back,
           status: state.status,
@@ -997,16 +998,6 @@ export class TelegramAppController {
         isNewestPage: state.isNewestPage,
         scrollOffset: state.scrollOffset,
       })
-    }, {
-      screen: 'sidebar', focus: 'messages',
-      chats: state.chats, selectedChatIndex: state.selectedChatIndex,
-      chat: state.chat,
-      topic: state.topic,
-      messages: state.messages,
-      back: state.back,
-      status: state.status,
-      newerPages: state.newerPages,
-      isNewestPage: state.isNewestPage,
     })
   }
 

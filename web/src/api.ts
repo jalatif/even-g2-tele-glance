@@ -24,7 +24,7 @@ export interface TelegramApi {
   listMessages(chatId: Id, options?: { topicId?: Id; beforeId?: Id; limit?: number }): Promise<Message[]>
   sendMessage(chatId: Id, request: SendMessageRequest): Promise<Message>
   markRead(chatId: Id, request: MarkReadRequest): Promise<void>
-  transcribe(wav: Blob): Promise<TranscriptionResult>
+  transcribe(wav: Blob, language?: string): Promise<TranscriptionResult>
   subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event | Error) => void): () => void
 }
 
@@ -133,9 +133,10 @@ export class HttpTelegramApi implements TelegramApi {
     })
   }
 
-  async transcribe(wav: Blob): Promise<TranscriptionResult> {
+  async transcribe(wav: Blob, language?: string): Promise<TranscriptionResult> {
     const form = new FormData()
     form.append('audio', wav, 'reply.wav')
+    if (language) form.append('language', language)
     const sttBaseUrl = this.sttBaseUrl()
     return this.request('/api/transcribe', { method: 'POST', body: form }, sttBaseUrl, sttBaseUrl === this.baseUrl)
   }

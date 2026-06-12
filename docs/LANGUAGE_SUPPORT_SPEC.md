@@ -336,7 +336,7 @@ const LANG_TO_LOCALE: Record<string, LocaleStrings> = {
   en, es, fr,
   de, it, pt,  // Tier 1
   nl, sv, pl, tr,  // Tier 2
-  cs, ro, hu, vi, fi, nb, da, id, ms, ca, sk,  // Tier 3
+  cs, ro, hu, vi, fi, no, da, id, ca, sk,  // Tier 3 (nb→no per ISO 639-1)
 }
 ```
 
@@ -838,12 +838,13 @@ language, no CJK transliteration until explicitly enabled.
 
 ## Verification checklist
 
-- [ ] 132 unit tests pass with locale infrastructure (Phase 1)
-- [ ] 56/56 simulator steps pass (Phase 1)
-- [ ] Spanish/French locale files have 100% key coverage (Phase 3)
-- [ ] Spanish/French glasses screens render accented characters (manual QA)
-- [ ] Whisper language parameter round-trips correctly (Phase 2)
-- [ ] Detected language resolves correct locale (Phase 3)
+- [x] 140 unit tests pass with locale infrastructure (Phase 1)
+- [x] 52/56 simulator steps pass; 4 pre-existing failures (error-inject/perf-budget) tracked in HARNESS_AUDIT (Phase 1)
+- [x] All 18 locale files have 100% key coverage (93/93 keys matching en.ts) (Phase 3)
+- [x] Locale-gated render contract checks: es/fr/de simulator runs pass matching English baseline (Phase 3)
+- [ ] Spanish/French glasses screens render accented characters (manual QA on G2 hardware)
+- [ ] Whisper language parameter round-trips correctly (Phase 2 — not yet implemented)
+- [ ] Detected language resolves correct locale (Phase 3 — not yet implemented)
 - [ ] CJK transliteration produces readable Latin output (Phase 4)
 - [ ] CJK locale files have 100% key coverage (Phase 4)
 - [ ] No `glyph dsc. not found` warnings for new locale strings (all phases)

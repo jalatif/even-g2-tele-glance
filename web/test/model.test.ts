@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { messageScrollUnitCount, screenModel } from '../src/controller/model'
 import type { AppState } from '../src/controller/model'
-
-
+import { getLocale, setLocale } from '../src/locales'
+import ja from '../src/locales/ja'
 const encoder = new TextEncoder()
 
 describe('screenModel', () => {
@@ -442,5 +442,36 @@ describe('screenModel', () => {
 
     expect(model.kind).toBe('sidebar')
     if (model.kind === 'sidebar') expect(model.fullWidth).toBe(true)
+  })
+
+
+  it('strips CJK characters when locale requests transliteration fallback', () => {
+    const original = getLocale()
+    setLocale(ja)
+
+    let result = screenModel({
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: '日本語', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: 'hello' }],
+    })
+    if (result.kind === 'sidebar') {
+      expect(result.panelTitle).not.toContain('日')
+      expect(result.panelTitle).not.toContain('本')
+      expect(result.panelTitle).not.toContain('語')
+    }
+
+    result = screenModel({
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Test', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: '안녕하세요 Hello' }],
+    })
+    if (result.kind === 'sidebar') {
+      expect(result.panelBody).toContain('Hello')
+      expect(result.panelBody).not.toContain('안')
+    }
+
+    setLocale(original)
   })
 })

@@ -5,6 +5,7 @@ const CHAT_POLL_STORAGE_KEY = 'teleGlance.chatPollMs'
 const MESSAGE_POLL_STORAGE_KEY = 'teleGlance.messagePollMs'
 const RECORDING_MIN_STORAGE_KEY = 'teleGlance.recordingMinDurationMs'
 const STT_BASE_URL_STORAGE_KEY = 'teleGlance.sttBaseUrl'
+const LANGUAGE_STORAGE_KEY = 'teleGlance.language'
 const BACKEND_SHARED_SECRET_STORAGE_KEY = 'teleGlance.backendSharedSecret'
 const TELEGRAM_API_ID_STORAGE_KEY = 'teleGlance.telegramApiId'
 const TELEGRAM_API_HASH_STORAGE_KEY = 'teleGlance.telegramApiHash'
@@ -31,6 +32,7 @@ export type FrontendConfig = {
   telegramApiId: string
   telegramApiHash: string
   telegramSession: string
+  language: string
   debugEventsEnabled: boolean
   chatPollMs: number
   messagePollMs: number
@@ -48,6 +50,7 @@ export const DEFAULT_FRONTEND_CONFIG: Omit<FrontendConfig, 'apiBaseUrl'> = {
   telegramApiId: '',
   telegramApiHash: '',
   telegramSession: '',
+  language: 'en',
   debugEventsEnabled: false,
   chatPollMs: 10000,
   messagePollMs: 8000,
@@ -62,6 +65,7 @@ export function loadFrontendConfig(): FrontendConfig {
     telegramApiId: readSensitiveString(TELEGRAM_API_ID_STORAGE_KEY, G2_TELE_TELEGRAM_API_ID_STORAGE_KEY),
     telegramApiHash: readSensitiveString(TELEGRAM_API_HASH_STORAGE_KEY, G2_TELE_TELEGRAM_API_HASH_STORAGE_KEY),
     telegramSession: readSensitiveString(TELEGRAM_SESSION_STORAGE_KEY, G2_TELE_TELEGRAM_SESSION_STORAGE_KEY),
+    language: readString(LANGUAGE_STORAGE_KEY),
     debugEventsEnabled: readBoolean(DEBUG_EVENTS_STORAGE_KEY, DEFAULT_FRONTEND_CONFIG.debugEventsEnabled, G2_TELE_DEBUG_EVENTS_STORAGE_KEY, LEGACY_DEBUG_EVENTS_STORAGE_KEY),
     chatPollMs: readNumber(CHAT_POLL_STORAGE_KEY, DEFAULT_FRONTEND_CONFIG.chatPollMs, 1000, 60000, G2_TELE_CHAT_POLL_STORAGE_KEY, LEGACY_CHAT_POLL_STORAGE_KEY),
     messagePollMs: readNumber(MESSAGE_POLL_STORAGE_KEY, DEFAULT_FRONTEND_CONFIG.messagePollMs, 1000, 60000, G2_TELE_MESSAGE_POLL_STORAGE_KEY, LEGACY_MESSAGE_POLL_STORAGE_KEY),
@@ -70,6 +74,7 @@ export function loadFrontendConfig(): FrontendConfig {
     backendSharedSecret: readSensitiveString(BACKEND_SHARED_SECRET_STORAGE_KEY, G2_TELE_BACKEND_SHARED_SECRET_STORAGE_KEY),
   }
 }
+
 
 export async function loadFrontendConfigFromAppStorage(
   storage: AppStorageBridge | undefined,
@@ -95,6 +100,7 @@ export function saveFrontendConfig(config: FrontendConfig) {
   writeSensitiveString(TELEGRAM_API_ID_STORAGE_KEY, normalized.telegramApiId)
   writeSensitiveString(TELEGRAM_API_HASH_STORAGE_KEY, normalized.telegramApiHash)
   writeSensitiveString(TELEGRAM_SESSION_STORAGE_KEY, normalized.telegramSession)
+  writeString(LANGUAGE_STORAGE_KEY, normalized.language)
   safeLsSetItem(DEBUG_EVENTS_STORAGE_KEY, String(normalized.debugEventsEnabled))
   safeLsSetItem(CHAT_POLL_STORAGE_KEY, String(normalized.chatPollMs))
   safeLsSetItem(MESSAGE_POLL_STORAGE_KEY, String(normalized.messagePollMs))
@@ -127,6 +133,7 @@ export function resetFrontendConfig() {
   safeLsRemoveItem(TELEGRAM_API_ID_STORAGE_KEY)
   safeLsRemoveItem(TELEGRAM_API_HASH_STORAGE_KEY)
   safeLsRemoveItem(TELEGRAM_SESSION_STORAGE_KEY)
+  safeLsRemoveItem(LANGUAGE_STORAGE_KEY)
   safeLsRemoveItem(DEBUG_EVENTS_STORAGE_KEY)
   safeLsRemoveItem(CHAT_POLL_STORAGE_KEY)
   safeLsRemoveItem(MESSAGE_POLL_STORAGE_KEY)
@@ -259,13 +266,13 @@ function readRaw(key: string, legacyKeys: string[]) {
   }
   return null
 }
-
 function normalizeConfig(config: FrontendConfig): FrontendConfig {
   return {
     apiBaseUrl: stringValue(config.apiBaseUrl),
     telegramApiId: stringValue(config.telegramApiId),
     telegramApiHash: stringValue(config.telegramApiHash),
     telegramSession: stringValue(config.telegramSession),
+    language: stringValue(config.language) || 'en',
     debugEventsEnabled: Boolean(config.debugEventsEnabled),
     chatPollMs: clamp(numberValue(config.chatPollMs), 1000, 60000),
     messagePollMs: clamp(numberValue(config.messagePollMs), 1000, 60000),

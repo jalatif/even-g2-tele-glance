@@ -486,7 +486,7 @@ function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
 
 function sanitizeGlassesText(value: string) {
   const l = getLocale()
-  return value
+  let result = value
     .replace(/\u{1f534}/gu, l.sanitizeRed)
     .replace(/\u{1f7e1}/gu, l.sanitizeYellow)
     .replace(/\u{1f7e2}/gu, l.sanitizeGreen)
@@ -495,6 +495,37 @@ function sanitizeGlassesText(value: string) {
     .replace(/[\u{2757}\u{26a0}]/gu, '')
     .replace(/[\u{1f000}-\u{1faff}]/gu, '')
     .replace(/\ufe0f/g, '')
+  // CJK character set stripping — the Even Hub firmware only supports basic Latin
+  // glyphs. UI strings are already in Rōmaji/Romaja/Pīnyīn for ja/ko/zh locales,
+  // but Telegram message content and chat/topic names may still carry CJK characters
+  // that produce LVGL `glyph dsc. not found` warnings. Strip the full CJK block
+  // when the locale requests transliteration fallback.
+  if (l._cjkTransliterate) {
+    result = result
+      // CJK Unified Ideographs (U+4E00–U+9FFF): Chinese, Japanese kanji, Korean hanja
+      .replace(/[\u{4e00}-\u{9fff}]/gu, '')
+      // CJK Unified Ideographs Extension A (U+3400–U+4DBF)
+      .replace(/[\u{3400}-\u{4dbf}]/gu, '')
+      // Hiragana (U+3040–U+309F)
+      .replace(/[\u{3040}-\u{309f}]/gu, '')
+      // Katakana (U+30A0–U+30FF)
+      .replace(/[\u{30a0}-\u{30ff}]/gu, '')
+      // Hangul Syllables (U+AC00–U+D7AF)
+      .replace(/[\u{ac00}-\u{d7af}]/gu, '')
+      // CJK Compatibility Ideographs (U+F900–U+FAFF)
+      .replace(/[\u{f900}-\u{faff}]/gu, '')
+      // CJK Symbols and Punctuation (U+3000–U+303F)
+      .replace(/[\u{3000}-\u{303f}]/gu, '')
+      // Fullwidth forms (U+FF00–U+FFEF)
+      .replace(/[\u{ff00}-\u{ffef}]/gu, '')
+      // Hangul Jamo (U+1100–U+11FF)
+      .replace(/[\u{1100}-\u{11ff}]/gu, '')
+      // Bopomofo (U+3100–U+312F)
+      .replace(/[\u{3100}-\u{312f}]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+  return result
 }
 
 function boxLine(value: string) {

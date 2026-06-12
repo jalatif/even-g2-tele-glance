@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import json
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
@@ -250,13 +250,14 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @api.post("/api/transcribe", response_model=TranscriptionResponse, dependencies=[Depends(require_app_backend_auth)])
     async def transcribe(
         audio: UploadFile = File(...),
+        language: str = Form(""),
         transcription: WhisperTranscriptionService = Depends(get_transcription_service),
     ) -> TranscriptionResponse:
         raw = await audio.read()
         try:
             if audio.content_type in {"audio/pcm", "application/octet-stream"}:
                 raw = pcm16le_to_wav(raw)
-            return await transcription.transcribe_wav(raw)
+            return await transcription.transcribe_wav(raw, language=language or None)
         except (ValueError, TranscriptionServiceError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import en from '../src/locales/en'
+import type { LocaleStrings } from '../src/locales/en'
 import { getLocale, setLocale } from '../src/locales'
+
+// Dynamic string-key access: LocaleStrings is { [K in keyof typeof en]: string }
+// which doesn't have a string index signature. Cast for lookup loops.
+const $ = en as Record<string, string>
 
 describe('locale modules', () => {
   it('en.ts has all required key categories', () => {
@@ -11,8 +16,8 @@ describe('locale modules', () => {
       'titleReplySent', 'titleError',
     ]
     for (const key of requiredSections) {
-      expect(en[key]).toBeDefined()
-      expect(typeof en[key]).toBe('string')
+      expect($[key]).toBeDefined()
+      expect(typeof $[key]).toBe('string')
     }
   })
 
@@ -23,7 +28,7 @@ describe('locale modules', () => {
       'statusLoadingMessages',
     ]
     for (const key of required) {
-      expect(en[key]).toBeDefined()
+      expect($[key]).toBeDefined()
     }
   })
 
@@ -34,7 +39,7 @@ describe('locale modules', () => {
       'footerLoadingMessages',
     ]
     for (const key of required) {
-      expect(en[key]).toBeDefined()
+      expect($[key]).toBeDefined()
     }
   })
 
@@ -46,7 +51,7 @@ describe('locale modules', () => {
       'sanitizeGreen',
     ]
     for (const key of required) {
-      expect(en[key]).toBeDefined()
+      expect($[key]).toBeDefined()
     }
   })
 
@@ -58,7 +63,7 @@ describe('locale modules', () => {
       'phoneChatsHeading', 'phoneSettingsHeading',
     ]
     for (const key of required) {
-      expect(en[key]).toBeDefined()
+      expect($[key]).toBeDefined()
     }
   })
 
@@ -68,14 +73,14 @@ describe('locale modules', () => {
       'authNeedsSetup', 'authSignedOut', 'authPhonePending',
     ]
     for (const key of required) {
-      expect(en[key]).toBeDefined()
+      expect($[key]).toBeDefined()
     }
   })
 
   it('setLocale updates getLocale', () => {
     const original = getLocale()
     // Create a minimal locale that satisfies the type
-    const mock: typeof en = { ...en, titleTelegram: 'TestApp' }
+    const mock: LocaleStrings = { ...en, titleTelegram: 'TestApp' }
     setLocale(mock)
     expect(getLocale().titleTelegram).toBe('TestApp')
     // Restore

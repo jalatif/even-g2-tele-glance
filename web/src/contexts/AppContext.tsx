@@ -5,27 +5,8 @@ import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
 import { FixtureTelegramApi, bindFixtureApi, bindFixtureCommandHandler, setFixtureLocale } from '../fixtureApi'
 import { InstrumentedTelegramApi } from '../instrumentedApi'
-import { setLocale } from '../locales'
-import en from '../locales/en'
-import es from '../locales/es'
-import fr from '../locales/fr'
-import de from '../locales/de'
-import it from '../locales/it'
-import pt from '../locales/pt'
-import nl from '../locales/nl'
-import sv from '../locales/sv'
-import pl from '../locales/pl'
-import tr from '../locales/tr'
-import cs from '../locales/cs'
-import ro from '../locales/ro'
-import hu from '../locales/hu'
-import vi from '../locales/vi'
-import fi from '../locales/fi'
-import no from '../locales/no'
-import da from '../locales/da'
-import id from '../locales/id'
-import ca from '../locales/ca'
-import sk from '../locales/sk'
+import { localeFromCode, setLocale } from '../locales'
+
 import {
   clearFrontendConfigFromAppStorage,
   loadFrontendConfig,
@@ -93,9 +74,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const restoredSettings = fixtureMode
           ? fixtureSettings(settingsRef.current)
           : await loadFrontendConfigFromAppStorage(appStorageRef.current, settingsRef.current)
-        if (!active) return
         settingsRef.current = restoredSettings
         setSettings(restoredSettings)
+        setLocale(localeFromCode(restoredSettings.language))
         if (!fixtureMode) {
           saveFrontendConfig(restoredSettings)
           await saveFrontendConfigToAppStorage(appStorageRef.current, restoredSettings)
@@ -136,27 +117,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (fixtureMode) {
           unbindFixtureCommands = bindFixtureCommandHandler(async (command) => {
             if (command.kind === 'setLocale') {
-              const locale = command.locale as string
-              if (locale === 'es') { setLocale(es); setFixtureLocale('es') }
-              else if (locale === 'fr') { setLocale(fr); setFixtureLocale('fr') }
-              else if (locale === 'de') { setLocale(de); setFixtureLocale('de') }
-              else if (locale === 'it') { setLocale(it); setFixtureLocale('it') }
-              else if (locale === 'pt') { setLocale(pt); setFixtureLocale('pt') }
-              else if (locale === 'nl') { setLocale(nl); setFixtureLocale('nl') }
-              else if (locale === 'sv') { setLocale(sv); setFixtureLocale('sv') }
-              else if (locale === 'pl') { setLocale(pl); setFixtureLocale('pl') }
-              else if (locale === 'tr') { setLocale(tr); setFixtureLocale('tr') }
-              else if (locale === 'cs') { setLocale(cs); setFixtureLocale('cs') }
-              else if (locale === 'ro') { setLocale(ro); setFixtureLocale('ro') }
-              else if (locale === 'hu') { setLocale(hu); setFixtureLocale('hu') }
-              else if (locale === 'vi') { setLocale(vi); setFixtureLocale('vi') }
-              else if (locale === 'fi') { setLocale(fi); setFixtureLocale('fi') }
-              else if (locale === 'no') { setLocale(no); setFixtureLocale('no') }
-              else if (locale === 'da') { setLocale(da); setFixtureLocale('da') }
-              else if (locale === 'id') { setLocale(id); setFixtureLocale('id') }
-              else if (locale === 'ca') { setLocale(ca); setFixtureLocale('ca') }
-              else if (locale === 'sk') { setLocale(sk); setFixtureLocale('sk') }
-              else { setLocale(en); setFixtureLocale('en') }
+              const code = command.locale as string
+              setLocale(localeFromCode(code))
+              setFixtureLocale(code)
+              await createdController.init()
+            }
+            if (command.kind === 'setMode') {
+              const mode = command.mode as 'normal' | 'missing' | 'signedOut' | 'error' | 'slow'
+              ;(baseApi as FixtureTelegramApi).setMode(mode)
+            }
+            if (command.kind === 'reinitialize') {
               await createdController.init()
             }
             if (command.kind === 'injectAudioChunks') {
@@ -214,6 +184,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await saveFrontendConfigToAppStorage(appStorageRef.current, next)
     setSettings(next)
     controllerRef.current?.updateRuntimeConfig(runtimeConfig(next))
+    // Apply locale immediately so both the phone React UI and the glasses
+    // screen-model rendering switch to the new language without a page reload.
+    if (next.language !== previous.language) {
+      setLocale(localeFromCode(next.language))
+    }
     if (
       next.apiBaseUrl.trim() !== previous.apiBaseUrl.trim()
       || next.telegramApiId.trim() !== previous.telegramApiId.trim()
@@ -225,7 +200,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.location.reload()
     }
   }, [])
-
   const handleResetSettings = useCallback(async () => {
     resetFrontendConfig()
     await clearFrontendConfigFromAppStorage(appStorageRef.current)
@@ -279,5 +253,6 @@ function runtimeConfig(config: FrontendConfig): Partial<ControllerRuntimeConfig>
     chatPollMs: config.chatPollMs,
     messagePollMs: config.messagePollMs,
     recordingMinDurationMs: config.recordingMinDurationMs,
+    language: config.language,
   }
 }
