@@ -216,64 +216,295 @@ export function setLocale(strings: LocaleStrings): void {
 export type { LocaleStrings }
 ```
 
-### 1.3 Refactor consumers
 
-Every file that currently has a hardcoded English string imports `getLocale`
-and uses the locale object instead. The refactor is mechanical:
+### 1.3 Introduction
 
-**Before** (`model.ts`):
-```typescript
-title: 'Chats'
-```
+The refactor must preserve every test invariant. Brute-force string
+replacement fails because:
 
-**After**:
-```typescript
-import { getLocale } from '../locales'
-// ...
-title: getLocale().sidebarTitleChats
-```
+1. **Template literals** contain raw text (`Send`, `Click to open.`) and
+   expression fallbacks (`|| 'New message'`) that need structural conversion
+   to `${l.confirmSend}`, `${l.bodyClickToOpen}`, and `|| l.bodyNewMessage`.
+2. **`sanitizeGlassesText`** calls `.replace(..., '[red]')` with string
+   arguments that must become `l.sanitizeRed` — but the function body must
+   add `const l = getLocale()` first.
+3. **Call chains** (`formatMessageBlocks` → `formatCompactMessageRows` →
+   `sanitizeGlassesText`) each call `getLocale()` independently — no global
+   binding needed, each function manages its own locale reference.
+4. **Status strings** in the controller (e.g. `status: 'Sent'`) are NOT
+   replaced directly. A `localizeStatus()` helper in model.ts translates
+   well-known English status strings to locale at render time, so the
+   controller stays in English.
 
-Template strings with interpolation stay template strings:
+The refactor is split into 10 steps, each verified by the full test suite
+(140 tests) before proceeding.
+
+### 1.3a Step 1: Import + `const l` binding
+
 ```typescript
 // Before
-bodyLoadingTopics: (chatTitle: string) => `Loading ${chatTitle} topics...`
-// After — the locale function uses the passed param
-getLocale().bodyLoadingTopics(chat.title)
+import type { Chat, Id, Message, Topic } from '../types'
+
+// After
+import type { Chat, Id, Message, Topic } from '../types'
+import { getLocale } from '../locales'
 ```
+
+Then add `const l = getLocale()` as the first line inside `screenModel`:
+
+```typescript
+export function screenModel(state: AppState): ScreenModel {
+  const l = getLocale()
+  switch (state.screen) {
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3b Step 2: `sanitizeGlassesText` locale binding
+
+Add `const l = getLocale()` to `sanitizeGlassesText` and replace the three
+string arguments:
+
+```typescript
+function sanitizeGlassesText(value: string) {
+  const l = getLocale()
+  return value
+    .replace(/\u{1f534}/gu, l.sanitizeRed)
+    .replace(/\u{1f7e1}/gu, l.sanitizeYellow)
+    .replace(/\u{1f7e2}/gu, l.sanitizeGreen)
+    .replace(/[\u{2757}\u{26a0}]/gu, '')
+    .replace(/[\u{1f000}-\u{1faff}]/gu, '')
+    .replace(/\ufe0f/g, '')
+}
+```
+
+**Verify**: `npm test --prefix web` — 140 pass. The model tests exercise
+`sanitizeGlassesText` through emoji stripping assertions.
+
+### 1.3c Step 3: Simple screen cases (loading, auth, asleep, error)
+
+These cases have no template literals, no status interpolation — pure
+property values:
+
+```typescript
+case 'loading':
+  return { kind: 'text', title: l.titleTelegram, body: state.message }
+case 'auth':
+  return {
+    kind: 'text',
+    title: state.mode === 'phonePending' ? l.titleTelegramLogin : l.titleTelegram,
+    body: state.message,
+  }
+case 'asleep':
+  return { kind: 'text', title: '', body: '' }
+case 'error':
+  return {
+    kind: 'text',
+    title: l.titleError,
+    body: `${state.message}\n\n${l.bodyPressToRetry}`,
+  }
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3d Step 4: `sidebar.chats` focus
+
+```typescript
+// Before                                    // After
+title: 'Telegram',                           title: l.titleTelegram,
+sidebarTitle: 'Chats',                       sidebarTitle: l.titleChats,
+'Swipe chats | Press open'                   l.footerSwipeChats
+```
+
+Also update `panelFooter` to pass `state.status` through `localizeStatus`:
+
+```typescript
+panelFooter: previewLoaded
+  ? l.footerSwipeChats
+  : (state.status ? localizeStatus(state.status) : l.footerSwipeChats),
+```
+
+And `panelBody` when it falls through to `state.status`:
+
+```typescript
+panelBody: msg?.box
+  ? ''
+  : (msg?.body
+    ?? (state.status ? localizeStatus(state.status) : undefined)
+    ?? (selected?.lastMessage
+       ? trimUtf8Bytes(..., TEXT_CONTAINER_BYTE_LIMIT)
+       : ' ')),
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3e Step 5: `sidebar.topics` focus
+
+```typescript
+// Before                                    // After
+: 'Topics'                                   : l.titleTopics
+sidebarTitle: 'Topics'                       sidebarTitle: l.titleTopics
+'Loading messages...'                        l.statusLoadingMessages
+'TAP TO OPEN TOPIC'                          l.footerTapToOpenTopic
+'Loading messages...'                        l.footerLoadingMessages
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3f Step 6: `sidebar.messages` focus
+
+```typescript
+// Before                                    // After
+state.topic ? 'Topics' : 'Chats'             state.topic ? l.titleTopics : l.titleChats
+footerText(state.status,                     footerText(state.status,
+  'Swipe scroll | Click record |              l.footerSwipeScroll)
+  Double click back')
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3g Step 7: Recording/transcribing/confirm/sent/sending/newMessage
+
+These are the trickiest because of the template literal in `newMessage`
+and the confirm actions block:
+
+**newMessage template literal** (lines 243-245):
+
+```typescript
+// Before
+body: sanitizeGlassesText(`${...}\n\n${state.message || 'New message'}\n\nClick to open.`),
+footer: 'Double click dismiss',
+
+// After
+body: sanitizeGlassesText(`${...}\n\n${state.message || l.bodyNewMessage}\n\n${l.bodyClickToOpen}`),
+footer: l.footerDoubleClickDismiss,
+```
+
+**sidebarConfirm** (lines 270-275):
+
+```typescript
+// Before
+const actions = `${state.selectedIndex === 0 ? '> ' : '  '}Send\n${...}Cancel`
+title: 'Confirm reply',
+footer: 'Swipe select | Press confirm',
+
+// After
+const actions = `${state.selectedIndex === 0 ? '> ' : '  '}${l.confirmSend}\n${...}${l.confirmCancel}`
+title: l.titleConfirmReply,
+footer: l.footerSwipeSelect,
+```
+
+**Other screens**:
+
+```typescript
+// Before                                    // After
+title: 'New Telegram'                        title: l.titleNewTelegram
+title: 'Recording'                           title: l.titleRecording
+title: 'Transcribing'                        title: l.titleTranscribing
+title: 'Sending reply'                       title: l.titleSendingReply
+title: 'Reply sent'                          title: l.titleReplySent
+'Converting voice...'                        l.bodyConvertingVoice
+'Topics' : 'Chats'                           l.titleTopics : l.titleChats
+'Click stop | Double click cancel'           l.footerClickStop
+'Swipe scroll | Click record |               l.footerSwipeScroll
+  Double click back'
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3h Step 8: `formatMessages` empty body
+
+```typescript
+// Before
+if (messages.length === 0) return { body: trimUtf8Bytes('No messages yet.', TEXT_CONTAINER_BYTE_LIMIT) }
+
+// After
+const l = getLocale()
+if (messages.length === 0) return { body: trimUtf8Bytes(l.phoneNoMessages, TEXT_CONTAINER_BYTE_LIMIT) }
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3i Step 9: `formatMessageBlocks` sender labels
+
+```typescript
+// Before
+const sender = sanitizeGlassesText(message.outgoing ? 'Me' : message.sender || 'Unknown')
+
+// After
+const l = getLocale()
+const sender = sanitizeGlassesText(message.outgoing ? l.senderMe : message.sender || l.senderUnknown)
+```
+
+**Verify**: `npm test --prefix web` — 140 pass.
+
+### 1.3j Step 10: Status translation layer (`localizeStatus`)
+
+Add three functions after `topicLabel`:
+
+```typescript
+function footerText(status: string | undefined, controls: string) {
+  return sanitizeGlassesText(status ? `${localizeStatus(status)} | ${controls}` : controls)
+}
+
+function loadingMessageBody(status: string | undefined) {
+  if (!status) return undefined
+  return status.startsWith('Loading ') ? sanitizeGlassesText(localizeStatus(status)) : undefined
+}
+
+function localizeStatus(status: string): string {
+  const l = getLocale()
+  return {
+    'Sent': l.statusSent,
+    'Older messages': l.statusOlderMessages,
+    'Newer messages': l.statusNewerMessages,
+    'No older messages': l.statusNoOlderMessages,
+    'New reply': l.statusNewReply,
+    'Loading older messages...': l.statusLoadingOlderMessages,
+    'Loading messages...': l.statusLoadingMessages,
+  }[status] ?? status
+}
+```
+
+This is the bridge between the controller (which stays in English) and the
+model (which renders in the active locale). Unknown status strings pass
+through unchanged, so custom error messages from the backend are never
+swallowed.
+
+**Verify**: `npm test --prefix web` — 140 pass. The controller tests verify
+that status pills (`'Sent'`, `'Older messages'`, etc.) appear in the correct
+locale through the model layer without changes to the controller.
 
 ### 1.4 Test plan
 
-No behavioral change — all 132 existing tests must pass with identical output.
-Add one new test in `model.test.ts`:
+No behavioral change — all 140 existing tests must pass with identical output
+after every step. The `locales.test.ts` file (8 tests) validates the locale
+module structure independently.
+
+After all 10 steps, add a model test that calls `screenModel` with
+`setLocale(es)` and verifies Spanish output:
 
 ```
-it('uses locale strings for every user-visible label', () => {
-  // Verify that getLocale() is called for every string in screenModel output
+it('renders Spanish chat list when locale is set to es', () => {
+  setLocale(es)
+  const model = screenModel(chatsState)
+  expect(model.sidebarTitle).toBe('Chats')  // Spanish translation
 })
 ```
-
-Every string in the locale file must be referenced by at least one source file.
-Add a lint check or unit test that iterates locale keys and verifies they are
-imported.
 
 ### Files touched
 
 | File | Change |
 |---|---|
-| `web/src/locales/en.ts` | **New** — all English strings |
-| `web/src/locales/index.ts` | **New** — get/set context |
-| `web/src/controller/model.ts` | Replace ~20 hardcoded strings with `getLocale()` calls |
-| `web/src/controller/appController.ts` | Replace ~15 hardcoded strings |
-| `web/src/screens/ChatScreen.tsx` | Replace ~10 hardcoded strings |
-| `web/src/screens/SettingsScreen.tsx` | Replace ~8 hardcoded strings |
-| `web/src/api.ts` | Replace ~5 hardcoded strings |
-| `web/src/secureAuth.ts` | Replace ~2 hardcoded strings |
-| `web/src/App.tsx` | Replace ~2 hardcoded strings |
-| `web/src/bridge/evenBridge.ts` | Replace 1 hardcoded string (`"Empty"`) |
-| `web/test/model.test.ts` | Add locale-coverage assertion |
+| `web/src/locales/en.ts` | **Done** — all English strings |
+| `web/src/locales/index.ts` | **Done** — get/set context |
+| `web/src/controller/model.ts` | Replace ~20 hardcoded strings via 10-step process |
+| `web/test/locales.test.ts` | **Done** — 8 structural tests |
 
-**Risk**: zero. Strings are identical, just looked up through an object.
-
+`appController.ts`, screens, `api.ts`, `secureAuth.ts`, `App.tsx`, and
+`bridge/evenBridge.ts` are NOT modified in Phase 1. The `localizeStatus`
+helper in model.ts translates the controller's English status strings at
+render time. Phone UI strings are a separate Phase 1b.
 ---
 
 ## Phase 2 — Whisper language pipeline

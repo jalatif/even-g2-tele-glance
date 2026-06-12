@@ -399,30 +399,27 @@ Add a "Locale coverage" section to the report:
 - **RTL layout**: Arabic and Hebrew are excluded from scope. Even Hub LVGL
   does not support RTL text containers.
 
+
 ### 9. Implementation order
 
-| Order | What | Depends on | Test count added |
+| Order | What | Depends on | Status |
 |---|---|---|---|
-| 1 | `setLocale` fixture command + harness support | Nothing | 2 |
-| 2 | Locale tracking in harness (`currentLocale`, golden paths) | #1 | 0 |
-| 3 | Spanish fixture data + 4 catalog steps | #1, #2 | 8 |
-| 4 | French fixture data + 4 catalog steps | #1, #2 | 8 |
-| 5 | `locales.test.ts` (key coverage, structure) | `LANG_SPEC` Phase 1 | 12 |
-| 6 | Model tests for Spanish/French output | `LANG_SPEC` Phase 3 | 8 |
-| 7 | Controller tests for locale resolution | `LANG_SPEC` Phase 2 | 4 |
-| 8 | Golden capture for es/fr steps | #3, #4 | 0 (captures) |
-| 9 | CJK transliteration tests (Phase 4) | `LANG_SPEC` Phase 4 | 6 |
-| 10 | `--locale` flag + report section | #2, #3, #4 | 0 |
-| **Total new tests** | | | **~48** |
+| 1 | `web/src/locales/en.ts` + `index.ts` | Nothing | **Done** |
+| 2 | `web/test/locales.test.ts` (8 structural tests) | #1 | **Done** |
+| 3 | model.ts 10-step refactor | #1 | **Next** — see `LANGUAGE_SUPPORT_SPEC.md` §1.3a–1.3j |
+| 4 | `setLocale` fixture command + harness support | #1 | Pending |
+| 5 | Locale tracking in harness (`currentLocale`, golden paths) | #4 | Pending |
+| 6 | Spanish fixture data + 4 catalog steps | #4, #5 | Pending |
+| 7 | French fixture data + 4 catalog steps | #4, #5 | Pending |
+| 8 | Model tests for Spanish/French output | #3, #6, #7 | Pending |
+| 9 | Controller tests for locale resolution | `LANG_SPEC` Phase 2 | Pending |
+| 10 | Golden capture for es/fr steps | #6, #7 | Pending |
+| 11 | CJK transliteration tests (Phase 4) | `LANG_SPEC` Phase 4 | Pending |
+| 12 | `--locale` flag + report section | #5, #6, #7 | Pending |
 
-### 10. Verification checklist
-
-- [ ] `npm test --prefix web` passes with all existing + new tests
-- [ ] `npm run test:simulator --prefix web` still passes 56/56 English steps
-- [ ] `npm run test:simulator --prefix web -- --locale es` passes Spanish steps
-- [ ] `npm run test:simulator --prefix web -- --locale fr` passes French steps
-- [ ] No `glyph dsc. not found` warnings in Latin-script locale steps
-- [ ] `locales.test.ts` catches missing keys in any locale file
-- [ ] `locales.test.ts` catches CJK characters in es/fr files
-- [ ] Golden files exist for every locale step (after `--update-goldens`)
-- [ ] Catalog validator accepts new `locale` field and `command` input kind
+Items 1–3 complete Phase 1 of the language spec. Item 3 (model.ts refactor)
+must follow the 10-step process in `LANGUAGE_SUPPORT_SPEC.md` §1.3a–1.3j:
+each step applies one group of string replacements, then verifies with
+`npm test --prefix web` (140 tests) before proceeding. Template literals
+(confirm actions, newMessage body) require structural conversion from raw
+text to `${l.key}` expressions — they cannot be handled by string replace.
