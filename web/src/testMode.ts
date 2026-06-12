@@ -416,6 +416,7 @@ export function summarizeScreenModel(model: ScreenModel): Record<string, unknown
       return {
         kind: model.kind,
         title: model.title,
+        sidebarTitle: model.sidebarTitle,
         focus: model.focus,
         fullWidth: model.fullWidth,
         sidebarItemCount: model.sidebarItems.length,

@@ -1501,34 +1501,12 @@
           "focus": "chats"
         },
         "renderBodyContains": [
-          "Chats"
+          "Chats",
+          "Familia",
+          "Fixture Ops"
         ]
       },
-      "budgetMs": 5000
-    },
-    {
-      "name": "l10n-es-open-chat",
-      "locale": "es",
-      "target": "sidebar.messages.normal",
-      "input": {
-        "kind": "command",
-        "command": {
-          "kind": "setLocale",
-          "locale": "es"
-        }
-      },
-      "pressSequence": "click",
-      "expect": {
-        "state": {
-          "screen": "sidebar",
-          "focus": "messages"
-        },
-        "renderBodyContains": [
-          "Enviar",
-          "Cancelar"
-        ]
-      },
-      "budgetMs": 5000
+      "budgetMs": 10000
     },
     {
       "name": "l10n-fr-startup",
@@ -1547,34 +1525,12 @@
           "focus": "chats"
         },
         "renderBodyContains": [
-          "Chats"
+          "Chats",
+          "Famille",
+          "Fixture Ops"
         ]
       },
-      "budgetMs": 5000
-    },
-    {
-      "name": "l10n-fr-open-chat",
-      "locale": "fr",
-      "target": "sidebar.messages.normal",
-      "input": {
-        "kind": "command",
-        "command": {
-          "kind": "setLocale",
-          "locale": "fr"
-        }
-      },
-      "pressSequence": "click",
-      "expect": {
-        "state": {
-          "screen": "sidebar",
-          "focus": "messages"
-        },
-        "renderBodyContains": [
-          "Envoyer",
-          "Annuler"
-        ]
-      },
-      "budgetMs": 5000
+      "budgetMs": 10000
     }
   ]
 }

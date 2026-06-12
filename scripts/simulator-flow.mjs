@@ -250,11 +250,17 @@ async function executeStep(step, _url) {
     await sendTestCommand(step.input.command)
     await sleep(500)  // Let the fixture poll pick up the command
     eventStartIndex = testEvents.length  // Reset to include reinit events
-    // Poll until we see fresh state events from the reinit.
+    // Poll until the target state from the catalog is reached.
     const deadline = Date.now() + budgetMs
+    let pollCount = 0
+    // For locale reinit, wait for the default post-init state (sidebar.chats),
+    // not the step's expected state which may be post-pressSequence (messages).
+    const reinitPredicate = makeStatePredicate({ screen: 'sidebar', focus: 'chats' })
     while (Date.now() < deadline) {
       await pollConsole()
-      if (latestTestEvent('state', eventStartIndex)) break
+      pollCount += 1
+      const latest = latestTestEvent('state', eventStartIndex)
+      if (latest && reinitPredicate(latest)) break
       await sleep(200)
     }
   }
@@ -316,10 +322,11 @@ async function executeStep(step, _url) {
   // they intentionally validate async work started by the previous step.
   const stepHasInput = step.input !== null && step.input !== undefined
   const eventStartTime = stepHasInput ? eventStartIndex : 0
-  const startedAt = Date.now()
+
   // All `waitForTestEvent` calls in this step share a single deadline so the
   // total step latency is bounded by `budgetMs` instead of `budgetMs * callCount`.
   const stepDeadline = Date.now() + budgetMs + (step.expectToFail ? 2_000 : 0)
+  const startedAt = Date.now()
   if (expectedState && Object.keys(expectedState).length > 0) {
     // Strict state predicates are fixture-shaped. In real mode, the catalog still
     // emits them so a no-op can be detected, but we do not fail the run if a real
