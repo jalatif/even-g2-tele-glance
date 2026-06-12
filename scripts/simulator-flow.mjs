@@ -35,7 +35,7 @@ const testHost = process.env.TELEGLANCE_TEST_HOST ?? 'localhost'
 const updateGoldens = Boolean(args['update-goldens'])
 const fastMode = Boolean(args['fast'])
 const skipLatencyCheck = Boolean(args['skip-latency-check'])
-const runMode = args['mode'] ?? 'fixture'
+const targetLocale = args['locale'] ?? 'en'  // --locale es | fr | all | en
 const isFixtureMode = runMode === 'fixture'
 // --external-simulator: do NOT spawn a simulator subprocess; point simUrl at
 // an instance the user started manually. Use this when the harness-spawned
@@ -60,10 +60,10 @@ let recorder
 let consoleSinceId = 0
 const consoleEntries = []
 const containerFailures = []  // simulator 'TextContainerUpgrade failed' warnings, with step + ts
+let currentLocale = 'en'
 let currentPageGeneration = 0
 const pageGenerationMismatches = []  // partial render events with wrong generation
 const stalePartialRenderEvents = []  // render.partial.stale events
-
 let currentStepName = null
 // Map of process name -> handle returned by startProcess. Used by executeStep
 // to detect when the simulator subprocess has died and skip the remaining
@@ -191,9 +191,14 @@ async function loadCatalog() {
 }
 
 async function runFlow() {
-  // Drive the steps in order from the catalog. The catalog is the source of truth.
-  for (let index = 0; index < catalog.steps.length; index += 1) {
-    const step = catalog.steps[index]
+  // Filter catalog steps by locale. English steps (no `locale` field) always run.
+  // When --locale is set, only steps matching that locale (or English) run.
+  // When --locale=all, all steps run.
+  const steps = targetLocale === 'all'
+    ? catalog.steps
+    : catalog.steps.filter(s => !s.locale || s.locale === targetLocale)
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index]
     const url = `${testUrl}${index === 0 ? '' : `&step=${index}`}`
     await executeStep(step, url)
   }
@@ -212,6 +217,13 @@ async function executeStep(step, _url) {
     failures.push(`${step.name}: SKIPPED — simulator subprocess already exited (${simulatorHandle.crashMessage ?? `code ${simulatorHandle.exitCode} signal ${simulatorHandle.signalCode}`})`)
     console.log(`[flow] skip ${step.name}: simulator dead`)
     return
+  }
+  // If the step specifies a locale, send the setLocale command first.
+  // Skip steps whose locale doesn't match the --locale flag.
+  if (step.locale) {
+    if (targetLocale !== 'all' && step.locale !== targetLocale) return
+    await sendTestCommand({ kind: 'setLocale', locale: step.locale })
+    currentLocale = step.locale
   }
   const name = step.name
   const target = step.target
@@ -623,7 +635,8 @@ function eventMatchesFrom(event, from) {
 }
 
 async function validateGolden(name, actual, blank) {
-  const goldenPath = path.join(goldenRoot, `${name}.glasses.png`)
+  const suffix = currentLocale === 'en' ? '' : `.${currentLocale}`
+  const goldenPath = path.join(goldenRoot, `${name}${suffix}.glasses.png`)
   if (blank) return
   if (updateGoldens || !existsSync(goldenPath)) {
     const source = await readFile(path.join(stepDir, `${name}.glasses.png`))
