@@ -5,6 +5,9 @@ import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
 import { FixtureTelegramApi, bindFixtureApi, bindFixtureCommandHandler } from '../fixtureApi'
 import { InstrumentedTelegramApi } from '../instrumentedApi'
+import { setLocale } from '../locales'
+import es from '../locales/es'
+import fr from '../locales/fr'
 import {
   clearFrontendConfigFromAppStorage,
   loadFrontendConfig,
@@ -115,6 +118,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (fixtureMode) {
           unbindFixtureCommands = bindFixtureCommandHandler(async (command) => {
             if (command.kind === 'reinitialize') await createdController.init()
+            if (command.kind === 'setLocale') {
+              const locale = command.locale as string
+              if (locale === 'es') setLocale(es)
+              else if (locale === 'fr') setLocale(fr)
+              else setLocale(en)
+              await createdController.init()
+            }
             if (command.kind === 'injectAudioChunks') {
               const base64 = command.pcmBase64 as string
               const pcm = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))

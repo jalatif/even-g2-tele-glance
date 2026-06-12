@@ -1,4 +1,5 @@
 import type { Chat, Id, Message, Topic } from '../types'
+import { getLocale } from '../locales'
 
 const TEXT_CONTAINER_BYTE_LIMIT = 999
 const MESSAGE_ROW_BYTE_LIMIT = 120
@@ -104,13 +105,14 @@ export type RecoverableState = Extract<
 >
 
 export function screenModel(state: AppState): ScreenModel {
+  const l = getLocale()
   switch (state.screen) {
     case 'loading':
-      return { kind: 'text', title: 'Telegram', body: state.message }
+      return { kind: 'text', title: l.titleTelegram, body: state.message }
     case 'auth':
       return {
         kind: 'text',
-        title: state.mode === 'phonePending' ? 'Telegram Login' : 'Telegram',
+        title: state.mode === 'phonePending' ? l.titleTelegramLogin : 'Telegram',
         body: state.message,
       }
     case 'sidebar': {
@@ -123,8 +125,8 @@ export function screenModel(state: AppState): ScreenModel {
           const msg = previewMessages ? formatMessages(previewMessages, scrollOffset) : undefined
           return {
             kind: 'sidebar',
-            title: 'Telegram',
-            sidebarTitle: 'Chats',
+            title: l.titleTelegram,
+            sidebarTitle: l.titleChats,
             sidebarItems: state.chats.map(chatLabel),
             sidebarSelected: state.selectedChatIndex,
             panelTitle: selected ? sanitizeGlassesText(selected.title.slice(0, 20)) : '',
@@ -146,8 +148,8 @@ export function screenModel(state: AppState): ScreenModel {
             // and the right panel updates with the new chat's
             // preview. See `docs/UI_INVARIANTS.md` sidebar.chats.
             panelFooter: previewLoaded
-              ? 'Swipe chats | Press open'
-              : (state.status ?? 'Swipe chats | Press open'),
+              ? l.footerSwipeChats
+              : (state.status ?? l.footerSwipeChats),
             focus: 'sidebar',
           }
         }
@@ -180,11 +182,11 @@ export function screenModel(state: AppState): ScreenModel {
             ? sanitizeGlassesText(state.previewTopic.title.slice(0, 18))
             : selectedTopic
               ? sanitizeGlassesText(selectedTopic.title.slice(0, 18))
-              : 'Topics'
+              : l.titleTopics
           return {
             kind: 'sidebar',
             title: sanitizeGlassesText(state.chat.title.slice(0, 20)),
-            sidebarTitle: 'Topics',
+            sidebarTitle: l.titleTopics,
             sidebarItems: state.topics.map(topicLabel),
             sidebarSelected: state.selectedTopicIndex,
             // Prefix the preview title with a ">" so the user can
@@ -194,12 +196,12 @@ export function screenModel(state: AppState): ScreenModel {
             panelBody: previewLoaded
               ? (msg?.box ? '' : trimUtf8Bytes(msg?.body ?? '', TEXT_CONTAINER_BYTE_LIMIT))
               : selectedTopic
-                ? 'Loading messages...'
+                ? l.statusLoadingMessages
                 : formatTopicPreviews(state.topics),
             // The footer is the primary signal. "TAP TO OPEN" is
             // unambiguous and the previous "Swipe topics" wording
             // was being misread as "the right side scrolls".
-            panelFooter: previewLoaded ? 'TAP TO OPEN TOPIC' : 'Loading messages...',
+            panelFooter: previewLoaded ? l.footerTapToOpenTopic : l.statusLoadingMessages,
             panelBox: msg?.box,
             focus: 'sidebar',
           }
@@ -210,7 +212,7 @@ export function screenModel(state: AppState): ScreenModel {
           return {
             kind: 'sidebar',
             title: sanitizeGlassesText(state.topic ? state.topic.title.slice(0, 20) : state.chat.title.slice(0, 20)),
-            sidebarTitle: state.topic ? 'Topics' : 'Chats',
+            sidebarTitle: state.topic ? l.titleTopics : l.titleChats,
             sidebarItems: state.topics?.length
               ? state.topics.map(topicLabel)
               : state.chats.map(chatLabel),
@@ -223,7 +225,7 @@ export function screenModel(state: AppState): ScreenModel {
             // they still fit the 180-byte footer container; the
             // `Swipe` / `Click` / `Double click` shorthand matches
             // the chats list footer at line 139 for consistency.
-            panelFooter: footerText(state.status, 'Swipe scroll | Click record | Double click back'),
+            panelFooter: footerText(state.status, l.footerSwipeScroll),
             panelBox: loadingBody ? undefined : msg.box,
             fullWidth: true,
             focus: 'panel',
@@ -240,21 +242,21 @@ export function screenModel(state: AppState): ScreenModel {
     case 'newMessage':
       return {
         kind: 'text',
-        title: 'New Telegram',
-        body: sanitizeGlassesText(`${state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title}\n\n${state.message || 'New message'}\n\nClick to open.`),
-        footer: 'Double click dismiss',
+        title: l.titleNewTelegram,
+        body: sanitizeGlassesText(`${state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title}\n\n${state.message || l.bodyNewMessage}\n\n${l.bodyClickToOpen}`),
+        footer: l.footerDoubleClickDismiss,
       }
     case 'sidebarRecording': {
       const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
       return {
         kind: 'sidebar',
-        title: 'Recording reply',
-        sidebarTitle: state.topic ? 'Topics' : 'Chats',
+        title: l.titleRecordingReply,
+        sidebarTitle: state.topic ? l.titleTopics : l.titleChats,
         sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
         sidebarSelected: state.selectedChatIndex,
-        panelTitle: 'Recording',
+        panelTitle: l.titleRecording,
         panelBody: msg.box ? '' : msg.body,
-        panelFooter: footerText(state.status, 'Click stop | Double click cancel'),
+        panelFooter: footerText(state.status, l.footerClickStop),
         panelBox: msg.box,
         fullWidth: true,
         focus: 'panel',
@@ -263,37 +265,37 @@ export function screenModel(state: AppState): ScreenModel {
     case 'sidebarTranscribing':
       return {
         kind: 'text',
-        title: 'Transcribing',
-        body: 'Converting voice...',
+        title: l.titleTranscribing,
+        body: l.bodyConvertingVoice,
       }
     case 'sidebarConfirm': {
-      const actions = `${state.selectedIndex === 0 ? '> ' : '  '}Send\n${state.selectedIndex === 1 ? '> ' : '  '}Cancel`
+      const actions = `${state.selectedIndex === 0 ? '> ' : '  '}${l.confirmSend}\n${state.selectedIndex === 1 ? '> ' : '  '}${l.confirmCancel}`
       return {
         kind: 'text',
-        title: 'Confirm reply',
+        title: l.titleConfirmReply,
         body: trimUtf8Bytes(`${sanitizeGlassesText(state.transcript)}\n\n${actions}`, TEXT_CONTAINER_BYTE_LIMIT),
-        footer: 'Swipe select | Press confirm',
+        footer: l.footerSwipeSelect,
       }
     }
     case 'sidebarSending':
       return {
         kind: 'text',
-        title: 'Sending reply',
+        title: l.titleSendingReply,
         body: sanitizeGlassesText(`Sending...\n\n${state.transcript}`),
       }
     case 'sidebarSent': {
       const msg = formatMessages(state.messages, state.scrollOffset ?? 0)
       return {
         kind: 'sidebar',
-        title: 'Reply sent',
-        sidebarTitle: state.topic ? 'Topics' : 'Chats',
+        title: l.titleReplySent,
+        sidebarTitle: state.topic ? l.titleTopics : l.titleChats,
         sidebarItems: state.topic ? [] : state.chats.map(chatLabel),
         sidebarSelected: state.selectedChatIndex,
         panelTitle: '',
         panelBody: msg.box ? '' : msg.body,
         // Same footer wording as the active message thread so the
         // user knows they can swipe-scroll even after sending.
-        panelFooter: footerText(state.status, 'Swipe scroll | Click record | Double click back'),
+        panelFooter: footerText(state.status, l.footerSwipeScroll),
         panelBox: msg.box,
         fullWidth: true,
         focus: 'panel',
@@ -302,7 +304,7 @@ export function screenModel(state: AppState): ScreenModel {
     case 'error':
       return {
         kind: 'text',
-        title: 'Error',
+        title: l.titleError,
         body: `${state.message}\n\nPress to retry. Double press back.`,
       }
   }
@@ -330,14 +332,34 @@ function topicLabel(topic: Topic) {
 }
 
 function footerText(status: string | undefined, controls: string) {
-  return sanitizeGlassesText(status ? `${status} | ${controls}` : controls)
+  return sanitizeGlassesText(status ? `${localizeStatus(status)} | ${controls}` : controls)
 }
 
 function loadingMessageBody(status: string | undefined) {
-  return status?.startsWith('Loading ') ? sanitizeGlassesText(status) : undefined
+  if (!status) return undefined
+  return status.startsWith('Loading ') ? sanitizeGlassesText(localizeStatus(status)) : undefined
+}
+
+/**
+ * Translate well-known English status strings from the controller into the
+ * active locale. Unknown strings pass through unchanged, so custom error
+ * messages and backend-provided text are never swallowed.
+ */
+function localizeStatus(status: string): string {
+  const l = getLocale()
+  return {
+    'Sent': l.statusSent,
+    'Older messages': l.statusOlderMessages,
+    'Newer messages': l.statusNewerMessages,
+    'No older messages': l.statusNoOlderMessages,
+    'New reply': l.statusNewReply,
+    'Loading older messages...': l.statusLoadingOlderMessages,
+    'Loading messages...': l.statusLoadingMessages,
+  }[status] ?? status
 }
 function formatMessages(messages: Message[], scrollOffset = 0) {
-  if (messages.length === 0) return { body: trimUtf8Bytes('No messages yet.', TEXT_CONTAINER_BYTE_LIMIT) }
+  const l = getLocale()
+  if (messages.length === 0) return { body: trimUtf8Bytes(l.phoneNoMessages, TEXT_CONTAINER_BYTE_LIMIT) }
 
   const pages = messageDisplayPages(messages)
   const pageIndex = Math.max(0, Math.min(pages.length - 1, pages.length - 1 - scrollOffset))
@@ -412,7 +434,8 @@ type MessageDisplayBlock = {
 }
 
 function formatMessageBlocks(message: Message): MessageDisplayBlock[] {
-  const sender = sanitizeGlassesText(message.outgoing ? 'Me' : message.sender || 'Unknown')
+  const l = getLocale()
+  const sender = sanitizeGlassesText(message.outgoing ? l.senderMe : message.sender || l.senderUnknown)
   const text = sanitizeGlassesText(message.text || '')
   if (wordCount(text) > MESSAGE_BOX_WORD_THRESHOLD) return formatMessageBox(sender, text)
 
@@ -462,10 +485,11 @@ function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
 }
 
 function sanitizeGlassesText(value: string) {
+  const l = getLocale()
   return value
-    .replace(/\u{1f534}/gu, '[red]')
-    .replace(/\u{1f7e1}/gu, '[yellow]')
-    .replace(/\u{1f7e2}/gu, '[green]')
+    .replace(/\u{1f534}/gu, l.sanitizeRed)
+    .replace(/\u{1f7e1}/gu, l.sanitizeYellow)
+    .replace(/\u{1f7e2}/gu, l.sanitizeGreen)
     // Heavy exclamation (U+2757) and warning sign (U+26A0) emit LVGL `glyph dsc. not found`
     // warnings on the Even Hub simulator. Strip them rather than render unsupported glyphs.
     .replace(/[\u{2757}\u{26a0}]/gu, '')

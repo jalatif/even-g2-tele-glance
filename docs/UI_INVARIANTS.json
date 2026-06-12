@@ -1483,6 +1483,98 @@
         "apiCalls": []
       },
       "budgetMs": 9000
+    },
+    {
+      "name": "l10n-es-startup",
+      "locale": "es",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "es"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats"
+        ]
+      },
+      "budgetMs": 5000
+    },
+    {
+      "name": "l10n-es-open-chat",
+      "locale": "es",
+      "target": "sidebar.messages",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "es"
+        }
+      },
+      "pressSequence": "click",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "messages"
+        },
+        "renderBodyContains": [
+          "Enviar",
+          "Cancelar"
+        ]
+      },
+      "budgetMs": 5000
+    },
+    {
+      "name": "l10n-fr-startup",
+      "locale": "fr",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "fr"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats"
+        ]
+      },
+      "budgetMs": 5000
+    },
+    {
+      "name": "l10n-fr-open-chat",
+      "locale": "fr",
+      "target": "sidebar.messages",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "fr"
+        }
+      },
+      "pressSequence": "click",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "messages"
+        },
+        "renderBodyContains": [
+          "Envoyer",
+          "Annuler"
+        ]
+      },
+      "budgetMs": 5000
     }
   ]
 }

@@ -36,6 +36,7 @@ const updateGoldens = Boolean(args['update-goldens'])
 const fastMode = Boolean(args['fast'])
 const skipLatencyCheck = Boolean(args['skip-latency-check'])
 const targetLocale = args['locale'] ?? 'en'  // --locale es | fr | all | en
+const runMode = args['mode'] ?? 'fixture'
 const isFixtureMode = runMode === 'fixture'
 // --external-simulator: do NOT spawn a simulator subprocess; point simUrl at
 // an instance the user started manually. Use this when the harness-spawned
@@ -242,6 +243,12 @@ async function executeStep(step, _url) {
   await pollConsole()
   const eventStartIndex = testEvents.length
 
+  // Handle fixture-command inputs (setLocale, reinitialize, etc.)
+  if (step.input && typeof step.input === 'object' && step.input.kind === 'command') {
+    await sendTestCommand(step.input.command)
+    // Await completion: poll for the re-initialized state.
+    await pollConsole()
+  }
   if (step.input === 'testSlowChat') {
     await sendTestCommand({ kind: 'setMode', mode: 'slow' })
     await sendTestCommand({ kind: 'setSlowChats', ms: 1200 })
