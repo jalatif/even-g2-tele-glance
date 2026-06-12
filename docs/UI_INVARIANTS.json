@@ -1485,14 +1485,14 @@
       "budgetMs": 9000
     },
     {
-      "name": "l10n-es-startup",
-      "locale": "es",
+      "name": "l10n-de-startup",
+      "locale": "de",
       "target": "sidebar.chats",
       "input": {
         "kind": "command",
         "command": {
           "kind": "setLocale",
-          "locale": "es"
+          "locale": "de"
         }
       },
       "expect": {
@@ -1502,21 +1502,21 @@
         },
         "renderBodyContains": [
           "Chats",
-          "Familia",
+          "Familie",
           "Fixture Ops"
         ]
       },
       "budgetMs": 10000
     },
     {
-      "name": "l10n-fr-startup",
-      "locale": "fr",
+      "name": "l10n-it-startup",
+      "locale": "it",
       "target": "sidebar.chats",
       "input": {
         "kind": "command",
         "command": {
           "kind": "setLocale",
-          "locale": "fr"
+          "locale": "it"
         }
       },
       "expect": {
@@ -1526,7 +1526,367 @@
         },
         "renderBodyContains": [
           "Chats",
-          "Famille",
+          "Famiglia",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-pt-startup",
+      "locale": "pt",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "pt"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Fam\u00edlia",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-nl-startup",
+      "locale": "nl",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "nl"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Familie",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-sv-startup",
+      "locale": "sv",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "sv"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Familj",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-pl-startup",
+      "locale": "pl",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "pl"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Rodzina",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-tr-startup",
+      "locale": "tr",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "tr"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Sohbetler",
+          "Aile",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-cs-startup",
+      "locale": "cs",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "cs"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Rodina",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-ro-startup",
+      "locale": "ro",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "ro"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Familie",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-hu-startup",
+      "locale": "hu",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "hu"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Csal\u00e1d",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-vi-startup",
+      "locale": "vi",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "vi"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Gia \u0110\u00ecnh",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-fi-startup",
+      "locale": "fi",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "fi"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Perhe",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-no-startup",
+      "locale": "no",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "no"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Familie",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-da-startup",
+      "locale": "da",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "da"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Familie",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-id-startup",
+      "locale": "id",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "id"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Keluarga",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-ca-startup",
+      "locale": "ca",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "ca"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Fam\u00edlia",
+          "Fixture Ops"
+        ]
+      },
+      "budgetMs": 10000
+    },
+    {
+      "name": "l10n-sk-startup",
+      "locale": "sk",
+      "target": "sidebar.chats",
+      "input": {
+        "kind": "command",
+        "command": {
+          "kind": "setLocale",
+          "locale": "sk"
+        }
+      },
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "chats"
+        },
+        "renderBodyContains": [
+          "Chats",
+          "Rodina",
           "Fixture Ops"
         ]
       },

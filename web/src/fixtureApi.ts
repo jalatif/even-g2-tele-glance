@@ -150,6 +150,23 @@ export class FixtureTelegramApi implements TelegramApi {
   private getChats(): Chat[] {
     if (this.fixtureLocale === 'es') return fixtureChatsEs
     if (this.fixtureLocale === 'fr') return fixtureChatsFr
+    if (this.fixtureLocale === 'de') return fixtureChatsDe
+    if (this.fixtureLocale === 'it') return fixtureChatsIt
+    if (this.fixtureLocale === 'pt') return fixtureChatsPt
+    if (this.fixtureLocale === 'nl') return fixtureChatsNl
+    if (this.fixtureLocale === 'sv') return fixtureChatsSv
+    if (this.fixtureLocale === 'pl') return fixtureChatsPl
+    if (this.fixtureLocale === 'tr') return fixtureChatsTr
+    if (this.fixtureLocale === 'cs') return fixtureChatsCs
+    if (this.fixtureLocale === 'ro') return fixtureChatsRo
+    if (this.fixtureLocale === 'hu') return fixtureChatsHu
+    if (this.fixtureLocale === 'vi') return fixtureChatsVi
+    if (this.fixtureLocale === 'fi') return fixtureChatsFi
+    if (this.fixtureLocale === 'no') return fixtureChatsNo
+    if (this.fixtureLocale === 'da') return fixtureChatsDa
+    if (this.fixtureLocale === 'id') return fixtureChatsId
+    if (this.fixtureLocale === 'ca') return fixtureChatsCa
+    if (this.fixtureLocale === 'sk') return fixtureChatsSk
     return fixtureChats
   }
   private getTopics(): Topic[] {
@@ -512,6 +529,176 @@ const messagePagesFr = new Map<string, Message[]>([
     msg(131, 'Réviseur', 'Troisième message : valide le double-clic retour.', false),
   ]],
 ] as Array<[string, Message[]]>)
+
+
+// DE fixture data — 80% de, 20% English
+const fixtureChatsDe: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Familie', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Solarprojekt', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Forschung', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// IT fixture data — 80% it, 20% English
+const fixtureChatsIt: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Famiglia', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Progetto Solare', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Ricerca', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// PT fixture data — 80% pt, 20% English
+const fixtureChatsPt: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Família', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Projeto Solar', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Pesquisa', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// NL fixture data — 80% nl, 20% English
+const fixtureChatsNl: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Familie', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Zonneproject', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Onderzoek', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// SV fixture data — 80% sv, 20% English
+const fixtureChatsSv: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Familj', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Solprojekt', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Forskning', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// PL fixture data — 80% pl, 20% English
+const fixtureChatsPl: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Rodzina', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Projekt Słoneczny', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Badania', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// TR fixture data — 80% tr, 20% English
+const fixtureChatsTr: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Aile', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Güneş Projesi', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Araştırma', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// CS fixture data — 80% cs, 20% English
+const fixtureChatsCs: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Rodina', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Solární Projekt', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Výzkum', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// RO fixture data — 80% ro, 20% English
+const fixtureChatsRo: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Familie', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Proiect Solar', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Cercetare', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// HU fixture data — 80% hu, 20% English
+const fixtureChatsHu: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Család', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Nap Projekt', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Kutatás', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// VI fixture data — 80% vi, 20% English
+const fixtureChatsVi: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Gia Đình', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Dự Án Mặt Trời', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Nghiên Cứu', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// FI fixture data — 80% fi, 20% English
+const fixtureChatsFi: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Perhe', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Aurinkoprojekti', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Tutkimus', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// NO fixture data — 80% no, 20% English
+const fixtureChatsNo: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Familie', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Solprosjekt', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Forskning', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// DA fixture data — 80% da, 20% English
+const fixtureChatsDa: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Familie', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Solprojekt', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Forskning', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// ID fixture data — 80% id, 20% English
+const fixtureChatsId: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Keluarga', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Proyek Surya', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Penelitian', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// CA fixture data — 80% ca, 20% English
+const fixtureChatsCa: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Família', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Projecte Solar', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Recerca', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+
+// SK fixture data — 80% sk, 20% English
+const fixtureChatsSk: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Rodina', kind: 'user', lastMessage: 'Preview for startup.' },
+  { id: 'fixture-chat-1', title: 'Solárny Projekt', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Forum preview available.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Výskum', kind: 'channel', lastMessage: 'Visual validation sample.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
 
 const fixtureTopics: Topic[] = [
   {

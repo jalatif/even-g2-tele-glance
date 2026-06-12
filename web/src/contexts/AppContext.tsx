@@ -6,8 +6,26 @@ import type { AppInput, AppState, ScreenModel } from '../controller/model'
 import { FixtureTelegramApi, bindFixtureApi, bindFixtureCommandHandler, setFixtureLocale } from '../fixtureApi'
 import { InstrumentedTelegramApi } from '../instrumentedApi'
 import { setLocale } from '../locales'
+import en from '../locales/en'
 import es from '../locales/es'
 import fr from '../locales/fr'
+import de from '../locales/de'
+import it from '../locales/it'
+import pt from '../locales/pt'
+import nl from '../locales/nl'
+import sv from '../locales/sv'
+import pl from '../locales/pl'
+import tr from '../locales/tr'
+import cs from '../locales/cs'
+import ro from '../locales/ro'
+import hu from '../locales/hu'
+import vi from '../locales/vi'
+import fi from '../locales/fi'
+import no from '../locales/no'
+import da from '../locales/da'
+import id from '../locales/id'
+import ca from '../locales/ca'
+import sk from '../locales/sk'
 import {
   clearFrontendConfigFromAppStorage,
   loadFrontendConfig,
@@ -117,11 +135,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
         controllerRef.current = createdController
         if (fixtureMode) {
           unbindFixtureCommands = bindFixtureCommandHandler(async (command) => {
-            if (command.kind === 'reinitialize') await createdController.init()
             if (command.kind === 'setLocale') {
               const locale = command.locale as string
               if (locale === 'es') { setLocale(es); setFixtureLocale('es') }
               else if (locale === 'fr') { setLocale(fr); setFixtureLocale('fr') }
+              else if (locale === 'de') { setLocale(de); setFixtureLocale('de') }
+              else if (locale === 'it') { setLocale(it); setFixtureLocale('it') }
+              else if (locale === 'pt') { setLocale(pt); setFixtureLocale('pt') }
+              else if (locale === 'nl') { setLocale(nl); setFixtureLocale('nl') }
+              else if (locale === 'sv') { setLocale(sv); setFixtureLocale('sv') }
+              else if (locale === 'pl') { setLocale(pl); setFixtureLocale('pl') }
+              else if (locale === 'tr') { setLocale(tr); setFixtureLocale('tr') }
+              else if (locale === 'cs') { setLocale(cs); setFixtureLocale('cs') }
+              else if (locale === 'ro') { setLocale(ro); setFixtureLocale('ro') }
+              else if (locale === 'hu') { setLocale(hu); setFixtureLocale('hu') }
+              else if (locale === 'vi') { setLocale(vi); setFixtureLocale('vi') }
+              else if (locale === 'fi') { setLocale(fi); setFixtureLocale('fi') }
+              else if (locale === 'no') { setLocale(no); setFixtureLocale('no') }
+              else if (locale === 'da') { setLocale(da); setFixtureLocale('da') }
+              else if (locale === 'id') { setLocale(id); setFixtureLocale('id') }
+              else if (locale === 'ca') { setLocale(ca); setFixtureLocale('ca') }
+              else if (locale === 'sk') { setLocale(sk); setFixtureLocale('sk') }
               else { setLocale(en); setFixtureLocale('en') }
               await createdController.init()
             }
