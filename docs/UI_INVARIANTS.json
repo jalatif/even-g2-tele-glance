@@ -1509,7 +1509,7 @@
     {
       "name": "l10n-es-open-chat",
       "locale": "es",
-      "target": "sidebar.messages",
+      "target": "sidebar.messages.normal",
       "input": {
         "kind": "command",
         "command": {
@@ -1555,7 +1555,7 @@
     {
       "name": "l10n-fr-open-chat",
       "locale": "fr",
-      "target": "sidebar.messages",
+      "target": "sidebar.messages.normal",
       "input": {
         "kind": "command",
         "command": {

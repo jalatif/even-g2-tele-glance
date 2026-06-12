@@ -3,7 +3,7 @@ import { HttpTelegramApi, SHARED_BACKEND_URL, type TelegramApi } from '../api'
 import { EvenHubGlassesBridge } from '../bridge/evenBridge'
 import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge } from '../controller/appController'
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
-import { FixtureTelegramApi, bindFixtureApi, bindFixtureCommandHandler } from '../fixtureApi'
+import { FixtureTelegramApi, bindFixtureApi, bindFixtureCommandHandler, setFixtureLocale } from '../fixtureApi'
 import { InstrumentedTelegramApi } from '../instrumentedApi'
 import { setLocale } from '../locales'
 import es from '../locales/es'
@@ -120,9 +120,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (command.kind === 'reinitialize') await createdController.init()
             if (command.kind === 'setLocale') {
               const locale = command.locale as string
-              if (locale === 'es') setLocale(es)
-              else if (locale === 'fr') setLocale(fr)
-              else setLocale(en)
+              if (locale === 'es') { setLocale(es); setFixtureLocale('es') }
+              else if (locale === 'fr') { setLocale(fr); setFixtureLocale('fr') }
+              else { setLocale(en); setFixtureLocale('en') }
               await createdController.init()
             }
             if (command.kind === 'injectAudioChunks') {

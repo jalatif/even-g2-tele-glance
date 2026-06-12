@@ -37,59 +37,6 @@ const fixtureChats: Chat[] = [
   },
 ]
 
-const fixtureTopics: Topic[] = [
-  {
-    id: 'fixture-topic-0',
-    title: 'Fixture Topic Zero',
-    topMessageId: 'fixture-topic-0-top',
-    lastMessage: 'Topic zero warmup preview.',
-  },
-  {
-    id: 'fixture-topic-1',
-    title: 'Fixture Topic One',
-    topMessageId: 'fixture-topic-1-top',
-    unreadCount: 1,
-    lastMessage: 'Topic one expected content preview.',
-  },
-  {
-    id: 'fixture-topic-2',
-    title: 'Fixture Topic Two',
-    topMessageId: 'fixture-topic-2-top',
-    unreadCount: 1,
-    lastMessage: 'Topic two expected content preview.',
-  },
-  {
-    id: 'fixture-topic-3',
-    title: 'Fixture Topic Three',
-    topMessageId: 'fixture-topic-3-top',
-    unreadCount: 1,
-    lastMessage: 'Topic three expected content preview.',
-  },
-  {
-    id: 'fixture-topic-4',
-    title: 'Fixture Topic Four',
-    topMessageId: 'fixture-topic-4-top',
-    lastMessage: 'Topic four expected content preview.',
-  },
-  {
-    id: 'fixture-topic-5',
-    title: 'Fixture Topic Five',
-    topMessageId: 'fixture-topic-5-top',
-    lastMessage: 'Topic five expected content preview.',
-  },
-  {
-    id: 'fixture-topic-6',
-    title: 'Fixture Topic Six',
-    topMessageId: 'fixture-topic-6-top',
-    lastMessage: 'Topic six expected content preview.',
-  },
-  // Anchor strings used by the simulator-driven scroll test
-  // (scripts/simulator-topic-scroll.mjs). Each message in the
-  // three new topics embeds its index in the body so the harness
-  // can assert "I saw message N of topic T" without parsing the
-  // structure of the controller's `state.messages` array.
-]
-
 const LONG_ALPHA_BODY = [
   'This is a deliberately long fixture message that is intended to exercise the long-message rendering pipeline including word wrapping, multi-line layout, and the page-byte-limit trim path. It is well past the fifty-word boundary so the harness can confirm the text container and panelBox branches handle overflow correctly. The harness must verify that the visible substring is preserved even when the total byte length exceeds the SDK cap. fixture-long-alpha-body-anchor appears near the end so the matcher has a unique string to look for. End of long message.',
 ].join(' ')
@@ -198,6 +145,23 @@ export class FixtureTelegramApi implements TelegramApi {
   private subscribers = new Set<(update: TelegramUpdate) => void>()
   private injectedNotification: { chatId: Id; message: string; topicId?: Id | null } | null = null
   private chatOverrides = new Map<string, Partial<Chat>>()
+  fixtureLocale: string = 'en'
+
+  private getChats(): Chat[] {
+    if (this.fixtureLocale === 'es') return fixtureChatsEs
+    if (this.fixtureLocale === 'fr') return fixtureChatsFr
+    return fixtureChats
+  }
+  private getTopics(): Topic[] {
+    if (this.fixtureLocale === 'es') return fixtureTopicsEs
+    if (this.fixtureLocale === 'fr') return fixtureTopicsFr
+    return fixtureTopics
+  }
+  private getMessagePages(): Map<string, Message[]> {
+    if (this.fixtureLocale === 'es') return messagePagesEs
+    if (this.fixtureLocale === 'fr') return messagePagesFr
+    return messagePages
+  }
 
   setMode(mode: 'normal' | 'missing' | 'signedOut' | 'error' | 'slow') {
     this.mode = mode
@@ -252,17 +216,16 @@ export class FixtureTelegramApi implements TelegramApi {
   async logout() {
     return undefined
   }
-
   async listChats(limit = 20) {
     if (this.slowChatsMs > 0) await fixtureDelay(this.slowChatsMs)
     else await fixtureDelay(40)
-    return fixtureChats.slice(0, limit).map((chat) => ({ ...chat, ...(this.chatOverrides.get(String(chat.id)) ?? {}) }))
+    return this.getChats().slice(0, limit).map((chat) => ({ ...chat, ...(this.chatOverrides.get(String(chat.id)) ?? {}) }))
   }
 
   async listTopics(chatId: Id) {
     await fixtureDelay(60)
     if (String(chatId) !== 'fixture-chat-1') return []
-    return fixtureTopics.map((topic) => ({ ...topic }))
+    return this.getTopics().map((topic) => ({ ...topic }))
   }
 
   async listMessages(chatId: Id, options: { topicId?: Id; beforeId?: Id; limit?: number } = {}) {
@@ -274,7 +237,7 @@ export class FixtureTelegramApi implements TelegramApi {
         msg(before - 1, 'Older Fixture', 'Older fixture content validates up-scroll loading.'),
       ].slice(0, options.limit ?? 50)
     }
-    const messages = messagePages.get(threadKey(chatId, options.topicId)) ?? [
+    const messages = this.getMessagePages().get(threadKey(chatId, options.topicId)) ?? [
       msg(900, 'Fixture', `Fallback fixture message for ${String(chatId)}.`),
     ]
     return messages.slice(0, options.limit ?? 50).map((message) => ({ ...message }))
@@ -330,23 +293,11 @@ function threadKey(chatId: Id, topicId?: Id) {
   return topicId === undefined ? String(chatId) : `${String(chatId)}:${String(topicId)}`
 }
 
-function msg(id: Id, sender: string, text: string, outgoing = false): Message {
-  return {
-    id,
-    sender,
-    text,
-    outgoing,
-    sentAt: '2026-06-01T20:00:00Z',
-  }
-}
-
-function fixtureDelay(ms: number) {
-  const { promise, resolve } = Promise.withResolvers<void>()
-  setTimeout(resolve, ms)
-  return promise
-}
-
 let activeFixture: FixtureTelegramApi | null = null
+
+export function setFixtureLocale(locale: string) {
+  if (activeFixture) activeFixture.fixtureLocale = locale
+}
 
 export function bindFixtureApi(api: FixtureTelegramApi) {
   activeFixture = api
@@ -374,7 +325,24 @@ export function bindFixtureApi(api: FixtureTelegramApi) {
   }
 }
 
+function msg(id: Id, sender: string, text: string, outgoing = false): Message {
+  return {
+    id,
+    sender,
+    text,
+    outgoing,
+    sentAt: '2026-06-01T20:00:00Z',
+  }
+}
+
+function fixtureDelay(ms: number) {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, ms)
+  return promise
+}
+
 let commandPollTimer: ReturnType<typeof setInterval> | undefined
+
 let injectedAudioChunks: Uint8Array[] = []
 let fixtureCommandHandler: ((command: { kind: string } & Record<string, unknown>) => void | Promise<void>) | undefined
 
@@ -439,3 +407,162 @@ export function consumeInjectedAudioChunks(): Uint8Array[] {
 export function getActiveFixtureApi(): FixtureTelegramApi | null {
   return activeFixture
 }
+// Spanish fixture data — 80% Spanish, 20% English (for mixed-content testing)
+const fixtureChatsEs: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Familia', kind: 'user', lastMessage: 'Vista previa de Alpha para inicio.' },
+  { id: 'fixture-chat-1', title: 'Proyecto Solar', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Vista previa del foro: contenido disponible.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Investigación', kind: 'channel', lastMessage: 'Muestra de validación visual.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+const fixtureTopicsEs: Topic[] = [
+  { id: 'fixture-topic-0', title: 'Tema Cero', topMessageId: 'fixture-topic-0-top', lastMessage: 'Vista previa del tema cero.' },
+  { id: 'fixture-topic-1', title: 'Tema Uno', topMessageId: 'fixture-topic-1-top', unreadCount: 1, lastMessage: 'Contenido esperado del tema uno.' },
+  { id: 'fixture-topic-2', title: 'Tema Dos', topMessageId: 'fixture-topic-2-top', unreadCount: 1, lastMessage: 'Contenido esperado del tema dos.' },
+  { id: 'fixture-topic-3', title: 'Fixture Topic Three', topMessageId: 'fixture-topic-3-top', unreadCount: 1, lastMessage: 'Topic three expected content preview.' },
+  { id: 'fixture-topic-4', title: 'Tema Cuatro', topMessageId: 'fixture-topic-4-top', lastMessage: 'Vista previa del tema cuatro.' },
+  { id: 'fixture-topic-5', title: 'Tema Cinco', topMessageId: 'fixture-topic-5-top', lastMessage: 'Vista previa del tema cinco.' },
+  { id: 'fixture-topic-6', title: 'Tema Seis', topMessageId: 'fixture-topic-6-top', lastMessage: 'Vista previa del tema seis.' },
+]
+
+const messagePagesEs = new Map<string, Message[]>([
+  [threadKey('fixture-chat-0'), [
+    msg(10, 'Familia', 'Página de mensajes Alpha: fixture-alpha-body para prueba de inicio.'),
+    msg(11, 'Yo', 'Marcador saliente Alpha: validación visual.', true),
+  ]],
+  [threadKey('fixture-chat-2'), [
+    msg(20, 'Fixture Ops', 'Ops message page contains fixture-ops-body for chat index two.'),
+    msg(21, 'SRE', 'Muestra de latencia de Ops: debe permanecer legible.'),
+  ]],
+  [threadKey('fixture-chat-3'), [
+    msg(30, 'Investigación', 'Página de mensajes Research: fixture-research-body.'),
+    msg(31, 'Analista', 'Muestra de Research: confirma renderizado normal.', false),
+  ]],
+  [threadKey('fixture-chat-4'), [
+    msg(40, 'Fixture Archive', LONG_ALPHA_BODY),
+    msg(41, 'Fixture Archive', 'Short follow-up so pagination logic can detect an older page boundary below.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-0'), [
+    msg(100, 'Bot del Foro', 'Cuerpo de inicio del tema cero.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-1'), [
+    msg(110, 'Tema Uno', 'Mensaje del tema uno: incluye fixture-topic-one-body.'),
+    msg(111, 'Revisor', 'Segundo mensaje del tema uno: valida desplazamiento.', false),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-2'), [
+    msg(120, 'Tema Dos', 'Mensaje del tema dos: incluye fixture-topic-two-body.'),
+    msg(121, 'Revisor', 'Topic two second message validates rendering distinct content.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-3'), [
+    msg(130, 'Fixture Topic Three', LONG_TOPIC_BODY),
+    msg(131, 'Revisor', 'Tercer mensaje: valida doble clic para volver.', false),
+  ]],
+] as Array<[string, Message[]]>)
+
+// French fixture data — 80% French, 20% English
+const fixtureChatsFr: Chat[] = [
+  { id: 'fixture-chat-0', title: 'Famille', kind: 'user', lastMessage: 'Aperçu Alpha pour le démarrage.' },
+  { id: 'fixture-chat-1', title: 'Projet Soleil', kind: 'group', isForum: true, unreadCount: 3, lastMessage: 'Aperçu du forum : contenu disponible.' },
+  { id: 'fixture-chat-2', title: 'Fixture Ops', kind: 'group', lastMessage: 'Ops preview: deployment status green.' },
+  { id: 'fixture-chat-3', title: 'Recherche', kind: 'channel', lastMessage: 'Échantillon de validation visuelle.' },
+  { id: 'fixture-chat-4', title: 'Fixture Archive', kind: 'group', lastMessage: 'Archive preview: older test data.' },
+]
+
+const fixtureTopicsFr: Topic[] = [
+  { id: 'fixture-topic-0', title: 'Sujet Zéro', topMessageId: 'fixture-topic-0-top', lastMessage: 'Aperçu du sujet zéro.' },
+  { id: 'fixture-topic-1', title: 'Sujet Un', topMessageId: 'fixture-topic-1-top', unreadCount: 1, lastMessage: 'Contenu attendu du sujet un.' },
+  { id: 'fixture-topic-2', title: 'Sujet Deux', topMessageId: 'fixture-topic-2-top', unreadCount: 1, lastMessage: 'Contenu attendu du sujet deux.' },
+  { id: 'fixture-topic-3', title: 'Fixture Topic Three', topMessageId: 'fixture-topic-3-top', unreadCount: 1, lastMessage: 'Topic three expected content preview.' },
+  { id: 'fixture-topic-4', title: 'Sujet Quatre', topMessageId: 'fixture-topic-4-top', lastMessage: 'Aperçu du sujet quatre.' },
+  { id: 'fixture-topic-5', title: 'Sujet Cinq', topMessageId: 'fixture-topic-5-top', lastMessage: 'Aperçu du sujet cinq.' },
+  { id: 'fixture-topic-6', title: 'Sujet Six', topMessageId: 'fixture-topic-6-top', lastMessage: 'Aperçu du sujet six.' },
+]
+
+const messagePagesFr = new Map<string, Message[]>([
+  [threadKey('fixture-chat-0'), [
+    msg(10, 'Famille', 'Page de messages Alpha : fixture-alpha-body pour test de démarrage.'),
+    msg(11, 'Moi', 'Marqueur sortant Alpha : validation visuelle.', true),
+  ]],
+  [threadKey('fixture-chat-2'), [
+    msg(20, 'Fixture Ops', 'Ops message page contains fixture-ops-body for chat index two.'),
+    msg(21, 'SRE', 'Échantillon de latence Ops : doit rester lisible.'),
+  ]],
+  [threadKey('fixture-chat-3'), [
+    msg(30, 'Recherche', 'Page de messages Research : fixture-research-body.'),
+    msg(31, 'Analyste', 'Échantillon Research : confirme le rendu normal.', false),
+  ]],
+  [threadKey('fixture-chat-4'), [
+    msg(40, 'Fixture Archive', LONG_ALPHA_BODY),
+    msg(41, 'Fixture Archive', 'Short follow-up so pagination logic can detect an older page boundary below.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-0'), [
+    msg(100, 'Bot du Forum', 'Corps de démarrage du sujet zéro.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-1'), [
+    msg(110, 'Sujet Un', 'Message du sujet un : inclut fixture-topic-one-body.'),
+    msg(111, 'Réviseur', 'Deuxième message du sujet un : valide le défilement.', false),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-2'), [
+    msg(120, 'Sujet Deux', 'Message du sujet deux : inclut fixture-topic-two-body.'),
+    msg(121, 'Réviseur', 'Topic two second message validates rendering distinct content.'),
+  ]],
+  [threadKey('fixture-chat-1', 'fixture-topic-3'), [
+    msg(130, 'Fixture Topic Three', LONG_TOPIC_BODY),
+    msg(131, 'Réviseur', 'Troisième message : valide le double-clic retour.', false),
+  ]],
+] as Array<[string, Message[]]>)
+
+const fixtureTopics: Topic[] = [
+  {
+    id: 'fixture-topic-0',
+    title: 'Fixture Topic Zero',
+    topMessageId: 'fixture-topic-0-top',
+    lastMessage: 'Topic zero warmup preview.',
+  },
+  {
+    id: 'fixture-topic-1',
+    title: 'Fixture Topic One',
+    topMessageId: 'fixture-topic-1-top',
+    unreadCount: 1,
+    lastMessage: 'Topic one expected content preview.',
+  },
+  {
+    id: 'fixture-topic-2',
+    title: 'Fixture Topic Two',
+    topMessageId: 'fixture-topic-2-top',
+    unreadCount: 1,
+    lastMessage: 'Topic two expected content preview.',
+  },
+  {
+    id: 'fixture-topic-3',
+    title: 'Fixture Topic Three',
+    topMessageId: 'fixture-topic-3-top',
+    unreadCount: 1,
+    lastMessage: 'Topic three expected content preview.',
+  },
+  {
+    id: 'fixture-topic-4',
+    title: 'Fixture Topic Four',
+    topMessageId: 'fixture-topic-4-top',
+    lastMessage: 'Topic four expected content preview.',
+  },
+  {
+    id: 'fixture-topic-5',
+    title: 'Fixture Topic Five',
+    topMessageId: 'fixture-topic-5-top',
+    lastMessage: 'Topic five expected content preview.',
+  },
+  {
+    id: 'fixture-topic-6',
+    title: 'Fixture Topic Six',
+    topMessageId: 'fixture-topic-6-top',
+    lastMessage: 'Topic six expected content preview.',
+  },
+  // Anchor strings used by the simulator-driven scroll test
+  // (scripts/simulator-topic-scroll.mjs). Each message in the
+  // three new topics embeds its index in the body so the harness
+  // can assert "I saw message N of topic T" without parsing the
+  // structure of the controller's `state.messages` array.
+]
+
