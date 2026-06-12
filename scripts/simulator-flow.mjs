@@ -192,9 +192,22 @@ async function loadCatalog() {
 }
 
 async function runFlow() {
-  // Filter catalog steps by locale. English steps (no `locale` field) always run.
-  // When --locale is set, only steps matching that locale (or English) run.
-  // When --locale=all, all steps run.
+  // When --locale is non-en (es/fr), switch the locale BEFORE running
+  // any steps so ALL steps run with locale-specific fixture data and
+  // UI strings. The l10n-* steps become redundant in this mode since
+  // every step already uses the target locale.
+  const useLocaleOverride = targetLocale !== 'en' && targetLocale !== 'all'
+  if (useLocaleOverride) {
+    await sendTestCommand({ kind: 'setLocale', locale: targetLocale })
+    // Wait for reinit to complete (sidebar.chats state)
+    const deadline = Date.now() + 15_000
+    while (Date.now() < deadline) {
+      await pollConsole()
+      const latest = latestTestEvent('state')
+      if (latest && latest.screen === 'sidebar' && latest.focus === 'chats') break
+      await sleep(500)
+    }
+  }
   const steps = targetLocale === 'all'
     ? catalog.steps
     : catalog.steps.filter(s => !s.locale || s.locale === targetLocale)
@@ -345,15 +358,18 @@ async function executeStep(step, _url) {
     )
   }
   if (expect.renderBodyContains && isFixtureMode) {
-    // The catalog renderBodyContains strings reference fixture-only chat/topic titles
-    // and message bodies. Skipping in real mode keeps the harness useful for parity
-    // checks without false negatives from the user's real Telegram data.
-    await waitForTestEvent(
-      `${name}: render contains ${expect.renderBodyContains.join(', ')}`,
-      (event) => event.event === 'render' && expect.renderBodyContains.every((needle) => `${JSON.stringify(event.model ?? {})}`.includes(needle)),
-      stepDeadline,
-      eventStartTime,
-    )
+    // When --locale is non-en, English-only steps don't have locale-gated
+    // assertions — their renderBodyContains strings are English. Skip content
+    // checks for steps without a locale field when running in locale mode.
+    const localeOverrideSkipping = targetLocale !== 'en' && targetLocale !== 'all' && !step.locale
+    if (!localeOverrideSkipping) {
+      await waitForTestEvent(
+        `${name}: render contains ${expect.renderBodyContains.join(', ')}`,
+        (event) => event.event === 'render' && expect.renderBodyContains.every((needle) => `${JSON.stringify(event.model ?? {})}`.includes(needle)),
+        stepDeadline,
+        eventStartTime,
+      )
+    }
   }
   if (isFixtureMode && expect.renderBodyContainsAny) {
     // For multi-page scroll tests: every needle must appear in
@@ -463,7 +479,8 @@ async function executeStep(step, _url) {
   await sleep(150)
   await pollConsole()
   const captureStartedAt = Date.now()
-  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartTime, failuresBeforeStep })
+  const skipContentChecks = targetLocale !== 'en' && targetLocale !== 'all' && !step.locale
+  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartTime, failuresBeforeStep, skipContentChecks })
   const totalMs = Date.now() - startedAt
   const captureMs = Date.now() - captureStartedAt
   latencies.push({ name, totalMs, captureMs, budgetMs, perInputLatencies })
@@ -560,15 +577,16 @@ async function captureStep(name, expectations, extras = {}) {
   // unrelated windows and turn a failed glasses capture into a false pass.
   const latestRender = latestTestEvent('render', eventStartTime)
   const latestState = latestTestEvent('state', eventStartTime)
-  const contentMatches = isFixtureMode ? checkContentMatches(expectations, latestRender, latestState) : true
-  if (isFixtureMode && expectations.renderBodyContains && latestRender) {
+  const contentMatches = (isFixtureMode && !extras.skipContentChecks) ? checkContentMatches(expectations, latestRender, latestState) : true
+  if (isFixtureMode && expectations.renderBodyContains && latestRender && !extras.skipContentChecks) {
     for (const needle of expectations.renderBodyContains) {
-      const haystack = JSON.stringify(latestRender.model ?? {})
-      if (!haystack.includes(needle)) failures.push(`${name}: expected render content "${needle}" not found`)
+      if (!latestRender.model?.body?.includes?.(needle) && !JSON.stringify(latestRender.model).includes(needle)) {
+        failures.push(`${name}: expected render content "${needle}" not found`)
+      }
     }
   }
-  if (isFixtureMode && expectations.renderBodyNotContains && latestRender) {
-    const haystack = JSON.stringify(latestRender.model ?? {})
+  if (isFixtureMode && expectations.renderBodyNotContains && latestRender && !extras.skipContentChecks) {
+    const haystack = JSON.stringify(latestRender.model)
     for (const needle of expectations.renderBodyNotContains) {
       if (haystack.includes(needle)) failures.push(`${name}: expected render model to NOT contain "${needle}" but it did (stale data leaking through)`)
     }
