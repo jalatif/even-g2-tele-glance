@@ -241,13 +241,22 @@ async function executeStep(step, _url) {
   // boundary. Index boundaries are deterministic even when the browser and
   // harness clocks drift, which is common on phone hardware.
   await pollConsole()
-  const eventStartIndex = testEvents.length
+  let eventStartIndex = testEvents.length
 
-  // Handle fixture-command inputs (setLocale, reinitialize, etc.)
+  // Handle fixture-command inputs (setLocale, reinitialize, etc.).
+  // Update eventStartIndex AFTER the command so state/render events from
+  // the reinit are picked up by captureStep's waitForTestEvent calls.
   if (step.input && typeof step.input === 'object' && step.input.kind === 'command') {
     await sendTestCommand(step.input.command)
-    // Await completion: poll for the re-initialized state.
-    await pollConsole()
+    await sleep(500)  // Let the fixture poll pick up the command
+    eventStartIndex = testEvents.length  // Reset to include reinit events
+    // Poll until we see fresh state events from the reinit.
+    const deadline = Date.now() + budgetMs
+    while (Date.now() < deadline) {
+      await pollConsole()
+      if (latestTestEvent('state', eventStartIndex)) break
+      await sleep(200)
+    }
   }
   if (step.input === 'testSlowChat') {
     await sendTestCommand({ kind: 'setMode', mode: 'slow' })
