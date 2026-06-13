@@ -1,6 +1,6 @@
 import { pcmChunksToWav } from '../audio/wav'
 import type { TelegramApi } from '../api'
-import type { Chat, Id, Message, TelegramUpdate, Topic } from '../types'
+import type { Chat, Id, Message, TelegramUpdate, TelegramTypingUpdate, Topic } from '../types'
 import type { AppInput, AppState, RecoverableState, ScreenModel } from './model'
 import { messageScrollUnitCount, screenModel } from './model'
 import { isTeleGlanceFixtureMode, logLifecycleEvent, logRecordingEvent, logStateWork, nowMs } from '../testMode'
@@ -135,6 +135,7 @@ export class TelegramAppController {
   private notifyPending = false
   private openRequestId = 0
   private inputQuietUntil = 0
+  private typingTimer: ReturnType<typeof setTimeout> | undefined
   constructor(
     private readonly api: TelegramApi,
     private readonly bridge: GlassesBridge,
@@ -173,6 +174,11 @@ export class TelegramAppController {
     }
   }
 
+  /** Rebuild the current glasses screen with the latest locale / state. */
+  rebuildGlasses() {
+    this.enqueueRender(this.state)
+  }
+
   dispose() {
     this.openRequestId += 1
     this.stopMessagePolling()
@@ -186,12 +192,9 @@ export class TelegramAppController {
       this.readAckFlushTimer,
       this.startupPrefetchTimer,
       this.renderTimer,
-      this.notifyTimer,
     ]) {
       if (timer) clearTimeout(timer)
     }
-    this.pendingMessagePress = undefined
-    this.topicPreviewDebounce = undefined
     this.deferredRootRefreshTimer = undefined
     this.deferredMessageRefreshTimer = undefined
     this.chatPreviewDebounce = undefined
@@ -199,17 +202,18 @@ export class TelegramAppController {
     this.startupPrefetchTimer = undefined
     this.renderTimer = undefined
     this.notifyTimer = undefined
+    this.typingTimer = undefined
     this.pendingRenderState = undefined
     this.listeners.clear()
   }
 
   async sendTextFromPhone(text: string) {
+    const state = this.state
+    const thread = activeThreadState(state)
+    if (!thread) throw new Error('Open a chat or topic before sending.')
     const trimmed = text.trim()
     if (!trimmed) return
-    const thread = activeThreadState(this.state)
-    if (!thread) throw new Error('Open a chat or topic before sending.')
-
-    const ctx = sidebarContext(this.state)
+    const ctx = sidebarContext(state)
     await this.run(async () => {
       const sent = await this.api.sendMessage(thread.chat.id, {
         text: trimmed,
@@ -228,14 +232,18 @@ export class TelegramAppController {
         cursor: oldestMessageId(messages),
         back: thread.back,
         status: 'Sent',
+        scrollOffset: 0,
         newerPages: [],
         isNewestPage: true,
-        scrollOffset: 0,
       })
     }, thread.back)
   }
 
-  async handleTelegramUpdate(update: TelegramUpdate) {
+  async handleTelegramUpdate(update: TelegramUpdate | TelegramTypingUpdate) {
+    if (update.type === 'typing') {
+      await this.handleTelegramTypingUpdate(update)
+      return
+    }
     if (this.isInputQuiet()) {
       this.deferTelegramUpdate(update)
       return
@@ -247,6 +255,50 @@ export class TelegramAppController {
     }
     if (state.screen === 'sidebar' && state.focus === 'messages' && updateMatchesThread(update, state)) {
       await this.refreshVisibleMessages()
+    }
+  }
+
+  async handleTelegramTypingUpdate(update: TelegramTypingUpdate) {
+    const state = this.state
+    // Only show typing indicator when viewing messages. Typing updates are
+    // lightweight — no reason to defer them behind the input quiet window.
+    if (state.screen !== 'sidebar' || state.focus !== 'messages') return
+    if (!updateMatchesThread(update, state)) return
+    if (update.action === 'typing' && update.userName) {
+      this.state = { ...state, typing: { userName: update.userName, expiresAt: Date.now() + 5000 } }
+      this.enqueueNotify()
+      this.startTypingTimer()
+      this.enqueueRender(this.state)
+      return
+    }
+    if (update.action === 'cancel') {
+      this.state = { ...state, typing: null }
+      this.enqueueNotify()
+      this.cancelTypingTimer()
+      this.enqueueRender(this.state)
+      return
+    }
+  }
+
+  private startTypingTimer() {
+    this.cancelTypingTimer()
+    const state = this.state
+    if (state.screen !== 'sidebar' || state.focus !== 'messages' || !state.typing) return
+    const delay = Math.max(0, state.typing.expiresAt - Date.now())
+    this.typingTimer = setTimeout(() => {
+      if (this.state.screen === 'sidebar' && this.state.focus === 'messages' && this.state.typing) {
+        this.state = { ...this.state, typing: null }
+        this.enqueueRender(this.state)
+      }
+    }, delay)
+    const maybeNodeTimeout = this.typingTimer as unknown as { unref?: () => void }
+    maybeNodeTimeout.unref?.()
+  }
+
+  private cancelTypingTimer() {
+    if (this.typingTimer !== undefined) {
+      clearTimeout(this.typingTimer)
+      this.typingTimer = undefined
     }
   }
 
@@ -888,6 +940,7 @@ export class TelegramAppController {
       newerPages: state.newerPages,
       isNewestPage: state.isNewestPage,
       scrollOffset: state.scrollOffset,
+      typing: state.typing,
       chunks: [],
       startedAt: this.lastMessagePressAt,
     })
@@ -914,6 +967,7 @@ export class TelegramAppController {
           newerPages: state.newerPages,
           isNewestPage: state.isNewestPage,
           scrollOffset: state.scrollOffset,
+          typing: state.typing,
         })
         return
       }
@@ -928,6 +982,7 @@ export class TelegramAppController {
         newerPages: state.newerPages,
         isNewestPage: state.isNewestPage,
         scrollOffset: state.scrollOffset,
+        typing: state.typing,
       })
       return
     }
@@ -943,6 +998,7 @@ export class TelegramAppController {
       newerPages: state.newerPages,
       isNewestPage: state.isNewestPage,
       scrollOffset: state.scrollOffset,
+      typing: state.typing,
     })
     if (isTeleGlanceFixtureMode()) {
       const total = state.chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
@@ -964,6 +1020,7 @@ export class TelegramAppController {
           newerPages: state.newerPages,
           isNewestPage: state.isNewestPage,
           scrollOffset: state.scrollOffset,
+          typing: state.typing,
         })
         return
       }
@@ -981,6 +1038,7 @@ export class TelegramAppController {
           newerPages: state.newerPages,
           isNewestPage: state.isNewestPage,
           scrollOffset: state.scrollOffset,
+          typing: state.typing,
         })
         return
       }
@@ -997,6 +1055,7 @@ export class TelegramAppController {
         newerPages: state.newerPages,
         isNewestPage: state.isNewestPage,
         scrollOffset: state.scrollOffset,
+        typing: state.typing,
       })
     })
   }
@@ -1017,6 +1076,7 @@ export class TelegramAppController {
         chat: state.chat, topic: state.topic, messages: state.messages,
         back: state.back, status: state.status,
         newerPages: state.newerPages, isNewestPage: state.isNewestPage, scrollOffset: state.scrollOffset,
+        typing: state.typing,
       })
       return
     }
@@ -1029,6 +1089,7 @@ export class TelegramAppController {
         chat: state.chat, topic: state.topic, messages: state.messages,
         back: state.back, status: state.status,
         newerPages: state.newerPages, isNewestPage: state.isNewestPage, scrollOffset: state.scrollOffset,
+        typing: state.typing,
       })
       return
     }
@@ -1045,6 +1106,7 @@ export class TelegramAppController {
       newerPages: state.newerPages,
       isNewestPage: state.isNewestPage,
       scrollOffset: state.scrollOffset,
+      typing: state.typing,
     })
     if (isTeleGlanceFixtureMode()) logRecordingEvent('confirm', { selected: 'send', transcript: state.transcript })
     if (isTeleGlanceFixtureMode()) logRecordingEvent('send.start', { chatId: state.chat.id, topicId: state.topic?.id ?? null, transcript: state.transcript })
@@ -1069,6 +1131,7 @@ export class TelegramAppController {
         newerPages: [],
         isNewestPage: true,
         scrollOffset: 0,
+        typing: state.typing ?? null,
       })
       void this.refreshAfterSend(state, sent)
     }, state)
@@ -1094,6 +1157,7 @@ export class TelegramAppController {
         chat: state.chat, topic: state.topic,
         messages, cursor: oldestMessageId(messages),
         back: state.back, newerPages: [], isNewestPage: true, scrollOffset: 0,
+        typing: state.typing,
       })
     }
   }
@@ -1554,7 +1618,17 @@ export class TelegramAppController {
   }
 
   private applyState(state: AppState, armSelectionOnlyPress: boolean) {
+    // Preserve typing state across transitions within the message view
+    // (send, refresh, poll) so concurrent typing updates are not lost.
+    const prev = this.state
+    if (state.screen === 'sidebar' && state.focus === 'messages' && !('typing' in (state as Record<string, unknown>)) && prev.screen === 'sidebar' && prev.focus === 'messages' && prev.typing) {
+      state = { ...state, typing: prev.typing }
+    }
     this.state = state
+    if (state.screen !== 'sidebar' || state.focus !== 'messages') {
+      this.cancelTypingTimer()
+
+    }
     if (armSelectionOnlyPress && state.screen === 'sidebar' && (state.focus === 'chats' || state.focus === 'topics')) {
       this.selectionOnlyPressReadyAt = Date.now() + this.runtimeConfig.selectionOnlyPressDelayMs
     }
@@ -2073,7 +2147,7 @@ function messageThreadKey(state: { chat: Chat; topic?: Topic }) {
   return `${String(state.chat.id)}:${String(topicThreadId(state.topic) ?? '')}`
 }
 
-function updateMatchesThread(update: TelegramUpdate, state: { chat: Chat; topic?: Topic }) {
+function updateMatchesThread(update: { chatId: Id; topicId?: Id | null }, state: { chat: Chat; topic?: Topic }) {
   if (String(update.chatId) !== String(state.chat.id)) return false
   const stateTopic = topicThreadId(state.topic)
   if (stateTopic === undefined) return update.topicId === undefined || update.topicId === null

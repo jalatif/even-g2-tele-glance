@@ -30,6 +30,7 @@ type AppContextValue = {
   saveSettings: (settings: FrontendConfig) => Promise<void>
   resetSettings: () => Promise<void>
   logoutTelegram: () => Promise<void>
+  localeVersion: number
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -43,6 +44,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState(loadFrontendConfig)
   const [state, setState] = useState<AppState>({ screen: 'loading', message: 'Starting...' })
   const [startupError, setStartupError] = useState<string | null>(null)
+  const [localeVersion, setLocaleVersion] = useState(0)
   const settingsRef = useRef(settings)
   const controllerRef = useRef<TelegramAppController | null>(null)
   const apiRef = useRef<TelegramApi | null>(null)
@@ -188,6 +190,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // screen-model rendering switch to the new language without a page reload.
     if (next.language !== previous.language) {
       setLocale(localeFromCode(next.language))
+      setLocaleVersion(v => v + 1)
+      controllerRef.current?.rebuildGlasses()
     }
     if (
       next.apiBaseUrl.trim() !== previous.apiBaseUrl.trim()
@@ -218,6 +222,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state,
     settings,
     startupError,
+    localeVersion,
     dispatch,
     sendText,
     startPhoneLogin,
@@ -225,7 +230,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveSettings: handleSaveSettings,
     resetSettings: handleResetSettings,
     logoutTelegram,
-  }), [dispatch, handleResetSettings, handleSaveSettings, logoutTelegram, sendText, settings, startPhoneLogin, startupError, state, verifyPhoneLogin])
+  }), [dispatch, handleResetSettings, handleSaveSettings, localeVersion, logoutTelegram, sendText, settings, startPhoneLogin, startupError, state, verifyPhoneLogin])
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }

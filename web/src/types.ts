@@ -49,6 +49,14 @@ export type TelegramUpdate = {
   message: Message
 }
 
+export type TelegramTypingUpdate = {
+  type: 'typing'
+  chatId: Id
+  topicId?: Id | null
+  userName?: string | null
+  action: 'typing' | 'cancel'
+}
+
 export type SendMessageRequest = {
   text: string
   topicId?: Id

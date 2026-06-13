@@ -7,6 +7,7 @@ import type {
   PhoneAuthStart,
   PhoneAuthStatus,
   SendMessageRequest,
+  TelegramTypingUpdate,
   TelegramUpdate,
   Topic,
   TranscriptionResult,
@@ -57,7 +58,7 @@ export class InstrumentedTelegramApi implements TelegramApi {
     return this.wrap('transcribe', { size: wav.size }, () => this.inner.transcribe(wav))
   }
 
-  subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event | Error) => void): () => void {
+  subscribeUpdates(onUpdate: (update: TelegramUpdate | TelegramTypingUpdate) => void, onError?: (error: Event | Error) => void): () => void {
     if (isTeleGlanceFixtureMode()) {
       const startedAt = Date.now()
       const unsubscribe = this.inner.subscribeUpdates(onUpdate, onError)

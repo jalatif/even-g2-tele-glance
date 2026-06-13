@@ -1,0 +1,16 @@
+{
+  "type": "EFFECT_REQUESTED",
+  "recordedAt": "2026-06-13T09:07:29.825Z",
+  "data": {
+    "harness": "oh-my-pi",
+    "effectId": "01KV03RYWHKJ9WSB0PCQHYDE1X",
+    "invocationKey": "teleglance/bugfix-i18n-typing:S000005:validate-harness",
+    "invocationHash": "7824267f4c746f1fc753fe2954c77ef4f9393af63a0f225dcc8942e77b666da6",
+    "stepId": "S000005",
+    "taskId": "validate-harness",
+    "kind": "agent",
+    "label": "Phase 3: Validate fixes through harness tests",
+    "taskDefRef": "tasks/01KV03RYWHKJ9WSB0PCQHYDE1X/task.json"
+  },
+  "checksum": "076c170faceeb84668e6003a61fd30342d1936b526325b6572be450d7f213bdf"
+}

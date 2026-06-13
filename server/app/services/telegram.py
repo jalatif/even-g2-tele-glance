@@ -2,7 +2,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Optional, Protocol
+from typing import Any, AsyncIterator, Literal, Optional, Protocol, Union
 
 from app.config import Settings
 from app.models import (
@@ -13,6 +13,7 @@ from app.models import (
     SendMessageResponse,
     TelegramUpdate,
     TopicSummary,
+    TypingUpdate,
 )
 
 _telethon_logger = logging.getLogger("telethon")
@@ -95,7 +96,7 @@ class TelegramService(Protocol):
     ) -> None:
         ...
 
-    def update_events(self) -> AsyncIterator[TelegramUpdate]:
+    def update_events(self) -> AsyncIterator[Union[TelegramUpdate, TypingUpdate]]:
         ...
 
 
@@ -164,6 +165,38 @@ def normalize_update_message(message: Any, chat_id: Optional[int] = None) -> Tel
         topic_id=_message_topic_id(message),
         message=normalize_message(message),
     )
+
+
+def normalize_chat_action(event: Any) -> Optional[TypingUpdate]:
+    action = getattr(event, "action_message", None)
+    if action is None:
+        return None
+    action_type = type(action.action).__name__
+    if action_type == "SendMessageTypingAction":
+        typing_action: Literal["typing", "cancel"] = "typing"
+    elif action_type == "SendMessageCancelAction":
+        typing_action: Literal["typing", "cancel"] = "cancel"
+    else:
+        return None
+    
+    user = getattr(event, "user", None)
+    user_name = user.first_name if user else None
+    chat_id = getattr(event, "chat_id", None)
+    topic_id = _chat_action_topic_id(action)
+    
+    return TypingUpdate(
+        chat_id=chat_id,
+        topic_id=topic_id,
+        user_name=user_name,
+        action=typing_action,
+    )
+
+
+def _chat_action_topic_id(action: Any) -> Optional[int]:
+    reply_to = getattr(action, "reply_to", None)
+    if reply_to is None:
+        return None
+    return getattr(reply_to, "reply_to_msg_id", None)
 
 
 def _entity_lookup(entities: list[Any]) -> dict[int, Any]:
@@ -251,7 +284,7 @@ class TelethonTelegramService:
     def __post_init__(self) -> None:
         self._client = None
         self._expired = False
-        self._update_queues: set[asyncio.Queue[TelegramUpdate]] = set()
+        self._update_queues: set[asyncio.Queue[Union[TelegramUpdate, TypingUpdate]]] = set()
         self._updates_registered = False
         self._entity_cache: dict[int, Any] = {}
         self._phone_code_hashes: dict[str, str] = {}
@@ -326,6 +359,7 @@ class TelethonTelegramService:
             raise TelegramServiceError("Telethon update API is unavailable") from exc
 
         self._client.add_event_handler(self._handle_new_message, events.NewMessage())
+        self._client.add_event_handler(self._handle_chat_action, events.ChatAction())
         self._updates_registered = True
 
     async def _handle_new_message(self, event: Any) -> None:
@@ -341,11 +375,23 @@ class TelethonTelegramService:
             except asyncio.QueueFull:
                 pass
 
-    async def update_events(self) -> AsyncIterator[TelegramUpdate]:
+    async def _handle_chat_action(self, event: Any) -> None:
+        if not self._update_queues:
+            return
+        update = normalize_chat_action(event)
+        if update is None:
+            return
+        for queue in list(self._update_queues):
+            try:
+                queue.put_nowait(update)
+            except asyncio.QueueFull:
+                pass
+
+    async def update_events(self) -> AsyncIterator[Union[TelegramUpdate, TypingUpdate]]:
         client = await self._get_client()
         if not await client.is_user_authorized():
             raise TelegramServiceError("Telegram session is not authorized")
-        queue: asyncio.Queue[TelegramUpdate] = asyncio.Queue(maxsize=50)
+        queue: asyncio.Queue[Union[TelegramUpdate, TypingUpdate]] = asyncio.Queue(maxsize=50)
         self._update_queues.add(queue)
         try:
             while True:

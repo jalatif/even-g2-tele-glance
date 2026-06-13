@@ -1,0 +1,19 @@
+{
+  "type": "EFFECT_REQUESTED",
+  "recordedAt": "2026-06-13T09:02:17.683Z",
+  "data": {
+    "harness": "oh-my-pi",
+    "effectId": "01KV03FE23BXHXRFX5QAB57AVN",
+    "invocationKey": "teleglance/bugfix-i18n-typing:S000002:__sdk.breakpoint",
+    "invocationHash": "93b73bf4f1f59dff804048432418760d8d1f2722b94cab5ecd7652ecd33369eb",
+    "stepId": "S000002",
+    "taskId": "__sdk.breakpoint",
+    "kind": "breakpoint",
+    "label": "breakpoint",
+    "taskDefRef": "tasks/01KV03FE23BXHXRFX5QAB57AVN/task.json",
+    "labels": [
+      "breakpoint"
+    ]
+  },
+  "checksum": "01606ab43be2d34c83b8c4aa3798fdb3491e4188d7492bff0ab96dd2409c4109"
+}

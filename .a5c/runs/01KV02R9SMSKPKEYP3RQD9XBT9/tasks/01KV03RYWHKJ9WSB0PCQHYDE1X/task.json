@@ -1,0 +1,120 @@
+{
+  "agent": {
+    "name": "general-purpose",
+    "outputSchema": {
+      "properties": {
+        "finalVerdict": {
+          "type": "string"
+        },
+        "simulatorResult": {
+          "type": "object"
+        },
+        "typeCheckPassing": {
+          "type": "boolean"
+        },
+        "unitTestsPassing": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "unitTestsPassing",
+        "typeCheckPassing",
+        "simulatorResult",
+        "finalVerdict"
+      ],
+      "type": "object"
+    },
+    "prompt": {
+      "context": {
+        "fixes": {
+          "bug1Fix": {
+            "files": [
+              "web/src/contexts/AppContext.tsx",
+              "web/src/App.tsx",
+              "web/src/screens/ChatScreen.tsx",
+              "web/src/locales/en.ts"
+            ],
+            "fix": "Added localeVersion to AppContext, incremented on language change. App.tsx and ChatScreen.tsx import getLocale() and use localeVersion to re-render.",
+            "rootCause": "setLocale() had no React reactivity; App.tsx/ChatScreen.tsx hardcoded English",
+            "title": "Phone UI now uses getLocale() with React reactivity"
+          },
+          "bug2Fix": {
+            "files": [
+              "web/src/controller/model.ts",
+              "web/src/controller/appController.ts"
+            ],
+            "fix": "Added optional typing field to intermediate states, pass typing through each transition, include in final sidebar/messages state",
+            "rootCause": "Intermediate send-flow states lacked typing field; handleSidebarConfirm omitted typing",
+            "title": "Typing indicator preserved through recording+send flow"
+          },
+          "filesChanged": [
+            "web/src/contexts/AppContext.tsx",
+            "web/src/App.tsx",
+            "web/src/screens/ChatScreen.tsx",
+            "web/src/locales/en.ts",
+            "web/src/controller/model.ts",
+            "web/src/controller/appController.ts"
+          ],
+          "projectDir": "/Users/jalatif-mac-mini/Work/even-telegram"
+        }
+      },
+      "instructions": [
+        "Run the full test suite to validate both fixes:",
+        "  1. npm test --prefix web (unit tests including new ones)",
+        "  2. npm run typecheck --prefix web (type safety)",
+        "  3. npm run test:simulator --prefix web (simulator fixture harness)",
+        "",
+        "For the simulator harness:",
+        "  - Verify that the catalog (UI_INVARIANTS.json) covers language change and typing scenarios",
+        "  - If any test fails, diagnose and fix",
+        "",
+        "Return: all test results, final confirmation that both issues are fixed."
+      ],
+      "outputFormat": "JSON",
+      "role": "QA engineer",
+      "task": "Validate both fixes through the full test suite and simulator harness"
+    }
+  },
+  "io": {
+    "inputJsonPath": "tasks/01KV03RYWHKJ9WSB0PCQHYDE1X/input.json",
+    "outputJsonPath": "tasks/01KV03RYWHKJ9WSB0PCQHYDE1X/output.json"
+  },
+  "kind": "agent",
+  "title": "Phase 3: Validate fixes through harness tests",
+  "schemaVersion": "2026.01.tasks-v1",
+  "effectId": "01KV03RYWHKJ9WSB0PCQHYDE1X",
+  "taskId": "validate-harness",
+  "invocationKey": "teleglance/bugfix-i18n-typing:S000005:validate-harness",
+  "stepId": "S000005",
+  "inputs": {
+    "bug1Fix": {
+      "files": [
+        "web/src/contexts/AppContext.tsx",
+        "web/src/App.tsx",
+        "web/src/screens/ChatScreen.tsx",
+        "web/src/locales/en.ts"
+      ],
+      "fix": "Added localeVersion to AppContext, incremented on language change. App.tsx and ChatScreen.tsx import getLocale() and use localeVersion to re-render.",
+      "rootCause": "setLocale() had no React reactivity; App.tsx/ChatScreen.tsx hardcoded English",
+      "title": "Phone UI now uses getLocale() with React reactivity"
+    },
+    "bug2Fix": {
+      "files": [
+        "web/src/controller/model.ts",
+        "web/src/controller/appController.ts"
+      ],
+      "fix": "Added optional typing field to intermediate states, pass typing through each transition, include in final sidebar/messages state",
+      "rootCause": "Intermediate send-flow states lacked typing field; handleSidebarConfirm omitted typing",
+      "title": "Typing indicator preserved through recording+send flow"
+    },
+    "filesChanged": [
+      "web/src/contexts/AppContext.tsx",
+      "web/src/App.tsx",
+      "web/src/screens/ChatScreen.tsx",
+      "web/src/locales/en.ts",
+      "web/src/controller/model.ts",
+      "web/src/controller/appController.ts"
+    ],
+    "projectDir": "/Users/jalatif-mac-mini/Work/even-telegram"
+  }
+}

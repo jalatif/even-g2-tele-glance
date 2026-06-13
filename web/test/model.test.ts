@@ -3,6 +3,7 @@ import { messageScrollUnitCount, screenModel } from '../src/controller/model'
 import type { AppState } from '../src/controller/model'
 import { getLocale, setLocale } from '../src/locales'
 import ja from '../src/locales/ja'
+import en from '../src/locales/en'
 const encoder = new TextEncoder()
 
 describe('screenModel', () => {
@@ -470,6 +471,96 @@ describe('screenModel', () => {
     if (result.kind === 'sidebar') {
       expect(result.panelBody).toContain('Hello')
       expect(result.panelBody).not.toContain('안')
+    }
+
+    setLocale(original)
+  })
+
+  // ── Bug 1: setLocale / getLocale integration ──
+  // These tests verify the locale module itself works correctly.
+  // The BUG is that the phone React UI (App.tsx, ChatScreen.tsx)
+  // never calls getLocale() — it hardcodes English strings.
+  // So setLocale() works fine at the module level, but the phone
+  // UI never re-renders with the new strings.
+  it('setLocale then getLocale returns ja phone-UI keys', () => {
+    const original = getLocale()
+    setLocale(ja)
+    const l = getLocale()
+
+    // Phone UI keys exist in the locale module
+    expect(l.phoneAppTitle).toBe(ja.phoneAppTitle)
+    expect(l.phoneSettingsTab).toBe(ja.phoneSettingsTab)
+    expect(l.phoneBack).toBe(ja.phoneBack)
+    expect(l.phoneBackToChat).toBe(ja.phoneBackToChat)
+    expect(l.phoneOpenSettings).toBe(ja.phoneOpenSettings)
+
+    // Phone ChatScreen state descriptions
+    expect(l.phoneScreenOff).toBe(ja.phoneScreenOff)
+    expect(l.phoneRecording).toBe(ja.phoneRecording)
+    expect(l.phoneTranscribing).toBe(ja.phoneTranscribing)
+    expect(l.phoneConfirmOnGlasses).toBe(ja.phoneConfirmOnGlasses)
+    expect(l.phoneSendingReply).toBe(ja.phoneSendingReply)
+    expect(l.phoneReplySent).toBe(ja.phoneReplySent)
+
+    setLocale(original)
+  })
+
+  it('all phone-UI locale keys have English values in en locale', () => {
+    expect(en.phoneAppTitle).toBe('TeleGlance')
+    expect(en.phoneSettingsTab).toBe('Settings')
+    expect(en.phoneBack).toBe('Back')
+    expect(en.phoneBackToChat).toBe('Back to chat')
+    expect(en.phoneOpenSettings).toBe('Open settings')
+    expect(en.phoneScreenOff).toBe('Glasses screen is off. Double-click glasses to wake.')
+    expect(en.phoneRecording).toBe('Recording on glasses…')
+    expect(en.phoneTranscribing).toBe('Transcribing voice reply…')
+    expect(en.phoneConfirmOnGlasses).toBe('Confirm reply on glasses: ')
+    expect(en.phoneSendingReply).toBe('Sending reply…')
+    expect(en.phoneReplySent).toBe('Reply sent.')
+    expect(en.phoneSend).toBe('Send')
+    expect(en.phoneNoMessages).toBe('No messages yet.')
+    expect(en.phoneSendFailed).toBe('Send failed')
+    expect(en.phoneCurrentThread).toBe('Current thread')
+    expect(en.phoneComposerPlaceholder).toBe('Type a Telegram reply...')
+    expect(en.phoneSending).toBe('Sending...')
+    expect(en.phoneVerifying).toBe('Verifying...')
+    expect(en.phoneSendingLoginCode).toBe('Sending...')
+    expect(en.phoneSetupRequired).toBe('Backend shared secret, Telegram API ID, and Telegram API hash are required. Fill them in Settings using the setup instructions first.')
+  })
+
+  it('model correctly uses locale for typing footer and status text', () => {
+    const original = getLocale()
+    setLocale(ja)
+
+    // Typing footer with localized suffix
+    const typingState: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Test', kind: 'user' },
+      messages: [{ id: '1', sender: 'Alice', text: 'hello' }],
+      typing: { userName: 'Alice', expiresAt: Date.now() + 5000 },
+    }
+    const typingModel = screenModel(typingState)
+    expect(typingModel.kind).toBe('sidebar')
+    if (typingModel.kind === 'sidebar') {
+      // The typing footer must use the locale-appropriate suffix
+      expect(typingModel.panelFooter).toContain(`Alice ${ja.typingSuffix}`)
+      // It must NOT contain the English fallback
+      expect(typingModel.panelFooter).not.toContain('typing…')
+    }
+
+    // Footer with no typing, no status — just the default instructions
+    const plainState: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Test', kind: 'group' },
+      messages: [{ id: '1', sender: 'Alice', text: 'hi' }],
+    }
+    const plainModel = screenModel(plainState)
+    expect(plainModel.kind).toBe('sidebar')
+    if (plainModel.kind === 'sidebar') {
+      expect(plainModel.panelFooter).toContain(ja.footerSwipeScroll)
+      expect(plainModel.panelFooter).not.toContain(en.footerSwipeScroll)
     }
 
     setLocale(original)

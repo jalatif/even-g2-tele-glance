@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@a5c-ai/babysitter-sdk": "^0.0.187"
+  },
+  "dependencies": {
+    "@vitalets/google-translate-api": "^9.2.1"
+  }
+}

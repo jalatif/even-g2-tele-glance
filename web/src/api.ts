@@ -10,6 +10,7 @@ import type {
   SendMessageResponse,
   Topic,
   TelegramUpdate,
+  TelegramTypingUpdate,
   TranscriptionResult,
 } from './types'
 import { decryptJsonPayload, encryptedTelegramAuthHeader, encryptJsonPayload } from './secureAuth'
@@ -25,7 +26,7 @@ export interface TelegramApi {
   sendMessage(chatId: Id, request: SendMessageRequest): Promise<Message>
   markRead(chatId: Id, request: MarkReadRequest): Promise<void>
   transcribe(wav: Blob, language?: string): Promise<TranscriptionResult>
-  subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event | Error) => void): () => void
+  subscribeUpdates(onUpdate: (update: TelegramUpdate | TelegramTypingUpdate) => void, onError?: (error: Event | Error) => void): () => void
 }
 
 export type TelegramAuthConfig = {
@@ -140,8 +141,7 @@ export class HttpTelegramApi implements TelegramApi {
     const sttBaseUrl = this.sttBaseUrl()
     return this.request('/api/transcribe', { method: 'POST', body: form }, sttBaseUrl, sttBaseUrl === this.baseUrl)
   }
-
-  subscribeUpdates(onUpdate: (update: TelegramUpdate) => void, onError?: (error: Event | Error) => void) {
+  subscribeUpdates(onUpdate: (update: TelegramUpdate | TelegramTypingUpdate) => void, onError?: (error: Event | Error) => void) {
     if (typeof fetch === 'undefined' || typeof AbortController === 'undefined') return () => undefined
     const controller = new AbortController()
     void this.streamUpdates(controller.signal, onUpdate).catch((error) => {
@@ -199,7 +199,7 @@ export class HttpTelegramApi implements TelegramApi {
 
   private async streamUpdates(
     signal: AbortSignal,
-    onUpdate: (update: TelegramUpdate) => void,
+    onUpdate: (update: TelegramUpdate | TelegramTypingUpdate) => void,
   ) {
     const headers = await this.withTelegramHeaders(undefined, true)
     let response: Response
@@ -235,6 +235,9 @@ export class HttpTelegramApi implements TelegramApi {
         const decodedData = await this.decryptEventData(data)
         if (eventName === 'message') {
           onUpdate(JSON.parse(decodedData) as TelegramUpdate)
+        } else if (eventName === 'typing') {
+          const update: TelegramTypingUpdate = { type: 'typing', ...JSON.parse(decodedData) }
+          onUpdate(update)
         } else if (eventName === 'error') {
           const payload = JSON.parse(decodedData) as { detail?: string }
           throw new Error(payload.detail || 'Update stream failed')

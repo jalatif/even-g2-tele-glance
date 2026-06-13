@@ -375,6 +375,31 @@
         "markRead"
       ]
     },
+    "sidebar.messages.typing": {
+      "state": {
+        "screen": "sidebar",
+        "focus": "messages"
+      },
+      "render": {
+        "kind": "sidebar",
+        "focus": "panel",
+        "fullWidth": true
+      },
+      "left": {
+        "sidebarTitle": "",
+        "hidden": true
+      },
+      "right": {
+        "panelFooterContains": "typing…",
+        "panelFooterNotContains": "Swipe scroll"
+      },
+      "transitions": {
+        "press": "sidebarRecording",
+        "doublePress": "sidebar.chats",
+        "auto": "sidebar.messages.normal"
+      },
+      "budgetMs": 500
+    },
     "sidebar.messages.loading": {
       "state": {
         "screen": "sidebar",
@@ -1085,9 +1110,36 @@
       "budgetMs": 1000
     },
     {
+      "name": "21typing-indicator-footer",
+      "input": "testTypingAlpha",
+      "target": "sidebar.messages.typing",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "messages"
+        },
+        "renderBodyContains": ["Alice", "typing…"],
+        "renderBodyNotContains": ["Swipe scroll", "Click record", "Double click back"]
+      },
+      "budgetMs": 2000
+    },
+    {
+      "name": "21typing-indicator-cancel",
+      "input": "testCancelTyping",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "screen": "sidebar",
+          "focus": "messages"
+        },
+        "renderBodyContains": ["Swipe scroll", "Click record", "Double click back"]
+      },
+      "budgetMs": 1000
+    },
+    {
       "name": "21a-back-to-chats",
-      "input": "pressSequence:double_click",
       "target": "sidebar.chats",
+      "input": "pressSequence:double_click",
       "expect": {
         "state": {
           "focus": "chats",

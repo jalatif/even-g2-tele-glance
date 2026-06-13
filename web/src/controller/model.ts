@@ -65,38 +65,38 @@ export type AppState =
       messages: Message[]; scrollOffset?: number;
       chunks: Uint8Array[]; startedAt: number;
       back?: RecoverableState; status?: string;
-      newerPages?: Message[][]; isNewestPage?: boolean; }
+      newerPages?: Message[][]; isNewestPage?: boolean; typing?: { userName: string; expiresAt: number } | null; }
   | { screen: 'sidebarTranscribing'; focus: 'messages';
       chats: Chat[]; selectedChatIndex: number;
       chat: Chat; topic?: Topic;
       messages: Message[]; scrollOffset?: number;
       back?: RecoverableState; status?: string;
-      newerPages?: Message[][]; isNewestPage?: boolean; }
+      newerPages?: Message[][]; isNewestPage?: boolean; typing?: { userName: string; expiresAt: number } | null; }
   | { screen: 'sidebar'; focus: 'messages';
       chats: Chat[]; selectedChatIndex: number;
       chat: Chat; topic?: Topic;
       messages: Message[]; cursor?: Id; scrollOffset?: number;
       back?: RecoverableState; status?: string;
       newerPages?: Message[][]; isNewestPage?: boolean;
-      topics?: Topic[]; selectedTopicIndex?: number; }
+      topics?: Topic[]; selectedTopicIndex?: number; typing?: { userName: string; expiresAt: number } | null; }
   | { screen: 'sidebarConfirm'; focus: 'messages';
       chats: Chat[]; selectedChatIndex: number;
       chat: Chat; topic?: Topic;
       messages: Message[]; transcript: string; selectedIndex: number;
       scrollOffset?: number; back?: RecoverableState; status?: string;
-      newerPages?: Message[][]; isNewestPage?: boolean; }
+      newerPages?: Message[][]; isNewestPage?: boolean; typing?: { userName: string; expiresAt: number } | null; }
   | { screen: 'sidebarSending'; focus: 'messages';
       chats: Chat[]; selectedChatIndex: number;
       chat: Chat; topic?: Topic;
       messages: Message[]; transcript: string;
       scrollOffset?: number; back?: RecoverableState; status?: string;
-      newerPages?: Message[][]; isNewestPage?: boolean; }
+      newerPages?: Message[][]; isNewestPage?: boolean; typing?: { userName: string; expiresAt: number } | null; }
   | { screen: 'sidebarSent'; focus: 'messages';
       chats: Chat[]; selectedChatIndex: number;
       chat: Chat; topic?: Topic;
       messages: Message[]; scrollOffset?: number;
       back?: RecoverableState; status?: string;
-      newerPages?: Message[][]; isNewestPage?: boolean; }
+      newerPages?: Message[][]; isNewestPage?: boolean; typing?: { userName: string; expiresAt: number } | null; }
   | { screen: 'error'; message: string; previous?: RecoverableState }
 
 export type RecoverableState = Extract<
@@ -225,7 +225,9 @@ export function screenModel(state: AppState): ScreenModel {
             // they still fit the 180-byte footer container; the
             // `Swipe` / `Click` / `Double click` shorthand matches
             // the chats list footer at line 139 for consistency.
-            panelFooter: footerText(state.status, l.footerSwipeScroll),
+            panelFooter: state.typing
+              ? typingFooter(state.typing.userName, l.typingSuffix)
+              : footerText(state.status, l.footerSwipeScroll),
             panelBox: loadingBody ? undefined : msg.box,
             fullWidth: true,
             focus: 'panel',
@@ -333,6 +335,14 @@ function topicLabel(topic: Topic) {
 
 function footerText(status: string | undefined, controls: string) {
   return sanitizeGlassesText(status ? `${localizeStatus(status)} | ${controls}` : controls)
+}
+
+function typingFooter(userName: string, suffix: string): string {
+  const raw = `${userName} ${suffix}`
+  if (utf8ByteLength(raw) <= MESSAGE_ROW_BYTE_LIMIT) return sanitizeGlassesText(raw)
+  const suffixBytes = utf8ByteLength(` ${suffix}`)
+  const maxNameBytes = MESSAGE_ROW_BYTE_LIMIT - suffixBytes
+  return sanitizeGlassesText(trimUtf8Bytes(userName, maxNameBytes) + ` ${suffix}`)
 }
 
 function loadingMessageBody(status: string | undefined) {

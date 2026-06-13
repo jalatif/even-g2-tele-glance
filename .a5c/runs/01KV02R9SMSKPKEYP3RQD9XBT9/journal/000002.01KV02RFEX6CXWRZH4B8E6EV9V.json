@@ -1,0 +1,16 @@
+{
+  "type": "EFFECT_REQUESTED",
+  "recordedAt": "2026-06-13T08:49:45.438Z",
+  "data": {
+    "harness": "oh-my-pi",
+    "effectId": "01KV02RFEF2KRSY7B45ZGAN0RW",
+    "invocationKey": "teleglance/bugfix-i18n-typing:S000001:diagnose-both-issues",
+    "invocationHash": "f474a1d4a38df3e5249fd133ec0f3f852d8b4b15face336b2d97ecca9aece6c5",
+    "stepId": "S000001",
+    "taskId": "diagnose-both-issues",
+    "kind": "agent",
+    "label": "Phase 1: Diagnose both issues and write failing harness tests",
+    "taskDefRef": "tasks/01KV02RFEF2KRSY7B45ZGAN0RW/task.json"
+  },
+  "checksum": "9c32957686fa1a1d6f9b84da34836877ed895d1aac0c9b0c175af5443561e7c2"
+}

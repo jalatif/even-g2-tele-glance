@@ -222,7 +222,27 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **budget**: 1000 ms
 - **apiCalls**: `listMessages(chat.id, { topicId, limit: 50 })` using **forum topic id**, not `topMessageId`
 
-### 4.10 `sidebar.messages.loading` (intermediate state)
+### 4.10 `sidebar.messages.typing` (typing indicator active in message view)
+- **state**: same as `sidebar.messages.normal` plus `typing: { userName: 'Alice', expiresAt: <future timestamp> }`
+- **render**: `{ kind: 'sidebar', focus: 'panel', fullWidth: true }`
+- **content**:
+  - `panelBody`: unchanged from the parent message view
+  - `panelFooter`: `'<userName> typing\u2026'` (e.g. `'Alice typing\u2026'`), \u2264 120 bytes
+  - `panelFooter.notContains`: normal controls (`'Swipe scroll'`, `'Click record'`, `'Double click back'`)
+- **transitions**:
+  - auto -> `sidebar.messages.normal` after 5s timeout or on `cancel` update
+  - `press` -> `sidebarRecording` (still works; typing cleared on transition)
+  - `doublePress` -> `back`
+- **budget**: 500 ms to render after typing injection
+
+### 4.11 `sidebar.messages.typing-resolved` (typing cancelled or timed out)
+- **state**: `typing: null`, footer restored to `sidebar.messages.normal`
+- **render**: same as `sidebar.messages.normal`
+- **content**:
+  - `panelFooter.contains`: `'Swipe scroll'` (normal controls restored)
+- **transitions**: same as `sidebar.messages.normal`
+
+### 4.12 `sidebar.messages.loading` (intermediate state)
 - **state**: same as `sidebar.messages.normal` or `topic` but `state.status === 'Loading ...'` and `state.messages === []`
 - **render**: `{ kind: 'sidebar', focus: 'panel' }`
 - **right**:
@@ -233,7 +253,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **budget**: 1000 ms
 - **eventMustEmit**: `api.startedAt` precedes the state render, the render with data follows `api.endedAt`
 
-### 4.11 `sidebarRecording` (recording in progress)
+### 4.13 `sidebarRecording` (recording in progress)
 - **state**: `{ screen: 'sidebarRecording', focus: 'messages', chat, topic?, messages, back, chunks: [...Uint8Array], startedAt }`
 - **render**: `{ kind: 'sidebar', title: 'Recording reply', focus: 'panel', fullWidth: true }`
 - **content**:
@@ -247,7 +267,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **budget**: 2000 ms total recording + transcribe + confirm
 - **eventMustEmit**: `recording.kind` sequence: `start`, `audioChunk` x N, `stop`, `transcribe.start`, `transcribe.end`
 
-### 4.12 `sidebarTranscribing`
+### 4.14 `sidebarTranscribing`
 - **state**: `{ screen: 'sidebarTranscribing', focus: 'messages', chat, topic?, messages, back }`
 - **render**: `{ kind: 'text', title: 'Transcribing', body: 'Converting voice...' }`
 - **transitions**: automatic -> `sidebarConfirm` once `api.transcribe` returns
@@ -255,7 +275,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **apiCalls**: `transcribe(wav)`
 - **eventMustEmit**: `recording.kind === 'transcribe.end'`
 
-### 4.13 `sidebarConfirm.send` (Send highlighted)
+### 4.15 `sidebarConfirm.send` (Send highlighted)
 - **state**: `{ screen: 'sidebarConfirm', focus: 'messages', chat, topic?, messages, transcript, selectedIndex: 0, back }`
 - **render**: `{ kind: 'text', title: 'Confirm reply' }`
 - **body**: contains the transcript followed by `> Send` and `  Cancel`; it MUST NOT contain message-history content
@@ -267,15 +287,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **budget**: 2000 ms full roundtrip
 - **apiCalls**: `sendMessage(chat.id, { text, topicId? })`
 
-### 4.14 `sidebarConfirm.cancel` (Cancel highlighted)
-- **state**: same as `sidebarConfirm.send` but `selectedIndex: 1`
-- **body**: contains the transcript followed by `  Send` and `> Cancel`; it MUST NOT contain message-history content
-- **transitions**:
-  - `press` -> back to `sidebar.messages`; `api.sendMessage` MUST NOT have been called
-  - `swipeUp` / `swipeDown` -> back to `sidebarConfirm.send`
-- **budget**: 500 ms
-
-### 4.15 `sidebarSending`
+### 4.16 `sidebarConfirm.cancel` (Cancel highlighted)
 - **state**: `{ screen: 'sidebarSending', focus: 'messages', chat, topic?, messages, transcript, back }`
 - **render**: `{ kind: 'text', title: 'Sending reply' }`
 - **body**: contains `Sending...` and `state.transcript`
@@ -283,7 +295,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **budget**: 2000 ms
 - **apiCalls**: `sendMessage`
 
-### 4.16 `sidebarSent`
+### 4.17 `sidebarSent`
 - **state**: `{ screen: 'sidebarSent', focus: 'messages', chat, topic?, messages, back }`
 - **render**: `{ kind: 'sidebar', title: 'Reply sent', focus: 'panel' }`
 - **right**:
@@ -294,7 +306,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
   - `doublePress` -> `back`
 - **budget**: 500 ms
 
-### 4.17 `newMessage.normal` (incoming message notification, normal chat)
+### 4.18 `newMessage.normal` (incoming message notification, normal chat)
 - **state**: `{ screen: 'newMessage', chat, message, chats, selectedChatIndex }`
 - **render**: `{ kind: 'text', title: 'New Telegram' }`
 - **body.contains**: `[chat.title, 'New message', 'Click to open']`
@@ -306,12 +318,12 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **budget**: 1000 ms from `TelegramUpdate`
 - **apiCalls**: `listChats` triggered internally
 
-### 4.18 `newMessage.topic`
+### 4.19 `newMessage.topic`
 - **state**: same as `newMessage.normal` with `topic` set
 - **body.contains**: `[chat.title, topic.title]` (e.g. `'Fixture Forum / Fixture Topic One'`)
 - **transitions**: `press` -> `sidebar.messages.topic`
 
-### 4.19 `asleep` (screen off)
+### 4.20 `asleep` (screen off)
 - **state**: `{ screen: 'asleep', chats, selectedChatIndex }`
 - **render**: `{ kind: 'text', title: '', body: '' }`
 - **transitions**:
@@ -320,7 +332,7 @@ Per-step latencies are split into `stateMs` (input -> matching state event), `ap
 - **budget**: 500 ms
 - **eventMustEmit**: `lifecycle.kind === 'asleep'`, then `lifecycle.kind === 'wake'`
 
-### 4.20 `error`
+### 4.21 `error`
 - **state**: `{ screen: 'error', message, previous? }`
 - **render**: `{ kind: 'text', title: 'Error' }`
 - **body.contains**: `[state.message, 'Press to retry']`

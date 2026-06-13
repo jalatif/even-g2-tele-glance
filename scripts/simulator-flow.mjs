@@ -327,6 +327,15 @@ async function executeStep(step, _url) {
   if (step.input === 'testTopicNotify') {
     await sendTestCommand({ kind: 'setInjectedNotification', chatId: 'fixture-chat-0', message: 'New topic reply from Bob', topicId: 101 })
   }
+  if (step.input === 'testTypingAlpha') {
+    await sendTestCommand({ kind: 'injectTyping', chatId: 'fixture-chat-0', userName: 'Alice' })
+  }
+  if (step.input === 'testTypingForum') {
+    await sendTestCommand({ kind: 'injectTyping', chatId: 'fixture-chat-1', topicId: 101, userName: 'Bob' })
+  }
+  if (step.input === 'testCancelTyping') {
+    await sendTestCommand({ kind: 'cancelTyping', chatId: 'fixture-chat-0' })
+  }
   if (step.input === 'testAuthMissing') {
     await sendTestCommand({ kind: 'setMode', mode: 'missing' })
     await sendTestCommand({ kind: 'reinitialize' })

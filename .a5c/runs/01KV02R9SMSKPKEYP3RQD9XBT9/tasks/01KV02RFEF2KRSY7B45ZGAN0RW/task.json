@@ -1,0 +1,78 @@
+{
+  "agent": {
+    "name": "general-purpose",
+    "outputSchema": {
+      "properties": {
+        "diagnosis": {
+          "type": "object"
+        },
+        "testResults": {
+          "type": "object"
+        },
+        "testsWritten": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "diagnosis",
+        "testsWritten",
+        "testResults"
+      ],
+      "type": "object"
+    },
+    "prompt": {
+      "context": {
+        "bug1": "Language change not translating phone UI",
+        "bug2": "No typing indicator after recording+send",
+        "projectDir": "/Users/jalatif-mac-mini/Work/even-telegram"
+      },
+      "instructions": [
+        "BUG 1 — Language change not translating phone UI:",
+        "  - The locale system is a module-level singleton (getLocale/setLocale in web/src/locales/index.ts).",
+        "  - When user changes language in Settings and saves, AppContext.handleSaveSettings calls setLocale() and controller.rebuildGlasses().",
+        "  - The glasses text DOES translate (model.ts calls getLocale() on each render).",
+        "  - But the phone React UI (App.tsx header, ChatScreen.tsx state descriptions, auth forms, composer) hardcodes English strings — it never imports getLocale().",
+        "  - Additionally, setLocale() mutates a module singleton — React has no signal to re-render. Components that DO call getLocale() only see the change if they re-render for another reason.",
+        "  - Write failing tests in web/test/ that verify: (a) App.tsx header text changes when locale changes, (b) ChatScreen state descriptions reflect current locale.",
+        "",
+        "BUG 2 — No typing indicator after recording+send:",
+        "  - Typing indicator is inbound-only via SSE TypingUpdate events (web/src/api.ts subscribeUpdates).",
+        "  - handleTelegramTypingUpdate (appController.ts) requires screen === \"sidebar\" && focus === \"messages\" + updateMatchesThread.",
+        "  - After recording+send, the state goes through: sidebarRecording → sidebarTranscribing → sidebarConfirm → sidebarSending → sidebarSent → sidebar/messages.",
+        "  - Possible cause: the transition back to sidebar/messages after send doesn't properly reconnect typing processing, or the SSE stream is disconnected during the recording flow.",
+        "  - Write failing harness tests that verify: after a send completes and state returns to sidebar/messages, an incoming typing update triggers the typing indicator in the model/snapshot.",
+        "",
+        "IMPORTANT:",
+        "  - Do NOT fix the bugs yet. Only diagnose and write tests that FAIL (verify they fail).",
+        "  - Use vitest (npm test --prefix web) for unit tests.",
+        "  - Use the existing test infrastructure: controller.test.ts, model.test.ts, etc.",
+        "  - For typing, inject typing via fixtureApi.injectTyping in controller test.",
+        "  - For i18n, test that model/setLocale integration works, and test phone UI component localization.",
+        "  - Run the tests to confirm they FAIL before returning.",
+        "  - Return: test file paths, what each test verifies, and confirmation that tests fail as expected."
+      ],
+      "outputFormat": "JSON",
+      "role": "Debug engineer",
+      "task": "Diagnose two bugs and write failing harness tests that reproduce them"
+    }
+  },
+  "io": {
+    "inputJsonPath": "tasks/01KV02RFEF2KRSY7B45ZGAN0RW/input.json",
+    "outputJsonPath": "tasks/01KV02RFEF2KRSY7B45ZGAN0RW/output.json"
+  },
+  "kind": "agent",
+  "title": "Phase 1: Diagnose both issues and write failing harness tests",
+  "schemaVersion": "2026.01.tasks-v1",
+  "effectId": "01KV02RFEF2KRSY7B45ZGAN0RW",
+  "taskId": "diagnose-both-issues",
+  "invocationKey": "teleglance/bugfix-i18n-typing:S000001:diagnose-both-issues",
+  "stepId": "S000001",
+  "inputs": {
+    "bug1": "Language change not translating phone UI",
+    "bug2": "No typing indicator after recording+send",
+    "projectDir": "/Users/jalatif-mac-mini/Work/even-telegram"
+  }
+}

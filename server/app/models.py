@@ -71,6 +71,14 @@ class TelegramUpdate(ApiModel):
     message: MessageSummary
 
 
+
+class TypingUpdate(ApiModel):
+    type: Literal["typing"] = "typing"
+    chat_id: int
+    topic_id: Optional[int] = None
+    user_name: Optional[str] = None
+    action: Literal["typing", "cancel"] = "typing"
+
 class SendMessageRequest(ApiModel):
     text: str = Field(min_length=1)
     topic_id: Optional[int] = None

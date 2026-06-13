@@ -1,0 +1,16 @@
+{
+  "type": "EFFECT_REQUESTED",
+  "recordedAt": "2026-06-13T09:02:30.335Z",
+  "data": {
+    "harness": "oh-my-pi",
+    "effectId": "01KV03FTDEFT15VW26DKTDSCK1",
+    "invocationKey": "teleglance/bugfix-i18n-typing:S000003:fix-both-issues",
+    "invocationHash": "2697b4f33cac508f123d645e28e0b3d06c83ee77ce265c0d46a26dece8830bc9",
+    "stepId": "S000003",
+    "taskId": "fix-both-issues",
+    "kind": "agent",
+    "label": "Phase 2: Fix both issues",
+    "taskDefRef": "tasks/01KV03FTDEFT15VW26DKTDSCK1/task.json"
+  },
+  "checksum": "b23b1ad785c5301c505764f5a020a260ace716366b3627bc99632b8c99b7e364"
+}

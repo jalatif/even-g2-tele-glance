@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "2026.01.results-v1",
+  "effectId": "01KV03FTDEFT15VW26DKTDSCK1",
+  "taskId": "fix-both-issues",
+  "invocationKey": "teleglance/bugfix-i18n-typing:S000003:fix-both-issues",
+  "status": "ok",
+  "result": {
+    "allTestsPassing": true,
+    "bug1Fix": {
+      "files": [
+        "web/src/contexts/AppContext.tsx",
+        "web/src/App.tsx",
+        "web/src/screens/ChatScreen.tsx",
+        "web/src/locales/en.ts"
+      ],
+      "fix": "Added localeVersion to AppContext, incremented on language change. App.tsx and ChatScreen.tsx import getLocale() and use localeVersion to re-render.",
+      "rootCause": "setLocale() had no React reactivity; App.tsx/ChatScreen.tsx hardcoded English",
+      "title": "Phone UI now uses getLocale() with React reactivity"
+    },
+    "bug2Fix": {
+      "files": [
+        "web/src/controller/model.ts",
+        "web/src/controller/appController.ts"
+      ],
+      "fix": "Added optional typing field to intermediate states, pass typing through each transition, include in final sidebar/messages state",
+      "rootCause": "Intermediate send-flow states lacked typing field; handleSidebarConfirm omitted typing",
+      "title": "Typing indicator preserved through recording+send flow"
+    },
+    "filesChanged": [
+      "web/src/contexts/AppContext.tsx",
+      "web/src/App.tsx",
+      "web/src/screens/ChatScreen.tsx",
+      "web/src/locales/en.ts",
+      "web/src/controller/model.ts",
+      "web/src/controller/appController.ts"
+    ],
+    "testCount": "157 passed, 0 failed, 9 files",
+    "typeCheck": "clean on changed files"
+  },
+  "startedAt": "2026-06-13T09:07:21.135Z",
+  "finishedAt": "2026-06-13T09:07:21.135Z",
+  "value": {
+    "allTestsPassing": true,
+    "bug1Fix": {
+      "files": [
+        "web/src/contexts/AppContext.tsx",
+        "web/src/App.tsx",
+        "web/src/screens/ChatScreen.tsx",
+        "web/src/locales/en.ts"
+      ],
+      "fix": "Added localeVersion to AppContext, incremented on language change. App.tsx and ChatScreen.tsx import getLocale() and use localeVersion to re-render.",
+      "rootCause": "setLocale() had no React reactivity; App.tsx/ChatScreen.tsx hardcoded English",
+      "title": "Phone UI now uses getLocale() with React reactivity"
+    },
+    "bug2Fix": {
+      "files": [
+        "web/src/controller/model.ts",
+        "web/src/controller/appController.ts"
+      ],
+      "fix": "Added optional typing field to intermediate states, pass typing through each transition, include in final sidebar/messages state",
+      "rootCause": "Intermediate send-flow states lacked typing field; handleSidebarConfirm omitted typing",
+      "title": "Typing indicator preserved through recording+send flow"
+    },
+    "filesChanged": [
+      "web/src/contexts/AppContext.tsx",
+      "web/src/App.tsx",
+      "web/src/screens/ChatScreen.tsx",
+      "web/src/locales/en.ts",
+      "web/src/controller/model.ts",
+      "web/src/controller/appController.ts"
+    ],
+    "testCount": "157 passed, 0 failed, 9 files",
+    "typeCheck": "clean on changed files"
+  }
+}

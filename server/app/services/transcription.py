@@ -1,4 +1,5 @@
 import os
+import struct
 import tempfile
 from dataclasses import dataclass
 from typing import Optional
@@ -38,6 +39,15 @@ class WhisperTranscriptionService:
         if not wav_bytes:
             raise TranscriptionServiceError("audio payload is empty")
 
+        # Validate audio is not silent before invoking Whisper.
+        # Glasses can produce near-silent recordings; feeding silence to
+        # faster-whisper produces NaN in the mel spectrogram.
+        silent = _is_effectively_silent(wav_bytes)
+        if silent:
+            raise TranscriptionServiceError(
+                "recording is silent — try speaking closer to the glasses microphone"
+            )
+
         model = self._load_model()
         temp_path = None
         try:
@@ -53,6 +63,9 @@ class WhisperTranscriptionService:
                 temperature=self.settings.whisper_temperature,
                 condition_on_previous_text=self.settings.whisper_condition_on_previous_text,
             )
+            text = " ".join(seg.text.strip() for seg in segments)
+            if not text:
+                raise TranscriptionServiceError("no speech detected in recording")
             return TranscriptionResponse(
                 text=text,
                 language=getattr(info, "language", None),
@@ -61,3 +74,25 @@ class WhisperTranscriptionService:
         finally:
             if temp_path:
                 os.unlink(temp_path)
+
+
+def _is_effectively_silent(wav_bytes: bytes) -> bool:
+    """Return True if the WAV audio is silent or near-silent.
+
+    Computes RMS on the PCM samples (skipping the 44-byte WAV header).
+    Audio with RMS < 50 (out of 32767) is treated as silent.
+    """
+    if len(wav_bytes) < 48:
+        return True  # too short to contain real audio
+    pcm = wav_bytes[44:]  # skip WAV header
+    if len(pcm) < 1600:  # less than 50 ms at 16 kHz mono 16-bit
+        return True
+    # Compute RMS of 16-bit samples
+    total = 0.0
+    count = len(pcm) // 2
+    for i in range(0, len(pcm) - 1, 2):
+        sample = struct.unpack_from("<h", pcm, i)[0]
+        total += sample * sample
+    rms = (total / max(count, 1)) ** 0.5
+    # Threshold: RMS < 50 is effectively silent (full-scale = 32767)
+    return rms < 50

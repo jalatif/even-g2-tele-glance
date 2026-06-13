@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useApp } from '../contexts/AppContext'
+import { getLocale } from '../locales'
 import type { Message } from '../types'
 
 export function ChatScreen() {
-  const { state, sendText } = useApp()
+  const { state, sendText, localeVersion } = useApp()
+  const l = getLocale()
+  void localeVersion
   const [draft, setDraft] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
@@ -26,9 +29,8 @@ export function ChatScreen() {
       await sendText(text)
       setDraft('')
     } catch (error) {
-      setSendError(error instanceof Error ? error.message : 'Send failed')
+      setSendError(error instanceof Error ? error.message : l.phoneSendFailed)
     } finally {
-      setIsSending(false)
     }
   }
 
@@ -39,7 +41,7 @@ export function ChatScreen() {
         {state.screen === 'sidebar' && state.focus === 'messages' && (
           <div className="messages-list" aria-label="Messages">
             {state.messages.length === 0 ? (
-              <p className="empty-text">No messages yet.</p>
+              <p className="empty-text">{l.phoneNoMessages}</p>
             ) : state.messages.map((message) => <MessageBubble key={String(message.id)} message={message} />)}
             <div ref={messageEndRef} />
           </div>
@@ -57,16 +59,16 @@ export function ChatScreen() {
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Type a Telegram reply..."
+            placeholder={l.phoneComposerPlaceholder}
             disabled={isSending}
             rows={3}
           />
           <button type="submit" disabled={!canSend}>
-            {isSending ? 'Sending...' : 'Send'}
+            {isSending ? l.phoneSending : l.phoneSend}
           </button>
         </form>
       ) : (
-        <div className="composer-banner">Open a chat or topic to send a reply.</div>
+        <div className="composer-banner">{l.phoneOpenChatToSend}</div>
       )}
       <PhoneActions />
     </main>
@@ -74,7 +76,9 @@ export function ChatScreen() {
 }
 
 function PhoneStateView() {
-  const { state, dispatch, startPhoneLogin, verifyPhoneLogin } = useApp()
+  const { state, dispatch, startPhoneLogin, verifyPhoneLogin, localeVersion } = useApp()
+  const l = getLocale()
+  void localeVersion
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [phoneError, setPhoneError] = useState<string | null>(null)
@@ -87,7 +91,7 @@ function PhoneStateView() {
     try {
       await startPhoneLogin(phone)
     } catch (error) {
-      setPhoneError(error instanceof Error ? error.message : 'Could not send code')
+      setPhoneError(error instanceof Error ? error.message : l.phoneCodeSendFailed)
     } finally {
       setIsPhoneAuthBusy(false)
     }
@@ -101,7 +105,7 @@ function PhoneStateView() {
     try {
       await verifyPhoneLogin(targetPhone, code)
     } catch (error) {
-      setPhoneError(error instanceof Error ? error.message : 'Could not verify code')
+      setPhoneError(error instanceof Error ? error.message : l.phoneCodeVerifyFailed)
     } finally {
       setIsPhoneAuthBusy(false)
     }
@@ -111,28 +115,28 @@ function PhoneStateView() {
     const isPhonePending = state.mode === 'phonePending'
     return (
       <div className="stack">
-        <h2>{isPhonePending ? 'Telegram Login' : 'Telegram Session'}</h2>
+        <h2>{isPhonePending ? l.phoneTelegramLoginHeading : l.phoneTelegramSessionHeading}</h2>
         <p>{state.message}</p>
         {phoneError && <p className="field-error">{phoneError}</p>}
         <form className="auth-form" onSubmit={isPhonePending ? submitCode : submitPhoneLogin}>
           {isPhonePending ? (
             <>
               <label>
-                <span>Verification code</span>
+                <span>{l.phoneVerificationCode}</span>
                 <input value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="12345" />
               </label>
               <button type="submit" disabled={isPhoneAuthBusy || !code.trim()}>
-                {isPhoneAuthBusy ? 'Verifying...' : 'Verify Code'}
+                {isPhoneAuthBusy ? l.phoneVerifying : l.phoneVerifyCode}
               </button>
             </>
           ) : (
             <>
               <label>
-                <span>Mobile number with country code</span>
+                <span>{l.phoneMobileNumber}</span>
                 <input value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" autoComplete="tel" placeholder="+14155552671" />
               </label>
               <button type="submit" disabled={isPhoneAuthBusy || state.mode === 'needsSetup' || !phone.trim()}>
-                {isPhoneAuthBusy ? 'Sending...' : 'Send Login Code'}
+                {isPhoneAuthBusy ? l.phoneSendingLoginCode : l.phoneSendLoginCode}
               </button>
             </>
           )}
@@ -143,7 +147,7 @@ function PhoneStateView() {
   if (state.screen === 'sidebar' && state.focus === 'chats') {
     return (
       <div className="stack">
-        <h2>Chats</h2>
+        <h2>{l.phoneChatsHeading}</h2>
         <div className="select-list">
           {state.chats.map((chat, index) => (
             <button key={String(chat.id)} type="button" className={index === state.selectedChatIndex ? 'selected' : ''} onClick={() => void dispatch({ type: 'press', index })}>
@@ -175,7 +179,7 @@ function PhoneStateView() {
       <div className="thread-heading">
         <div>
           <h2>{state.topic ? state.topic.title : state.chat.title}</h2>
-          <p>{state.topic ? state.chat.title : 'Current thread'}</p>
+          <p>{state.topic ? state.chat.title : l.phoneCurrentThread}</p>
         </div>
         {state.status && <span className="status-pill">{state.status}</span>}
       </div>
@@ -184,50 +188,53 @@ function PhoneStateView() {
   if (state.screen === 'newMessage') {
     return (
       <div className="stack">
-        <h2>New Telegram</h2>
+        <h2>{l.phoneNewTelegramHeading}</h2>
         <p>{state.topic ? `${state.chat.title} / ${state.topic.title}` : state.chat.title}</p>
-        <blockquote>{state.message || 'New message'}</blockquote>
-        <button type="button" onClick={() => void dispatch({ type: 'press' })}>Open Thread</button>
+        <blockquote>{state.message || l.bodyNewMessage}</blockquote>
+        <button type="button" onClick={() => void dispatch({ type: 'press' })}>{l.phoneOpenThread}</button>
       </div>
     )
   }
-  if (state.screen === 'asleep') return <p className="empty-text">Glasses screen is off. Double-click glasses to wake.</p>
+  if (state.screen === 'asleep') return <p className="empty-text">{l.phoneScreenOff}</p>
   if (state.screen === 'loading') return <p className="empty-text">{state.message}</p>
-  if (state.screen === 'sidebarRecording') return <p className="empty-text">Recording on glasses...</p>
-  if (state.screen === 'sidebarTranscribing') return <p className="empty-text">Transcribing voice reply...</p>
-  if (state.screen === 'sidebarConfirm') return <p className="empty-text">Confirm reply on glasses: {state.transcript}</p>
-  if (state.screen === 'sidebarSending') return <p className="empty-text">Sending reply...</p>
-  if (state.screen === 'sidebarSent') return <p className="empty-text">Reply sent.</p>
+  if (state.screen === 'sidebarRecording') return <p className="empty-text">{l.phoneRecording}</p>
+  if (state.screen === 'sidebarTranscribing') return <p className="empty-text">{l.phoneTranscribing}</p>
+  if (state.screen === 'sidebarConfirm') return <p className="empty-text">{l.phoneConfirmOnGlasses}{state.transcript}</p>
+  if (state.screen === 'sidebarSending') return <p className="empty-text">{l.phoneSendingReply}</p>
+  if (state.screen === 'sidebarSent') return <p className="empty-text">{l.phoneReplySent}</p>
   return (
     <div className="stack">
-      <h2>Error</h2>
+      <h2>{l.phoneErrorHeading}</h2>
       <p>{state.message}</p>
-      <button type="button" onClick={() => void dispatch({ type: 'press' })}>Retry</button>
+      <button type="button" onClick={() => void dispatch({ type: 'press' })}>{l.phoneRetry}</button>
     </div>
   )
 }
 
 function PhoneActions() {
-  const { state, dispatch } = useApp()
+  const { state, dispatch, localeVersion } = useApp()
+  const l = getLocale()
+  void localeVersion
   return (
-    <nav className="phone-actions" aria-label="Phone actions">
+    <nav className="phone-actions" aria-label={l.phoneActionsAria}>
       <button type="button" onClick={() => void dispatch({ type: 'swipeUp' })} disabled={!((state.screen === 'sidebar' && (state.focus === 'messages' || state.focus === 'chats' || state.focus === 'topics')))}>
-        Older / Up
+        {l.phoneOlderUp}
       </button>
       <button type="button" onClick={() => void dispatch({ type: 'swipeDown' })} disabled={!((state.screen === 'sidebar' && (state.focus === 'messages' || state.focus === 'chats' || state.focus === 'topics')))}>
-        Newer / Down
+        {l.phoneNewerDown}
       </button>
       <button type="button" onClick={() => void dispatch({ type: 'doublePress' })}>
-        Back / Sleep
+        {l.phoneBackSleep}
       </button>
     </nav>
   )
 }
 
 function MessageBubble({ message }: { message: Message }) {
+  const l = getLocale()
   return (
     <article className={`message-bubble ${message.outgoing ? 'outgoing' : 'incoming'}`}>
-      <header>{message.outgoing ? 'Me' : message.sender || 'Unknown'}</header>
+      <header>{message.outgoing ? l.senderMe : message.sender || l.senderUnknown}</header>
       <p>{message.text}</p>
     </article>
   )

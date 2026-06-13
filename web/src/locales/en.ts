@@ -28,7 +28,7 @@ const en = {
   footerSwipeSelect: 'Swipe select | Press confirm',
   footerDoubleClickDismiss: 'Double click dismiss',
   footerLoadingMessages: 'Loading messages...',
-
+  typingSuffix: 'typing\u2026',
   // ── Glasses display: content / labels ──
   bodyNewMessage: 'New message',
   bodyClickToOpen: 'Click to open.',
@@ -43,9 +43,9 @@ const en = {
   sanitizeGreen: '[green]',
 
   // ── Phone UI: ChatScreen state descriptions ──
-  phoneScreenOff: 'Glasses screen is off…',
-  phoneRecording: 'Recording on glasses…',
-  phoneTranscribing: 'Transcribing voice reply…',
+  phoneScreenOff: 'Glasses screen is off. Double-click glasses to wake.',
+  phoneRecording: 'Recording on glasses\u2026',
+  phoneTranscribing: 'Transcribing voice reply\u2026',
   phoneConfirmOnGlasses: 'Confirm reply on glasses: ',
   phoneSendingReply: 'Sending reply…',
   phoneReplySent: 'Reply sent.',
@@ -63,12 +63,20 @@ const en = {
   phoneErrorHeading: 'Error',
   phoneVerificationCode: 'Verification code',
   phoneMobileNumber: 'Mobile number with country code',
+  phoneVerifying: 'Verifying...',
   phoneSend: 'Send',
   phoneVerifyCode: 'Verify Code',
   phoneSendLoginCode: 'Send Login Code',
+  phoneSending: 'Sending...',
+  phoneSendingLoginCode: 'Sending...',
+  phoneComposerPlaceholder: 'Type a Telegram reply...',
+  phoneCurrentThread: 'Current thread',
   phoneOpenThread: 'Open Thread',
   phoneRetry: 'Retry',
-
+  phoneActionsAria: 'Phone actions',
+  phoneOlderUp: 'Older / Up',
+  phoneNewerDown: 'Newer / Down',
+  phoneBackSleep: 'Back / Sleep',
   // ── Phone UI: SettingsScreen ──
   phoneSettingsHeading: 'Settings',
   phoneAlreadyConnected: 'Already connected',
@@ -90,7 +98,7 @@ const en = {
   phoneBack: 'Back',
   phoneBackToChat: 'Back to chat',
   phoneOpenSettings: 'Open settings',
-
+  phoneSetupRequired: 'Backend shared secret, Telegram API ID, and Telegram API hash are required. Fill them in Settings using the setup instructions first.',
   // ── Error / auth messages (phone + glasses) ──
   errorBackendUnreachable:
     'Backend is not reachable. Fill Backend URL in Settings and make sure the backend server is running.',

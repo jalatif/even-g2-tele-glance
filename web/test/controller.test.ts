@@ -19,6 +19,8 @@ const reversedMessages: Message[] = [
   { id: '100', sender: 'Alice', text: 'oldest', sentAt: '2026-05-29T10:00:00Z' },
 ]
 
+const FAKE_CHAT_ID = '1'
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 describe('TelegramAppController', () => {
   it('exits the app on double-tap from the pre-login auth screen', async () => {
     // The reviewer expects the glasses user to be able to leave the app with
@@ -1363,6 +1365,173 @@ describe('TelegramAppController', () => {
       message: expect.stringContaining('Flood wait'),
     })
   })
+
+
+
+  // ── Bug 1: Language change not translating phone UI ──
+  // The controller's model layer (screenModel → getLocale()) CORRECTLY
+  // uses the active locale. This test PASSES because rebuildGlasses
+  // triggers enqueueRender → screenModel → getLocale(), which reads
+  // the module-level locale at call time. The BUG is in the phone
+  // React UI (App.tsx, ChatScreen.tsx) which never calls getLocale()
+  // and hardcodes English strings for the header, buttons, and all
+  // state descriptions.
+  it('rebuildGlasses renders with new locale after setLocale', async () => {
+    const api = fakeApi({ authorized: true })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge)
+
+    await controller.init()
+    // Open a chat to get into sidebar/messages state
+    await controller.dispatch({ type: 'press' })
+
+    // Save the current locale and switch to Japanese
+    const setLocale_ = (await import('../src/locales')).setLocale
+    const jaMod = (await import('../src/locales/ja')).default
+    const enMod = (await import('../src/locales/en')).default
+
+    setLocale_(enMod)
+    await flushAsync()
+    await controller.dispatch({ type: 'swipeUp' }) // trigger a render with en
+
+    // Switch to Japanese and rebuild glasses
+    setLocale_(jaMod)
+    controller.rebuildGlasses()
+    await flushAsync()
+
+    // The bridge.render should now contain Japanese-ized footer text
+    const lastRender = vi.mocked(bridge.render).mock.lastCall?.[0]
+    expect(lastRender).toBeDefined()
+    if (lastRender && lastRender.kind === 'sidebar') {
+      // The footer should use the Japanese locale's swipe-scroll text
+      expect(lastRender.panelFooter).toContain(jaMod.footerSwipeScroll)
+      expect(lastRender.panelFooter).not.toContain(enMod.footerSwipeScroll)
+    }
+
+    // Reset locale
+    setLocale_(enMod)
+  })
+
+
+
+  // ── Bug 1 (phone UI): React components hardcode English ──
+  // The phone React UI (App.tsx, ChatScreen.tsx) never calls
+  // getLocale(). Even though the locale module correctly provides
+  // translated strings via setLocale/getLocale, and the glasses
+  // model layer correctly uses locale, the phone UI components
+  // hardcode English for the header eyebrow ("TeleGlance"), h1
+  // fallback ("TeleGlance" / "Settings"), buttons ("Back" /
+  // "Settings"), aria-labels ("Back to chat" / "Open settings"),
+  // and all state descriptions in ChatScreen.tsx.
+  it('App.tsx uses getLocale for display strings', () => {
+    const { readFileSync } = require('fs')
+    const { resolve } = require('path')
+    const appContent = readFileSync(resolve(__dirname, '../src/App.tsx'), 'utf-8')
+    const chatContent = readFileSync(resolve(__dirname, '../src/screens/ChatScreen.tsx'), 'utf-8')
+
+    // These FAIL because both components hardcode English strings
+    // instead of calling getLocale().phoneAppTitle, etc.
+    expect(appContent).toContain('getLocale')
+    expect(chatContent).toContain('getLocale')
+  })
+  // ── Bug 2: No typing indicator after recording+send ──
+  // The state machine for recording+send goes through:
+  //   sidebar/messages → sidebarRecording → sidebarTranscribing →
+  //   sidebarConfirm → sidebarSending → sidebarSent → sidebar/messages
+  //
+  // The intermediate states (sidebarRecording, sidebarTranscribing,
+  // sidebarConfirm, sidebarSending, sidebarSent) do NOT carry the
+  // `typing` field from the original sidebar/messages state.
+  // After the send flow completes, the newly constructed
+  // sidebar/messages state omits `typing` entirely.
+  //
+  // Additionally, typing updates that arrive DURING the send flow are
+  // silently dropped because handleTelegramTypingUpdate guards on
+  // `screen === 'sidebar' && focus === 'messages'`, which none of the
+  // intermediate states satisfy.
+  it('preserves typing indicator through recording+send flow', async () => {
+    const api = fakeApi({ authorized: true, transcription: { text: 'Reply text' } })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge, 0)
+
+    await controller.init()
+    // Open chat → sidebar/messages
+    await controller.dispatch({ type: 'press' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+
+    // Manually inject typing state so we can test it's preserved
+    // through the send flow
+    const typedController = controller as unknown as { state: Record<string, unknown> }
+    typedController.state = {
+      ...typedController.state,
+      typing: { userName: 'Chatter', expiresAt: Date.now() + 30000 },
+    } as AppState
+    expect((typedController.state as Record<string, unknown>).typing).toBeDefined()
+
+    // Start recording
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'audioChunk', pcm: speechLikePcm() })
+    // Stop recording → transcribe → sidebarConfirm
+    await controller.dispatch({ type: 'press' })
+    // Confirm send → sidebarSending → sidebarSent → sidebar/messages
+    await controller.dispatch({ type: 'press' })
+
+    // THE BUG: After the send flow completes, the typing indicator is
+    // lost because none of the intermediate states carry the `typing`
+    // field, and the final sidebar/messages state constructed by
+    // handleSidebarConfirm does not include it.
+    const snapshot = controller.snapshot
+    expect((snapshot as Record<string, unknown>).typing).toBeDefined()
+  })
+
+  // ── Bug 2b: Typing update arriving AFTER send (the real scenario) ──
+  // The previous test only checks that pre-existing typing is preserved
+  // through the send flow. The real scenario is:
+  //   1. User sends a message (no typing before)
+  //   2. After send completes, other person starts typing
+  //   3. SSE delivers TypingUpdate → handleTelegramTypingUpdate
+  //   4. state.typing should be set
+  it('receives typing indicator delivered after send', async () => {
+    const api = fakeApi({ authorized: true, transcription: { text: 'Reply text' } })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge, 0)
+
+    // Wire up the update subscription before init — mirrors AppContext behavior
+    api.subscribeUpdates((update: unknown) => {
+      void controller.handleTelegramUpdate(update as Parameters<typeof controller.handleTelegramUpdate>[0])
+    })
+
+    await controller.init()
+    // Open chat → sidebar/messages
+    await controller.dispatch({ type: 'press' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+
+    // No typing before recording
+    expect((controller.snapshot as Record<string, unknown>).typing).toBeUndefined()
+
+    // Record → transcribe → confirm → send
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'audioChunk', pcm: speechLikePcm() })
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'press' })
+
+    // After send, state should be sidebar/messages
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages' })
+
+    // Now simulate a typing update arriving from the SSE stream
+    const apiWithCallback = api as unknown as { _typingCallback?: (update: unknown) => void }
+    if (apiWithCallback._typingCallback) {
+      apiWithCallback._typingCallback({ type: 'typing', chatId: FAKE_CHAT_ID, topicId: null, userName: 'Responder', action: 'typing' })
+    }
+
+    // Allow async processing
+    await sleep(50)
+
+    // THE BUG: typing indicator should now be set
+    const snapshot = controller.snapshot
+    expect((snapshot as Record<string, unknown>).typing).toBeDefined()
+    expect((snapshot as Record<string, unknown>).typing).toMatchObject({ userName: 'Responder' })
+  })
 })
 function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[] | Promise<Message[]>); olderMessages?: Message[] | (() => Message[] | Promise<Message[]>); chats?: Chat[] | (() => Chat[]); topics?: Topic[] | (() => Topic[] | Promise<Topic[]>) }): TelegramApi {
   const listMessages = vi.fn(async (_chatId, request) => {
@@ -1374,7 +1543,7 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
     return options.latestMessages ?? messages
   })
 
-  return {
+  const fake: Record<string, unknown> = {
     authStatus: vi.fn(async () => ({ authorized: options.authorized })),
     startPhoneAuth: vi.fn(async (phone: string) => ({ phone, sent: true })),
     verifyPhoneAuth: vi.fn(async () => ({ authorized: options.authorized })),
@@ -1382,7 +1551,7 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
     listChats: vi.fn(async () => typeof options.chats === 'function' ? options.chats() : options.chats ?? chats),
     listTopics: vi.fn(async () => typeof options.topics === 'function' ? options.topics() : options.topics ?? topics),
     listMessages,
-    sendMessage: vi.fn(async (_chatId, request) => ({
+    sendMessage: vi.fn(async (_chatId: unknown, request: { text: string }) => ({
       id: '101',
       sender: 'Me',
       text: request.text,
@@ -1391,10 +1560,13 @@ function fakeApi(options: { authorized: boolean; transcription?: TranscriptionRe
     })),
     markRead: vi.fn(async () => undefined),
     transcribe: vi.fn(async () => options.transcription ?? { text: '' }),
-    subscribeUpdates: vi.fn(() => () => undefined),
+    subscribeUpdates: vi.fn((onUpdate: (update: unknown) => void) => {
+      fake._typingCallback = onUpdate
+      return () => { fake._typingCallback = undefined }
+    }),
   }
+  return fake as unknown as TelegramApi & { _typingCallback?: (update: unknown) => void }
 }
-
 function speechLikePcm() {
   const pcm = new Uint8Array(3200)
   for (let index = 0; index < pcm.length; index += 2) {

@@ -1,5 +1,5 @@
 import type { TelegramApi } from './api'
-import type { Chat, Id, Message, Topic, TelegramUpdate, TranscriptionResult } from './types'
+import type { Chat, Id, Message, TelegramTypingUpdate, TelegramUpdate, Topic, TranscriptionResult } from './types'
 import { getFixtureTestOverrides } from './testMode'
 
 const fixtureChats: Chat[] = [
@@ -142,7 +142,7 @@ export class FixtureTelegramApi implements TelegramApi {
   private sent: FixtureSentMessage[] = []
   private mode: 'normal' | 'missing' | 'signedOut' | 'error' | 'slow' = 'normal'
   private slowChatsMs = 0
-  private subscribers = new Set<(update: TelegramUpdate) => void>()
+  private subscribers = new Set<(update: TelegramUpdate | TelegramTypingUpdate) => void>()
   private injectedNotification: { chatId: Id; message: string; topicId?: Id | null } | null = null
   private chatOverrides = new Map<string, Partial<Chat>>()
   fixtureLocale: string = 'en'
@@ -286,7 +286,7 @@ export class FixtureTelegramApi implements TelegramApi {
     return { text: 'Fixture transcript' }
   }
 
-  subscribeUpdates(onUpdate: (update: TelegramUpdate) => void) {
+  subscribeUpdates(onUpdate: (update: TelegramUpdate | TelegramTypingUpdate) => void) {
     this.subscribers.add(onUpdate)
     if (this.injectedNotification) {
       const injected = this.injectedNotification
@@ -303,6 +303,28 @@ export class FixtureTelegramApi implements TelegramApi {
     return () => {
       this.subscribers.delete(onUpdate)
     }
+  }
+
+  injectTyping(chatId: Id, topicId: Id | null, userName: string): void {
+    const update: TelegramTypingUpdate = {
+      type: 'typing',
+      chatId,
+      topicId,
+      userName,
+      action: 'typing',
+    }
+    for (const sub of this.subscribers) sub(update)
+  }
+
+  cancelTyping(chatId: Id, topicId: Id | null): void {
+    const update: TelegramTypingUpdate = {
+      type: 'typing',
+      chatId,
+      topicId,
+      userName: null,
+      action: 'cancel',
+    }
+    for (const sub of this.subscribers) sub(update)
   }
 }
 
@@ -401,6 +423,14 @@ function startCommandPolling(api: FixtureTelegramApi) {
               const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
               injectedAudioChunks.push(bytes)
             }
+            break
+          }
+          case 'injectTyping': {
+            api.injectTyping(cmd.chatId as string, (cmd.topicId as string | null) ?? null, cmd.userName as string)
+            break
+          }
+          case 'cancelTyping': {
+            api.cancelTyping(cmd.chatId as string, (cmd.topicId as string | null) ?? null)
             break
           }
           default:

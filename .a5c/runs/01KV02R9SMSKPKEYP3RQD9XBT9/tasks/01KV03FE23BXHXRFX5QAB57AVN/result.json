@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "2026.01.results-v1",
+  "effectId": "01KV03FE23BXHXRFX5QAB57AVN",
+  "taskId": "__sdk.breakpoint",
+  "invocationKey": "teleglance/bugfix-i18n-typing:S000002:__sdk.breakpoint",
+  "status": "ok",
+  "result": {
+    "approved": true,
+    "response": "Diagnosis is accurate. Proceed with fixes."
+  },
+  "startedAt": "2026-06-13T09:02:26.982Z",
+  "finishedAt": "2026-06-13T09:02:26.982Z",
+  "value": {
+    "approved": true,
+    "response": "Diagnosis is accurate. Proceed with fixes."
+  }
+}

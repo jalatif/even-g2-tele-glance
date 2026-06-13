@@ -1,0 +1,13 @@
+{
+  "type": "RUN_FAILED",
+  "recordedAt": "2026-06-13T08:48:40.238Z",
+  "data": {
+    "harness": "oh-my-pi",
+    "error": {
+      "name": "TypeError",
+      "message": "Cannot read properties of undefined (reading 'bug1')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'bug1')\n    at process (/Users/jalatif-mac-mini/Work/even-telegram/.a5c/processes/bugfix-i18n-typing.js:157:11)\n    at /opt/homebrew/lib/node_modules/@a5c-ai/babysitter-sdk/dist/runtime/orchestrateIteration.js:87:105\n    at async /opt/homebrew/lib/node_modules/@a5c-ai/babysitter-sdk/dist/runtime/orchestrateIteration.js:87:28\n    at async withRunLock (/opt/homebrew/lib/node_modules/@a5c-ai/babysitter-sdk/dist/storage/lock.js:80:16)\n    at async orchestrateIteration (/opt/homebrew/lib/node_modules/@a5c-ai/babysitter-sdk/dist/runtime/orchestrateIteration.js:62:12)\n    at async runIterate (/opt/homebrew/lib/node_modules/@a5c-ai/babysitter-sdk/dist/cli/commands/runIterate.js:69:29)\n    at async handleRunIterate (/opt/homebrew/lib/node_modules/@a5c-ai/babysitter-sdk/dist/cli/main.js:1215:24)\n    at async Object.run (/opt/homebrew/lib/node_modules/@a5c-ai/babysitter-sdk/dist/cli/main.js:2333:28)"
+    }
+  },
+  "checksum": "5c3741f67e812bc894d67cb05e47b3a77297555e9b1cea4d85e314754cdd9186"
+}

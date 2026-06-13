@@ -1,0 +1,30 @@
+{
+  "diagnosis": {
+    "bug1": {
+      "title": "Language change not translating phone UI",
+      "rootCause": "Two-part: (1) setLocale() mutates singleton with no React reactivity signal. (2) App.tsx and ChatScreen.tsx never call getLocale() — they hardcode English.",
+      "details": {
+        "appHardcodes": ["TeleGlance eyebrow", "Settings h1", "Back/Settings buttons", "aria-labels", "error/setup banners"],
+        "chatScreenHardcodes": ["all state descriptions", "auth labels", "composer placeholder"],
+        "noReactivity": "setLocale() assigns `current = strings` with no React context/state/subscription"
+      }
+    },
+    "bug2": {
+      "title": "No typing indicator after recording+send",
+      "rootCause": "Intermediate send-flow states (sidebarRecording etc.) lack typing field in union type, and handleSidebarConfirm omits typing when constructing final sidebar/messages state.",
+      "details": {
+        "intermediateStatesNoTyping": true,
+        "handleSidebarConfirmOmitsTyping": true,
+        "guardDropsDuringSendFlow": true
+      }
+    }
+  },
+  "testsWritten": [
+    "web/test/controller.test.ts: 'App.tsx uses getLocale for display strings' (FAIL)",
+    "web/test/controller.test.ts: 'preserves typing indicator through recording+send flow' (FAIL)",
+    "web/test/model.test.ts: 'setLocale then getLocale returns ja phone-UI keys' (PASS - infrastructure works)",
+    "web/test/model.test.ts: 'all phone-UI locale keys have English values' (PASS)",
+    "web/test/model.test.ts: 'model correctly uses locale for typing footer' (PASS)"
+  ],
+  "testResults": "2 failed, 155 passed. Failing tests reproduce both bugs."
+}

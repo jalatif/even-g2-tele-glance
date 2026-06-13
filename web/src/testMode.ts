@@ -326,6 +326,7 @@ export function summarizeAppState(state: AppState): Record<string, unknown> {
         isNewestPage: state.isNewestPage ?? null,
         cursor: state.cursor ?? null,
         back: state.back ? state.back.screen : null,
+        typing: state.typing ?? null,
       }
     case 'sidebarRecording':
       return {

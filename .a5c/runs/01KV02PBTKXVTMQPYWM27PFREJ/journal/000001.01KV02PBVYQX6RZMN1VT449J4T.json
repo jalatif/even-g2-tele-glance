@@ -1,0 +1,15 @@
+{
+  "type": "RUN_CREATED",
+  "recordedAt": "2026-06-13T08:48:36.222Z",
+  "data": {
+    "runId": "01KV02PBTKXVTMQPYWM27PFREJ",
+    "processId": "teleglance/bugfix-i18n-typing",
+    "entrypoint": {
+      "importPath": "../../processes/bugfix-i18n-typing.js",
+      "exportName": "process"
+    },
+    "harness": "oh-my-pi",
+    "prompt": "Fix two bugs: (1) When changing language in settings, phone UI instructions/text should translate but stays English. (2) After recording and sending a voice message, no typing indicator appears. Write harness tests to repro first, then fix, then validate through harness."
+  },
+  "checksum": "a37a3df36ee3643b0882a5a2937ec993b3e4887ced08ed7f2d05a7f2ac8613a7"
+}

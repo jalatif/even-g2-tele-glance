@@ -25,6 +25,7 @@ from app.models import (
     TopicSummary,
     TelegramUpdate,
     TranscriptionResponse,
+    TypingUpdate,
 )
 from app.services.audio import pcm16le_to_wav
 from app.services.secure_auth import SecureAuthError, decrypt_payload, encrypt_payload
@@ -210,7 +211,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             try:
                 async for update in telegram.update_events():
                     payload = update.model_dump_json(by_alias=True)
-                    yield f"event: message\ndata: {event_data(payload)}\n\n"
+                    if isinstance(update, TypingUpdate):
+                        yield f"event: typing\ndata: {event_data(payload)}\n\n"
+                    else:
+                        yield f"event: message\ndata: {event_data(payload)}\n\n"
             except TelegramServiceError as exc:
                 payload = json.dumps({"detail": str(exc)})
                 yield f"event: error\ndata: {event_data(payload)}\n\n"
@@ -260,6 +264,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             return await transcription.transcribe_wav(raw, language=language or None)
         except (ValueError, TranscriptionServiceError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"transcription failed: {exc}") from exc
 
     return api
 

@@ -13,6 +13,8 @@ type FixtureCommand =
   | { kind: 'injectAudioChunks'; pcmBase64: string }
   | { kind: 'reset' }
   | { kind: 'drainEvents' }
+  | { kind: 'injectTyping'; chatId: string; topicId?: string | null; userName: string }
+  | { kind: 'cancelTyping'; chatId: string; topicId?: string | null }
 
 let pendingFixtureCommands: FixtureCommand[] = []
 let pendingFixtureEvents: unknown[] = []
