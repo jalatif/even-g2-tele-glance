@@ -1,0 +1,23 @@
+{
+  "kind": "sidebar",
+  "title": "Fixture Archive",
+  "sidebarTitle": "Chats",
+  "focus": "panel",
+  "fullWidth": true,
+  "sidebarSelected": 4,
+  "sidebarItems": [
+    "Fixture Alpha",
+    "Fixture Forum",
+    "Fixture Ops",
+    "Fixture Research",
+    "Fixture Archive"
+  ],
+  "panelBody": "",
+  "panelFooter": "Older messages | Swipe scroll | Click record | Double click back",
+  "panelBox": {
+    "heading": "Fixture Long 2/5",
+    "contentLength": 141,
+    "content": "layout, and the page-byte-limit trim path. It is well past the fifty-word boundary so the harness can confirm the text container and panelBox",
+    "contentExcerpt": "layout, and the page-byte-limit trim path. It is well past the fifty-word boundary so the harness can confirm the text container and panelBox"
+  }
+}

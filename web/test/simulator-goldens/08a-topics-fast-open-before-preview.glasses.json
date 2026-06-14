@@ -1,0 +1,20 @@
+{
+  "kind": "sidebar",
+  "title": "Fixture Topic Zero",
+  "sidebarTitle": "Topics",
+  "focus": "panel",
+  "fullWidth": true,
+  "sidebarSelected": 0,
+  "sidebarItems": [
+    "Fixture Topic Zero",
+    "Fixture Topic One (1)",
+    "Fixture Topic Two (1)",
+    "Fixture Topic Three (1)",
+    "Fixture Topic Four",
+    "Fixture Topic Five",
+    "Fixture Topic Six"
+  ],
+  "panelBody": "Forum Bot: Topic zero warmup body appears\n  before indexed topic validation.",
+  "panelFooter": "Swipe scroll | Click record | Double click back",
+  "panelBox": null
+}

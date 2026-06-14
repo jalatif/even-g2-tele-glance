@@ -1,0 +1,18 @@
+{
+  "kind": "sidebar",
+  "title": "Fixture Alpha",
+  "sidebarTitle": "Chats",
+  "focus": "panel",
+  "fullWidth": true,
+  "sidebarSelected": 3,
+  "sidebarItems": [
+    "Fixture Alpha",
+    "Fixture Forum (3)",
+    "Fixture Ops",
+    "Fixture Research",
+    "Fixture Archive"
+  ],
+  "panelBody": "Fixture Alpha: Alpha message page contains\n  fixture-alpha-body for\n  startup testing.\n\nMe: Alpha outgoing marker for visual\n  validation.",
+  "panelFooter": "Swipe scroll | Click record | Double click back",
+  "panelBox": null
+}

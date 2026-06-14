@@ -1,0 +1,17 @@
+{
+  "kind": "sidebar",
+  "title": "Telegram",
+  "sidebarTitle": "Chats",
+  "focus": "sidebar",
+  "sidebarSelected": 0,
+  "sidebarItems": [
+    "Fixture Alpha",
+    "Fixture Forum (3)",
+    "Fixture Ops",
+    "Fixture Research",
+    "Fixture Archive"
+  ],
+  "panelBody": "Alpha preview baseline for startup selection.",
+  "panelFooter": "Swipe chats | Press open",
+  "panelBox": null
+}

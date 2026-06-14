@@ -1,0 +1,20 @@
+{
+  "kind": "sidebar",
+  "title": "Fixture Topic One",
+  "sidebarTitle": "Topics",
+  "focus": "panel",
+  "fullWidth": true,
+  "sidebarSelected": 1,
+  "sidebarItems": [
+    "Fixture Topic Zero",
+    "Fixture Topic One",
+    "Fixture Topic Two (1)",
+    "Fixture Topic Three (1)",
+    "Fixture Topic Four",
+    "Fixture Topic Five",
+    "Fixture Topic Six"
+  ],
+  "panelBody": "Older Fixture: Older fixture page before\n  110.\n\nOlder Fixture: Older fixture content\n  validates up-scroll loading.\n\nTopic One: Fixture topic one message body\n  includes fixture-topic-one-body.\n\nReviewer: Topic one second message validates\n  scrolling without reset.",
+  "panelFooter": "Older messages | Swipe scroll | Click record | Double click back",
+  "panelBox": null
+}

@@ -1366,6 +1366,25 @@
       "budgetMs": 2000
     },
     {
+      "name": "29a-typing-after-send",
+      "input": "testTypingAlpha",
+      "target": "sidebar.messages.normal",
+      "expect": {
+        "state": {
+          "focus": "messages"
+        },
+        "renderBodyContains": [
+          "Alice",
+          "typing"
+        ],
+        "renderBodyNotContains": [
+          "Sent"
+        ]
+      },
+      "comment": "After sending a recorded message, the state is sidebar.messages with status='Sent'. If the other person starts typing, the typing indicator should replace the status in the footer. This test proves whether the typing update is accepted after the send completes. If the indicator does not appear, typing updates were dropped during the sidebarSending/sidebarSent transitions.",
+      "budgetMs": 1500
+    },
+    {
       "name": "30-chats-reload-ops",
       "input": "pressSequence:double_click,down,down,click",
       "target": "sidebar.messages.normal",

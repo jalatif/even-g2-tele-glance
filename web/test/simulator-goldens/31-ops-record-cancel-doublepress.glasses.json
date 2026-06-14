@@ -1,0 +1,17 @@
+{
+  "kind": "sidebar",
+  "title": "Telegram",
+  "sidebarTitle": "Chats",
+  "focus": "sidebar",
+  "sidebarSelected": 2,
+  "sidebarItems": [
+    "Fixture Alpha",
+    "Fixture Forum",
+    "Fixture Ops",
+    "Fixture Research",
+    "Fixture Archive"
+  ],
+  "panelBody": "Fixture Ops: Ops message page contains\n  fixture-ops-body for chat index\n  two.\n\nSRE: Ops latency sample message should\n  remain readable.",
+  "panelFooter": "Swipe chats | Press open",
+  "panelBox": null
+}

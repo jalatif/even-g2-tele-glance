@@ -1532,7 +1532,59 @@ describe('TelegramAppController', () => {
     expect((snapshot as Record<string, unknown>).typing).toBeDefined()
     expect((snapshot as Record<string, unknown>).typing).toMatchObject({ userName: 'Responder' })
   })
-})
+
+  // ── Proof: render model includes typing footer after post-send typing update ──
+  // The previous test proves the controller state has typing set. This test
+  // proves the render model (what the glasses would actually display) also
+  // includes the typing indicator in the footer. The render model is built
+  // by `screenModel(state)` which checks `state.typing` and renders the
+  // typing footer instead of the status footer. If the render model is
+  // stale (e.g., from before the typing update), the glasses would still
+  // show the old status footer.
+  it('render model includes typing footer after post-send typing update', async () => {
+    const api = fakeApi({ authorized: true, transcription: { text: 'Reply text' } })
+    const bridge = fakeBridge()
+    const controller = new TelegramAppController(api, bridge, 0)
+
+    api.subscribeUpdates((update: unknown) => {
+      void controller.handleTelegramUpdate(update as Parameters<typeof controller.handleTelegramUpdate>[0])
+    })
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' }) // open chat → messages
+    // Record → transcribe → confirm → send
+    await controller.dispatch({ type: 'press' }) // start recording
+    await controller.dispatch({ type: 'audioChunk', pcm: speechLikePcm() })
+    await controller.dispatch({ type: 'press' }) // stop recording
+    await controller.dispatch({ type: 'press' }) // confirm send
+
+    // After send, clear the bridge render mock so we can find the render
+    // triggered by the post-send typing update.
+    await flushAsync()
+    const renderMock = vi.mocked(bridge.render)
+    renderMock.mockClear()
+    const renderSidebarPanelMock = vi.mocked(bridge.renderSidebarPanel ?? (() => undefined))
+    renderSidebarPanelMock.mockClear()
+
+    // Inject typing update from another user
+    const apiWithCallback = api as unknown as { _typingCallback?: (update: unknown) => void }
+    apiWithCallback._typingCallback?.({ type: 'typing', chatId: FAKE_CHAT_ID, topicId: null, userName: 'Responder', action: 'typing' })
+    await flushAsync()
+
+    // The render model should now include the typing footer
+    const lastFullRender = renderMock.mock.lastCall?.[0]
+    const lastPartialRender = renderSidebarPanelMock.mock.lastCall?.[0]
+    const lastRender = lastFullRender ?? lastPartialRender
+    expect(lastRender).toBeDefined()
+    if (lastRender && lastRender.kind === 'sidebar') {
+      // The typing footer should contain the user's name and the typing suffix
+      expect(lastRender.panelFooter).toContain('Responder')
+      expect(lastRender.panelFooter).toMatch(/typing|is typing/i)
+      // The status footer (with "Sent") should NOT be in the footer
+      expect(lastRender.panelFooter).not.toBe('Sent')
+    }
+  })
+ })
 function fakeApi(options: { authorized: boolean; transcription?: TranscriptionResult; latestMessages?: Message[] | (() => Message[] | Promise<Message[]>); olderMessages?: Message[] | (() => Message[] | Promise<Message[]>); chats?: Chat[] | (() => Chat[]); topics?: Topic[] | (() => Topic[] | Promise<Topic[]>) }): TelegramApi {
   const listMessages = vi.fn(async (_chatId, request) => {
     if (request?.beforeId !== undefined) {

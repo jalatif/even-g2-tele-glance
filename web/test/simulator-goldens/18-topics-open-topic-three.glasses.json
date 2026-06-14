@@ -1,0 +1,25 @@
+{
+  "kind": "sidebar",
+  "title": "Fixture Topic Three",
+  "sidebarTitle": "Topics",
+  "focus": "panel",
+  "fullWidth": true,
+  "sidebarSelected": 3,
+  "sidebarItems": [
+    "Fixture Topic Zero",
+    "Fixture Topic One",
+    "Fixture Topic Two",
+    "Fixture Topic Three",
+    "Fixture Topic Four",
+    "Fixture Topic Five",
+    "Fixture Topic Six"
+  ],
+  "panelBody": "",
+  "panelFooter": "Older messages | Swipe scroll | Click record | Double click back",
+  "panelBox": {
+    "heading": "Topic Three 1/4",
+    "contentLength": 145,
+    "content": "Fixture topic long message body is intended to validate the box rendering path on real G2 hardware and the simulator. It contains more than fifty",
+    "contentExcerpt": "Fixture topic long message body is intended to validate the box rendering path on real G2 hardware and the simulator. It contains more than fifty"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "kind": "sidebar",
+  "title": "Fixture Topic Two",
+  "sidebarTitle": "Topics",
+  "focus": "panel",
+  "fullWidth": true,
+  "sidebarSelected": 2,
+  "sidebarItems": [
+    "Fixture Topic Zero",
+    "Fixture Topic One",
+    "Fixture Topic Two",
+    "Fixture Topic Three (1)",
+    "Fixture Topic Four",
+    "Fixture Topic Five",
+    "Fixture Topic Six"
+  ],
+  "panelBody": "Topic Two: Fixture topic two message body\n  includes fixture-topic-two-body.\n\nReviewer: Topic two second message validates\n  rendering distinct content.",
+  "panelFooter": "Swipe scroll | Click record | Double click back",
+  "panelBox": null
+}

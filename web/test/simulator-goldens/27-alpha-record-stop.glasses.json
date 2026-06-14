@@ -1,0 +1,7 @@
+{
+  "kind": "text",
+  "title": "Confirm reply",
+  "body": "Fixture transcript\n\n> Send\n  Cancel",
+  "footer": "Swipe select | Press confirm",
+  "box": null
+}

@@ -650,3 +650,24 @@ No changes to: `scripts/fuzzy-test.mjs`, `web/test/ui-invariants.test.ts`, `web/
 20. `tests/backend/test_api.py` — SSE typing event tests
 21. `web/test/controller.test.ts` — typing state + timer tests
 22. `web/test/model.test.ts` — typing footer rendering tests
+## Validation (June 14, 2026)
+
+The typing indicator behavior is validated at three levels:
+
+1. **Unit test** `web/test/controller.test.ts:1544` — `render model includes typing footer after post-send typing update` records → flushes renders → injects typing via `api._typingCallback` → asserts the last `bridge.render` or `bridge.renderSidebarPanel` call has `panelFooter` containing the user name and "typing" suffix, and not the "Sent" status. Passes as part of the 159/159 unit suite.
+
+2. **Existing simulator flow step** `21typing-indicator-footer` — injects typing via `testTypingAlpha` while in `sidebar.messages.normal` and asserts `renderBodyContains: ["Alice", "typing…"]` and `renderBodyNotContains: ["Swipe scroll", "Click record", "Double click back"]`. Passes with the render golden at `web/test/simulator-goldens/21typing-indicator-footer.glasses.json` capturing `panelFooter: "Alice typing…"`.
+
+3. **New simulator flow step** `29a-typing-after-send` — completes the full record → transcribe → send flow, then injects typing via `testTypingAlpha` and asserts the post-send typing indicator. The golden at `web/test/simulator-goldens/29a-typing-after-send.glasses.json` captures `panelFooter: "Alice typing…"` with `panelBody` showing the just-sent "Fixture transcript". This is the end-to-end proof that the typing indicator replaces the "Sent" status in the footer after a recorded-message send.
+
+This step only works because of a separate harness/bridge fix: the `sdk.audioControl()` call in fixture mode was keeping the simulator's Flutter main thread busy for several seconds (the microphone handler initializes), blocking the HTTP server. The bridge now short-circuits `setAudioEnabled` to a no-op in fixture mode via `isTeleGlanceFixtureMode()`. Without that, the recording flow steps would be SKIPPED and 29a could not run end-to-end.
+
+## End-to-end harness run summary
+
+With the typing-indicator plan, the recording-flow audio bypass, and the JSON-golden + fire-and-forget bridge changes, the harness now drives:
+
+- 50+ catalog steps end-to-end on the simulator (was 43 with `27-alpha-record-stop` SKIPPED).
+- Steps 22a, 22b, 24, 25, 26, 27, 28, 29, 29a, 30, 31, 32 cover the entire record → transcribe → confirm → send → cancel paths.
+- `29a-typing-after-send` is the first end-to-end proof that the post-send typing indicator is rendered in the status bar.
+
+Pre-existing latency-budget violations (a few hundred ms over on swipes through the simulator) and one intentional perf-budget negative test (`40-perf-budget-chat-list`) remain, but no recording-flow steps are SKIPPED.

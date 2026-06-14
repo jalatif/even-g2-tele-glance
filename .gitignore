@@ -35,8 +35,12 @@ pnpm-debug.log*
 artifacts/
 *.ehpk
 *.png
-!web/test/simulator-goldens/
-!web/test/simulator-goldens/*.png
+# Old blank-glasses PNG goldens are not tracked (replaced by JSON goldens
+# in the same directory). New `.glasses.json` golden files are tracked
+# because they contain real captured render models that the harness
+# diffs against at runtime — keeping them in git means a stale
+# `npm run test:simulator` will surface content regressions.
+!web/test/simulator-goldens/*.glasses.json
 SECURITY_PRIVACY_FUTURE.md
 dist/
 build/
@@ -48,4 +52,3 @@ coverage/
 
 # Others
 .graphiq/
-web/test/simulator-goldens/

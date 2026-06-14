@@ -1,0 +1,17 @@
+{
+  "kind": "sidebar",
+  "title": "Telegram",
+  "sidebarTitle": "Chats",
+  "focus": "sidebar",
+  "sidebarSelected": 4,
+  "sidebarItems": [
+    "Fixture Alpha",
+    "Fixture Forum (3)",
+    "Fixture Ops",
+    "Fixture Research",
+    "Fixture Archive"
+  ],
+  "panelBody": "Fixture Long: Short follow-up so pagination\n  logic can detect an older page\n  boundary below.",
+  "panelFooter": "Swipe chats | Press open",
+  "panelBox": null
+}

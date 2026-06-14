@@ -1,0 +1,25 @@
+{
+  "kind": "sidebar",
+  "title": "Fixture Topic Three",
+  "sidebarTitle": "Topics",
+  "focus": "panel",
+  "fullWidth": true,
+  "sidebarSelected": 3,
+  "sidebarItems": [
+    "Fixture Topic Zero",
+    "Fixture Topic One",
+    "Fixture Topic Two",
+    "Fixture Topic Three",
+    "Fixture Topic Four",
+    "Fixture Topic Five",
+    "Fixture Topic Six"
+  ],
+  "panelBody": "",
+  "panelFooter": "Older messages | Swipe scroll | Click record | Double click back",
+  "panelBox": {
+    "heading": "Topic Three 2/4",
+    "contentLength": 140,
+    "content": "words on purpose, exercises the trimForContainer and formatBoxContent helpers, and includes the unique anchor fixture-long-topic-body-anchor",
+    "contentExcerpt": "words on purpose, exercises the trimForContainer and formatBoxContent helpers, and includes the unique anchor fixture-long-topic-body-anchor"
+  }
+}
