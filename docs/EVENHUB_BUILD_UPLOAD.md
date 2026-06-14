@@ -49,8 +49,10 @@ Without `--publish`, Step 3 is skipped and the script prints a reminder.
 
 ## Token handling
 
+
 - The access token is read from `~/.config/evenhub/credentials.yaml` (created by `evenhub login`).
-- If the access token is expired (HTTP 401), the script auto-refreshes it using the refresh token stored in the same file.
+- If the access token is expired (HTTP 401), the script auto-refreshes it using the refresh token stored in the same file and **saves the new tokens back** to the YAML file.
+- Refresh tokens are single-use. If a refresh returns `code: 1006` ("auth error"), the token was already consumed. Re-run `npx @evenrealities/evenhub-cli login`.
 - No tokens, emails, or credentials are **ever** hardcoded in the script or logged to output.
 - The `X-Even-Authorization` header is sent over HTTPS.
 

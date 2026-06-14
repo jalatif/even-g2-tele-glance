@@ -103,7 +103,19 @@ async function refreshToken(refreshToken) {
   if (!resp.ok) return null
   const data = await resp.json()
   if (data.code !== 0) return null
-  return data.data.access_token
+  const newAccess = data.data.access_token
+  const newRefresh = data.data.refresh_token
+  // Save tokens back to YAML so the next run uses fresh tokens
+  const yamlPath = join(homedir(), '.config', 'evenhub', 'credentials.yaml')
+  if (existsSync(yamlPath)) {
+    let raw = readFileSync(yamlPath, 'utf8')
+    raw = raw.replace(/^access_token: >-\n  .+$/m, `access_token: >-\n  ${newAccess}`)
+    if (newRefresh) {
+      raw = raw.replace(/^refresh_token: >-\n  .+$/m, `refresh_token: >-\n  ${newRefresh}`)
+    }
+    writeFileSync(yamlPath, raw, 'utf8')
+  }
+  return newAccess
 }
 
 function readRefreshToken() {
