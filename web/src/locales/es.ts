@@ -187,9 +187,8 @@ const es: LocaleStrings = {
     'Temporizadores de respaldo para eventos perdidos.',
   settingsChatPoll: 'Actualización de chat (ms)',
   settingsMessagePoll: 'Actualización de mensajes (ms)',
-  settingsLanguageLabel: 'Idioma de la interfaz',
-  settingsLanguageHint:
-    'Cambia todo el texto de la interfaz.',
+  settingsLanguageLabel: 'Idioma',
+  settingsLanguageHint: 'Cambia todo el texto de la interfaz de las gafas y las etiquetas del teléfono.',
   settingsBuildVersion: 'Versión de compilación',
   settingsApiUrl: 'URL actual de la API',
   settingsSave: 'Guardar Ajustes',

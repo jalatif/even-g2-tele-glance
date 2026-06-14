@@ -56,9 +56,9 @@ export const LANGUAGE_NAMES: Record<string, string> = {
   id: 'Bahasa Indonesia',
   ca: 'Català',
   sk: 'Slovenčina',
-  ja: '日本語 (Rōmaji)',
-  ko: '한국어 (Romaja)',
-  zh: '中文 (Pīnyīn)',
+  ja: '日本語',
+  ko: '한국어',
+  zh: '中文',
   ms: 'Bahasa Melayu',
 }
 
