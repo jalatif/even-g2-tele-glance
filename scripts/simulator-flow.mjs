@@ -337,6 +337,8 @@ async function executeStep(step, _url) {
     await sendTestCommand({ kind: 'reinitialize' })
   }
   if (step.input === 'testError') {
+    await postInput('double_click', {})
+    await sleep(350)
     await sendTestCommand({ kind: 'setMode', mode: 'error' })
     await sendTestCommand({ kind: 'reinitialize' })
   }
@@ -344,7 +346,9 @@ async function executeStep(step, _url) {
     await sendTestCommand({ kind: 'setInjectedNotification', chatId: 'fixture-chat-0', message: 'New fixture message' })
   }
   if (step.input === 'testTopicNotify') {
-    await sendTestCommand({ kind: 'setInjectedNotification', chatId: 'fixture-chat-0', message: 'New topic reply from Bob', topicId: 101 })
+    await sendTestCommand({ kind: 'setMode', mode: 'normal' })
+    await sendTestCommand({ kind: 'reinitialize' })
+    await sendTestCommand({ kind: 'setInjectedNotification', chatId: 'fixture-chat-1', message: 'New topic reply from Bob', topicId: 'fixture-topic-1' })
   }
   if (step.input === 'testTypingAlpha') {
     await sendTestCommand({ kind: 'injectTyping', chatId: 'fixture-chat-0', userName: 'Alice' })
@@ -574,7 +578,7 @@ async function executeStep(step, _url) {
   await pollConsole()
   const captureStartedAt = Date.now()
   const skipContentChecks = targetLocale !== 'en' && targetLocale !== 'all' && !step.locale
-  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartTime, failuresBeforeStep, skipContentChecks })
+  const glasses = await captureStep(name, expect, { perInputLatencies, eventStartTime, failuresBeforeStep, skipContentChecks, goldenIgnoreFields: step.goldenIgnoreFields ?? [] })
   const totalMs = Date.now() - startedAt
   const captureMs = Date.now() - captureStartedAt
   latencies.push({ name, totalMs, captureMs, budgetMs, perInputLatencies })
@@ -607,10 +611,20 @@ function matchesArgs(actual, expected, skipKeys = []) {
   if (!expected) return true
   for (const [key, value] of Object.entries(expected)) {
     if (skipKeys.includes(key)) continue
-    const actualVal = key === 'request' ? actual?.[key]?.text : actual?.[key]
-    if (JSON.stringify(actualVal) !== JSON.stringify(value)) return false
+    if (!matchesPartialValue(actual?.[key], value)) return false
   }
   return true
+}
+
+function matchesPartialValue(actual, expected) {
+  if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
+    if (!actual || typeof actual !== 'object') return false
+    for (const [key, value] of Object.entries(expected)) {
+      if (!matchesPartialValue(actual[key], value)) return false
+    }
+    return true
+  }
+  return JSON.stringify(actual) === JSON.stringify(expected)
 }
 
 function matchesExpectedApiCall(event, expected) {
@@ -721,7 +735,7 @@ async function captureStep(name, expectations, extras = {}) {
   const latestRender = latestTestEvent('render', eventStartTime)
   const latestState = latestTestEvent('state', eventStartTime)
   const renderModel = latestRender?.model ?? null
-  const goldenResult = await validateRenderGolden(name, renderModel)
+  const goldenResult = await validateRenderGolden(name, renderModel, extras.goldenIgnoreFields ?? [])
   const contentMatches = (isFixtureMode && !extras.skipContentChecks) ? checkContentMatches(expectations, latestRender, latestState) : true
   if (isFixtureMode && expectations.renderBodyContains && latestRender && !extras.skipContentChecks) {
     for (const needle of expectations.renderBodyContains) {
@@ -790,13 +804,15 @@ async function captureStep(name, expectations, extras = {}) {
  *   diff:   structured list of mismatched paths (only on mismatch)
  *   goldenPath: where the golden was read from / written to
  */
-function normalizeRenderModel(model) {
+function normalizeRenderModel(model, ignoreFields = []) {
   if (!model) return null
+  const ignored = new Set(ignoreFields)
   // Drop fields that are derivable from other fields and would make goldens
   // brittle (e.g. bodyLength vs body content). We only keep the semantic
   // payload the user actually sees on the glasses.
   const cleaned = {}
   for (const [key, value] of Object.entries(model)) {
+    if (ignored.has(key)) continue
     if (key === 'bodyLength' || key === 'panelBodyLength' || key === 'itemCount' || key === 'sidebarItemCount'
         || key === 'contentLength' || key === 'bodyExcerpt' || key === 'panelBodyExcerpt' || key === 'contentExcerpt') {
       continue
@@ -806,10 +822,10 @@ function normalizeRenderModel(model) {
   return cleaned
 }
 
-async function validateRenderGolden(name, model) {
+async function validateRenderGolden(name, model, ignoreFields = []) {
   const suffix = currentLocale === 'en' ? '' : `.${currentLocale}`
   const goldenPath = path.join(goldenRoot, `${name}${suffix}.glasses.json`)
-  const normalized = normalizeRenderModel(model)
+  const normalized = normalizeRenderModel(model, ignoreFields)
   if (!normalized) {
     return { status: 'missing-render', goldenPath }
   }
@@ -819,7 +835,7 @@ async function validateRenderGolden(name, model) {
     return { status: 'wrote-golden', goldenPath }
   }
   const expectedRaw = await readFile(goldenPath, 'utf8')
-  const expected = JSON.parse(expectedRaw)
+  const expected = normalizeRenderModel(JSON.parse(expectedRaw), ignoreFields)
   const diff = diffRenderModel(expected, normalized)
   if (diff.length === 0) {
     return { status: 'match', goldenPath }

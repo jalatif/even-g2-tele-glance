@@ -258,6 +258,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         transcription: WhisperTranscriptionService = Depends(get_transcription_service),
     ) -> TranscriptionResponse:
         raw = await audio.read()
+        if len(raw) > settings.transcribe_max_upload_bytes:
+            raise HTTPException(status_code=413, detail="audio upload is too large")
         try:
             if audio.content_type in {"audio/pcm", "application/octet-stream"}:
                 raw = pcm16le_to_wav(raw)

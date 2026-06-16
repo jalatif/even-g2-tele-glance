@@ -18,6 +18,8 @@ def get_telegram_service(
 ) -> TelegramService:
     settings = get_settings()
     credentials = telegram_credentials_from_encrypted_header(x_teleglance_auth, settings.teleglance_shared_secret)
+    if credentials is not None and not credentials.session_string:
+        return TelethonTelegramService(settings, credentials)
     cache_key = telegram_service_cache_key(credentials)
     service = _telegram_services.get(cache_key)
     if service is None:

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HttpTelegramApi, SHARED_BACKEND_URL, SHARED_BACKEND_TEST_SECRET } from '../src/api'
+import { HttpTelegramApi, defaultApiBaseUrl } from '../src/api'
+import { InstrumentedTelegramApi } from '../src/instrumentedApi'
 import { decryptJsonPayload } from '../src/secureAuth'
+import type { TelegramApi } from '../src/api'
 
 describe('HttpTelegramApi secret selection', () => {
   let capturedHeaders: Headers | undefined
@@ -24,30 +26,8 @@ describe('HttpTelegramApi secret selection', () => {
     vi.stubGlobal('fetch', fetchStub)
   }
 
-  it('uses the test secret for the shared backend even when the user overrides the secret', async () => {
-    stubFetch()
-    const api = new HttpTelegramApi(
-      SHARED_BACKEND_URL,
-      () => ({
-        telegramApiId: '123',
-        telegramApiHash: 'abc',
-        backendSharedSecret: 'user-typo-secret',
-      }),
-    )
-
-    await api.authStatus()
-
-    const authHeader = capturedHeaders?.get('X-TeleGlance-Auth')
-    expect(authHeader).toBeTruthy()
-
-    // Decrypt with the test secret — must succeed
-    const decrypted = await decryptJsonPayload(authHeader!, SHARED_BACKEND_TEST_SECRET)
-    const payload = JSON.parse(decrypted)
-    expect(payload.apiId).toBe('123')
-    expect(payload.apiHash).toBe('abc')
-
-    // Decrypt with the user's typo secret — must fail (wrong key)
-    await expect(decryptJsonPayload(authHeader!, 'user-typo-secret')).rejects.toThrow()
+  it('does not default to a public backend URL', () => {
+    expect(defaultApiBaseUrl()).toBe('')
   })
 
   it('uses the user secret for a custom backend when set', async () => {
@@ -71,19 +51,16 @@ describe('HttpTelegramApi secret selection', () => {
     const payload = JSON.parse(decrypted)
     expect(payload.apiId).toBe('123')
     expect(payload.apiHash).toBe('abc')
-
-    // Decrypt with the test secret — must fail (wrong key)
-    await expect(decryptJsonPayload(authHeader!, SHARED_BACKEND_TEST_SECRET)).rejects.toThrow()
   })
 
-  it('request bodies are encrypted with the effective secret for the shared backend', async () => {
+  it('request bodies are encrypted with the configured backend secret', async () => {
     stubFetch()
     const api = new HttpTelegramApi(
-      SHARED_BACKEND_URL,
+      'http://localhost:8787',
       () => ({
         telegramApiId: '123',
         telegramApiHash: 'abc',
-        backendSharedSecret: 'user-typo-secret',
+        backendSharedSecret: 'user-secret',
       }),
     )
 
@@ -95,12 +72,25 @@ describe('HttpTelegramApi secret selection', () => {
     expect(body).toEqual({ encryptedPayload: expect.any(String) })
     expect(body.encryptedPayload).toMatch(/^v1\./)
 
-    // Decrypt under the test secret — must succeed and reveal the phone number
-    const decrypted = await decryptJsonPayload(body.encryptedPayload, SHARED_BACKEND_TEST_SECRET)
+    // Decrypt under the configured secret — must succeed and reveal the phone number
+    const decrypted = await decryptJsonPayload(body.encryptedPayload, 'user-secret')
     const payload = JSON.parse(decrypted)
     expect(payload.phone).toBe('+1234567890')
+  })
 
-    // Decrypt under the user's typo secret — must fail
-    await expect(decryptJsonPayload(body.encryptedPayload, 'user-typo-secret')).rejects.toThrow()
+  it('forwards transcription language through the instrumented API wrapper', async () => {
+    let seenLanguage: string | undefined
+    const inner = {
+      async transcribe(_wav: Blob, language?: string) {
+        seenLanguage = language
+        return { text: 'hola', language: language ?? 'auto' }
+      },
+    } as unknown as TelegramApi
+    const api = new InstrumentedTelegramApi(inner)
+
+    const result = await api.transcribe(new Blob(['wav']), 'es')
+
+    expect(seenLanguage).toBe('es')
+    expect(result.language).toBe('es')
   })
 })

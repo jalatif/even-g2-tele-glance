@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { HttpTelegramApi, SHARED_BACKEND_URL, type TelegramApi } from '../api'
+import { HttpTelegramApi, type TelegramApi } from '../api'
 import { EvenHubGlassesBridge } from '../bridge/evenBridge'
 import { TelegramAppController, type ControllerRuntimeConfig, type GlassesBridge } from '../controller/appController'
 import type { AppInput, AppState, ScreenModel } from '../controller/model'
@@ -109,9 +109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (fixtureMode) return true
             const settings = settingsRef.current
             const telegramOk = Boolean(settings.telegramApiId.trim() && settings.telegramApiHash.trim())
-            if (!telegramOk) return false
-            if (settings.apiBaseUrl.startsWith(SHARED_BACKEND_URL)) return true
-            return Boolean(settings.backendSharedSecret.trim())
+            return telegramOk && Boolean(settings.apiBaseUrl.trim()) && Boolean(settings.backendSharedSecret.trim())
           },
         )
         controller = createdController
@@ -244,13 +242,20 @@ export function useApp() {
 function fixtureSettings(current: FrontendConfig): FrontendConfig {
   return {
     ...current,
-    apiBaseUrl: current.apiBaseUrl.trim() || 'http://127.0.0.1:5174',
+    apiBaseUrl: fixtureApiBaseUrl(),
     backendSharedSecret: current.backendSharedSecret.trim() || 'fixture-shared-secret',
     telegramApiId: current.telegramApiId.trim() || '12345',
     telegramApiHash: current.telegramApiHash.trim() || 'fixture-hash',
     telegramSession: current.telegramSession.trim() || 'fixture-session',
     debugEventsEnabled: false,
   }
+}
+
+function fixtureApiBaseUrl() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin
+  }
+  return 'http://127.0.0.1:5174'
 }
 
 function runtimeConfig(config: FrontendConfig): Partial<ControllerRuntimeConfig> {

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="WHISPER_CONDITION_ON_PREVIOUS_TEXT",
     )
+    transcribe_max_upload_bytes: int = Field(default=2_000_000, validation_alias="TRANSCRIBE_MAX_UPLOAD_BYTES")
     teleglance_shared_secret: Optional[str] = Field(default=None, validation_alias="TELEGLANCE_SHARED_SECRET")
 
     model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")

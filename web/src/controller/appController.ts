@@ -1358,6 +1358,7 @@ export class TelegramAppController {
 
   private async refreshAfterSend(state: Extract<AppState, { screen: 'sidebarConfirm' }>, sent: Message) {
     const previousIds = new Set(state.messages.map((message) => String(message.id)))
+    const requestedThreadKey = messageThreadKey(state)
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
       if (attempt > 0) await sleep(1000)
@@ -1369,6 +1370,10 @@ export class TelegramAppController {
         (message) => !previousIds.has(String(message.id)) && String(message.id) !== String(sent.id),
       )
       const current = this.state
+      if ((current.screen === 'sidebarSent' || (current.screen === 'sidebar' && current.focus === 'messages')) &&
+        messageThreadKey(current) !== requestedThreadKey) {
+        return
+      }
       if (current.screen === 'sidebarSent') {
         const messages = hasSent ? refreshed : normalizeMessagePage([...refreshed, sent])
         await this.setState({
@@ -1580,7 +1585,11 @@ export class TelegramAppController {
         const listUnchanged = this.lastRenderedListItems !== undefined
           && this.listItemsMatch(this.lastRenderedListItems, newModel.sidebarItems)
         if (prev.focus === state.focus && newHasPanelBox === this.lastRenderedHasPanelBox && listUnchanged) {
-          await this.bridge.renderSidebarPanel(newModel)
+          if (this.bridge.enqueueSidebarPanel) {
+            this.bridge.enqueueSidebarPanel(newModel)
+          } else {
+            await this.bridge.renderSidebarPanel(newModel)
+          }
           finish()
           return
         }
@@ -1800,12 +1809,14 @@ export class TelegramAppController {
     }
     const state = this.state
     if ((state.screen !== 'sidebar' || state.focus !== 'messages') && state.screen !== 'sidebarSent') return
+    const requestedThreadKey = messageThreadKey(state)
     this.messageRefreshInFlight = true
     try {
       const messages = await this.refreshLatestMessages(state).catch(() => undefined)
       if (!messages || messages.length === 0) return
       const current = this.state
       if ((current.screen !== 'sidebar' || current.focus !== 'messages') && current.screen !== 'sidebarSent') return
+      if (messageThreadKey(current) !== requestedThreadKey) return
 
       const merged = normalizeMessagePage([...current.messages, ...messages])
       if (!hasMessageChanges(current.messages, merged)) return
@@ -1876,6 +1887,8 @@ export class TelegramAppController {
     if (nextHasPanelBox !== this.lastRenderedHasPanelBox) {
       this.lastRenderedHasPanelBox = nextHasPanelBox
       this.enqueueRender(next)
+    } else if (this.bridge.enqueueSidebarPanel) {
+      this.bridge.enqueueSidebarPanel(screenModel(next) as Extract<ScreenModel, { kind: 'sidebar' }>)
     } else if (this.bridge.renderSidebarPanel) {
       await this.bridge.renderSidebarPanel(screenModel(next) as Extract<ScreenModel, { kind: 'sidebar' }>)
     } else {
@@ -1910,18 +1923,20 @@ export class TelegramAppController {
     // Capture the incoming `panelBox` visibility BEFORE applyState mutates `this.state`.
     // The partial-render path only updates `panelBox` content, not its
     // position/size/border, so a visibility flip must trigger a full rebuild.
-    const nextHasPanelBox = state.screen === 'sidebar'
-      ? Boolean((screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>).panelBox)
+    const sidebarModel = state.screen === 'sidebar'
+      ? screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>
+      : undefined
+    const nextHasPanelBox = sidebarModel
+      ? Boolean(sidebarModel.panelBox)
       : false
     this.applyState(state, true)
-    if (state.screen !== 'sidebar') { finish(); return }
+    if (!sidebarModel) { finish(); return }
     if (nextHasPanelBox !== this.lastRenderedHasPanelBox) {
       this.lastRenderedHasPanelBox = nextHasPanelBox
       this.enqueueRender(state)
       finish()
       return
     }
-    const sidebarModel = screenModel(state) as Extract<ScreenModel, { kind: 'sidebar' }>
     if (this.bridge.enqueueSidebarPanel) {
       this.bridge.enqueueSidebarPanel(sidebarModel)
       finish()

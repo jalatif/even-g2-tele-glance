@@ -37,11 +37,10 @@ export type TelegramAuthConfig = {
   sttBaseUrl?: string
 }
 
-export const SHARED_BACKEND_URL = 'https://teleglance.akira-os.net'
-export const SHARED_BACKEND_TEST_SECRET = 'test-secret-token'
+export const BACKEND_URL_PLACEHOLDER = 'http://<BACKEND_URL>:8787'
 
 export function defaultApiBaseUrl() {
-  return localApiBaseUrl() ?? SHARED_BACKEND_URL
+  return localApiBaseUrl() ?? ''
 }
 
 export const API_BASE_URL_STORAGE_KEY = 'teleGlance.apiBaseUrl'
@@ -162,12 +161,9 @@ export class HttpTelegramApi implements TelegramApi {
     })
   }
   /**
-   * Returns the actual shared secret to use for the current baseUrl.
-   * For the shared testing backend, the built-in test secret wins.
-   * For custom backends, returns the user-configured secret or empty string.
+   * Returns the configured shared secret for the current backend.
    */
   private getEffectiveSharedSecret() {
-    if (this.baseUrl.startsWith(SHARED_BACKEND_URL)) return SHARED_BACKEND_TEST_SECRET
     return this.authConfig().backendSharedSecret?.trim() ?? ''
   }
 

@@ -13,6 +13,6 @@
     "Fixture Archive"
   ],
   "panelBody": "Fixture Alpha: Alpha message page contains\n  fixture-alpha-body for\n  startup testing.\n\nMe: Alpha outgoing marker for visual\n  validation.\n\nMe: Fixture transcript",
-  "panelFooter": "Swipe scroll | Click record | Double click back",
+  "panelFooter": "Sent | Swipe scroll | Click record | Double click back",
   "panelBox": null
 }

@@ -84,10 +84,12 @@ class FakeTelegramService:
 class FakeTranscriptionService:
     def __init__(self):
         self.payloads = []
+        self.languages = []
 
     async def transcribe_wav(self, wav_bytes, language=None):
         self.payloads.append(wav_bytes)
-        return TranscriptionResponse(text="send the update", language="en", duration_seconds=0.5)
+        self.languages.append(language)
+        return TranscriptionResponse(text="send the update", language=language or "en", duration_seconds=0.5)
 
 
 class TimeoutTelegramService(FakeTelegramService):
@@ -285,6 +287,48 @@ async def test_transcribe_wraps_pcm_upload_as_wav(fake_services):
     assert response.status_code == 200
     assert decrypted_json(response)["text"] == "send the update"
     assert transcription.payloads[0].startswith(b"RIFF")
+
+
+@pytest.mark.asyncio
+async def test_transcribe_forwards_language(fake_services):
+    _, transcription = fake_services
+    app = secure_test_app(fake_services)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/transcribe",
+            headers=auth_headers(),
+            data={"language": "es"},
+            files={"audio": ("sample.pcm", b"\x00\x00\xff\x7f", "audio/pcm")},
+        )
+
+    assert response.status_code == 200
+    assert decrypted_json(response)["language"] == "es"
+    assert transcription.languages == ["es"]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_rejects_oversize_upload(fake_services):
+    _, transcription = fake_services
+    app = create_app(
+        Settings(
+            TELEGLANCE_SHARED_SECRET="shared-secret",
+            BACKEND_CORS_ORIGINS=[],
+            TRANSCRIBE_MAX_UPLOAD_BYTES=3,
+        )
+    )
+    app.dependency_overrides[get_telegram_service] = lambda: fake_services[0]
+    app.dependency_overrides[get_transcription_service] = lambda: transcription
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/transcribe",
+            headers=auth_headers(),
+            files={"audio": ("sample.pcm", b"\x00\x00\xff\x7f", "audio/pcm")},
+        )
+
+    assert response.status_code == 413
+    assert transcription.payloads == []
 
 
 def secure_test_app(fake_services):

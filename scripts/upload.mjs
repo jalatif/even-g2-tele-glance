@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync, statSync } from 'node:fs'
+import { readFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { randomBytes } from 'node:crypto'
@@ -314,4 +314,3 @@ function makeBoundary() {
 }
 
 uploadPackage()
-

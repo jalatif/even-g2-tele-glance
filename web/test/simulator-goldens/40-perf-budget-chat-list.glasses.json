@@ -5,13 +5,13 @@
   "focus": "sidebar",
   "sidebarSelected": 0,
   "sidebarItems": [
-    "Fixture Alpha",
+    "Fixture Alpha (1)",
     "Fixture Forum (3)",
     "Fixture Ops",
     "Fixture Research",
     "Fixture Archive"
   ],
-  "panelBody": "Fixture Alpha: Alpha message page contains\n  fixture-alpha-body for\n  startup testing.\n\nMe: Alpha outgoing marker for visual\n  validation.",
+  "panelBody": "New fixture message",
   "panelFooter": "Swipe chats | Press open",
   "panelBox": null
 }

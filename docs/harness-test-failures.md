@@ -1,6 +1,6 @@
 # Harness Test Failures — Actionable Issue Tracker
 
-> Historical issue log. See [`validate_prompt_fixes.md`](../validate_prompt_fixes.md)
+> Historical issue log. See [`validate_prompt_fixes.md`](validate_prompt_fixes.md)
 > for the June 10, 2026 validation investigation and current architecture. Older
 > native-list and desktop-screenshot conclusions below should not be treated as
 > current implementation guidance.

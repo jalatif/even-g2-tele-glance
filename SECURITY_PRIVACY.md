@@ -112,7 +112,8 @@ bundle surfaces these URL-shaped strings:
   identifiers in minified code, not network calls.
 
 No `100.x.x.x` Tailscale IP, no `192.168.x.x` LAN IP, no real phone number,
-session string, or API credentials appear in the dist bundle.
+session string, or API credentials appear in the dist bundle. The packaged
+frontend no longer carries a public shared-backend default.
 
 ## 5. Encrypted transport
 

@@ -12,7 +12,7 @@ function AppShell() {
   const { state, startupError, settings, localeVersion } = useApp()
   const l = getLocale()
   void localeVersion // force re-render on locale change
-  const needsSetup = state.screen === 'auth' && (!settings.backendSharedSecret.trim() || !settings.telegramApiId.trim() || !settings.telegramApiHash.trim())
+  const needsSetup = state.screen === 'auth' && (!settings.apiBaseUrl.trim() || !settings.backendSharedSecret.trim() || !settings.telegramApiId.trim() || !settings.telegramApiHash.trim())
   const setupBanner = setupBannerText(state, settings, l)
   const [route, setRoute] = useState<Route>(needsSetup ? 'settings' : 'chat')
   const isMessages = state.screen === 'sidebar' && state.focus === 'messages'
@@ -49,7 +49,7 @@ function setupBannerText(
 ) {
   if (!settings.apiBaseUrl.trim()) return l.errorBackendUnreachable
   if (state.screen === 'error' && state.message === BACKEND_UNREACHABLE_MESSAGE) return l.errorBackendUnreachable
-  if (state.screen === 'auth' && (!settings.backendSharedSecret.trim() || !settings.telegramApiId.trim() || !settings.telegramApiHash.trim())) {
+  if (state.screen === 'auth' && (!settings.apiBaseUrl.trim() || !settings.backendSharedSecret.trim() || !settings.telegramApiId.trim() || !settings.telegramApiHash.trim())) {
     return l.phoneSetupRequired
   }
   return null

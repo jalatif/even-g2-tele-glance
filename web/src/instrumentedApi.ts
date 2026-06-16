@@ -54,8 +54,8 @@ export class InstrumentedTelegramApi implements TelegramApi {
     return this.wrap('markRead', { chatId, request }, () => this.inner.markRead(chatId, request))
   }
 
-  async transcribe(wav: Blob): Promise<TranscriptionResult> {
-    return this.wrap('transcribe', { size: wav.size }, () => this.inner.transcribe(wav))
+  async transcribe(wav: Blob, language?: string): Promise<TranscriptionResult> {
+    return this.wrap('transcribe', { size: wav.size, language }, () => this.inner.transcribe(wav, language))
   }
 
   subscribeUpdates(onUpdate: (update: TelegramUpdate | TelegramTypingUpdate) => void, onError?: (error: Event | Error) => void): () => void {

@@ -74,4 +74,5 @@ export type SendMessageResponse = {
 
 export type TranscriptionResult = {
   text: string
+  language?: string
 }

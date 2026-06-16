@@ -5,6 +5,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
+import app.dependencies as dependencies
 from app.dependencies import get_telegram_service, telegram_credentials_from_encrypted_header
 from app.main import create_app
 from app.config import Settings
@@ -43,6 +44,39 @@ def test_telegram_credentials_decrypt_encrypted_auth():
     assert credentials.api_id == 12345
     assert credentials.api_hash == "abc"
     assert credentials.session_string == "session-string"
+
+
+def test_pending_telegram_services_are_not_cached(monkeypatch):
+    created = []
+
+    class FakeService:
+        def __init__(self, settings, credentials):
+            self.settings = settings
+            self.credentials = credentials
+            created.append(self)
+
+    monkeypatch.setattr(dependencies, "TelethonTelegramService", FakeService)
+    dependencies._telegram_services.clear()
+    settings = Settings(TELEGLANCE_SHARED_SECRET="shared-secret", BACKEND_CORS_ORIGINS=[])
+    monkeypatch.setattr(dependencies, "get_settings", lambda: settings)
+
+    def header(session=""):
+        return encrypt_payload(json.dumps({
+            "apiId": "12345",
+            "apiHash": "abc",
+            "session": session,
+            "ts": int(time.time()),
+        }).encode("utf-8"), "shared-secret")
+
+    first = dependencies.get_telegram_service(header())
+    second = dependencies.get_telegram_service(header())
+    authenticated_first = dependencies.get_telegram_service(header("session-a"))
+    authenticated_second = dependencies.get_telegram_service(header("session-a"))
+
+    assert first is not second
+    assert authenticated_first is authenticated_second
+    assert len(created) == 3
+    dependencies._telegram_services.clear()
 
 
 @pytest.mark.asyncio

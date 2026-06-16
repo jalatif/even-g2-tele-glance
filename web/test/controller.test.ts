@@ -91,6 +91,54 @@ describe('TelegramAppController', () => {
     expect(bridge.render).toHaveBeenCalledTimes(renderCount)
   })
 
+  it('ignores delayed message refresh results after the visible thread changes', async () => {
+    const alphaMessages: Message[] = [
+      { id: '10', sender: 'Alice', text: 'alpha initial', sentAt: '2026-05-29T10:00:00Z' },
+    ]
+    const staleAlphaMessages: Message[] = [
+      ...alphaMessages,
+      { id: '11', sender: 'Alice', text: 'stale alpha refresh', sentAt: '2026-05-29T10:01:00Z' },
+    ]
+    const opsMessages: Message[] = [
+      { id: '20', sender: 'Ops', text: 'ops current thread', sentAt: '2026-05-29T10:00:00Z' },
+    ]
+    const alphaRefresh = deferred<Message[]>()
+    let alphaCalls = 0
+    const api = fakeApi({
+      authorized: true,
+      chats: [
+        { id: '1', title: 'Alice', kind: 'user' },
+        { id: '3', title: 'Ops', kind: 'group' },
+      ],
+    })
+    vi.mocked(api.listMessages).mockImplementation(async (chatId) => {
+      if (String(chatId) === '1') {
+        alphaCalls += 1
+        if (alphaCalls === 1) return alphaMessages
+        return alphaRefresh.promise
+      }
+      if (String(chatId) === '3') return opsMessages
+      return []
+    })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', chat: { id: '1' } })
+
+    const refreshPromise = (controller as unknown as { refreshVisibleMessages: () => Promise<void> }).refreshVisibleMessages()
+    await flushAsync()
+    await controller.dispatch({ type: 'doublePress' })
+    await controller.dispatch({ type: 'swipeDown' })
+    await controller.dispatch({ type: 'press' })
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', chat: { id: '3' } })
+
+    alphaRefresh.resolve(staleAlphaMessages)
+    await refreshPromise
+    expect(controller.snapshot).toMatchObject({ screen: 'sidebar', focus: 'messages', chat: { id: '3' } })
+    expect((controller.snapshot as Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>).messages).toEqual(opsMessages)
+  })
+
   it('forces a full rebuild when the topic-list panelBox visibility flips', async () => {
     const longMessage: Message = {
       id: '200',

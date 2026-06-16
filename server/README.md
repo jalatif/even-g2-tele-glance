@@ -12,7 +12,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 ```
 
-The backend reads the root `.env` for `TELEGLANCE_SHARED_SECRET`. The same value must be entered in TeleGlance Settings. Other settings are optional unless you are tuning CORS or Whisper. Telegram credentials, Backend URL, and STT URL are configured in the frontend Settings page.
+The backend reads the root `.env` for `TELEGLANCE_SHARED_SECRET`. Create `.env` from `.env.example` before running the service and set the same value in TeleGlance Settings. Other settings are optional unless you are tuning CORS or Whisper. Telegram credentials, Backend URL, and STT URL are configured in the frontend Settings page.
 
 `TAILSCALE_ENABLED` defaults to `true`, which allows browser origins from Tailscale `100.64.0.0/10` addresses. If you are not using Tailscale, set `TAILSCALE_ENABLED=false` in root `.env` and use the machine's LAN IP in TeleGlance Settings. The launcher binds the backend to `0.0.0.0:8787`, not localhost-only.
 
@@ -42,6 +42,8 @@ This reduces passive credential/message sniffing risk over HTTP, but it is not a
 ## Run
 
 ```bash
+cp .env.example .env
+# edit .env and set TELEGLANCE_SHARED_SECRET
 scripts/start-backend.sh --reload
 ```
 

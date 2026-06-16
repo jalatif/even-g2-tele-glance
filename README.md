@@ -37,10 +37,11 @@ Phone-code login requires the backend shared secret and API ID/API hash to be co
 
 Most settings live in the phone Settings page: Telegram API ID/hash, Telegram session, backend URL, backend shared secret, optional STT URL, recording minimum, and debug logging. Sensitive Telegram/shared-secret settings are stored in Even App SDK storage on phone builds and browser `localStorage` for simulator/development fallback, not cookies.
 
-The backend needs root `.env` for `TELEGLANCE_SHARED_SECRET`. Copy [.env.example](.env.example), uncomment `TELEGLANCE_SHARED_SECRET`, and set it to the same value used in TeleGlance Settings:
+The backend needs root `.env` for `TELEGLANCE_SHARED_SECRET`. Create it before starting the backend and set it to the same value used in TeleGlance Settings:
 
 ```sh
 cp .env.example .env
+# edit .env and set TELEGLANCE_SHARED_SECRET
 ```
 
 Relevant public settings:
@@ -80,6 +81,7 @@ If Tailscale is not installed or not working, either install/login to Tailscale 
 
 ```sh
 cp .env.example .env
+# edit .env and set TELEGLANCE_SHARED_SECRET
 echo "TAILSCALE_ENABLED=false" >> .env
 ```
 
@@ -102,6 +104,8 @@ Use this path if TeleGlance is already installed on your phone/glasses and you o
 ```sh
 git clone https://github.com/jalatif/even-g2-tele-glance.git
 cd even-g2-tele-glance
+cp .env.example .env
+# edit .env and set TELEGLANCE_SHARED_SECRET
 cd server
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
@@ -172,7 +176,7 @@ npm run configure:tailscale
 npm run dev:tailscale
 ```
 
-`configure:tailscale` detects the machine's Tailscale IP and substitutes the runtime placeholder (`http://<BACKEND_URL>:8787`) in `app.json`'s `network.whitelist` for that IP, so the resulting `.ehpk` only carries a per-developer IP at packaging time. It also prints the Backend URL to enter in TeleGlance Settings.
+`configure:tailscale` detects the machine's Tailscale IP and substitutes the runtime placeholder (`http://<BACKEND_URL>:8787`) in `app.json`'s `network.whitelist` for that origin before packaging. If you are not using Tailscale, set `BACKEND_ORIGIN` to the exact backend origin you plan to ship, rerun the configurator, and repack before sideloading.
 
 If backend requests fail with CORS errors while using a custom URL, prefer Tailscale first. If you must use another private network range, add a regex override in root `.env`, for example:
 
@@ -212,7 +216,7 @@ glasses screenshot endpoint returned a blank framebuffer:
 node scripts/simulator-flow.mjs --fast --skip-latency-check
 ```
 
-See [`validate_prompt_fixes.md`](validate_prompt_fixes.md) for the June 10, 2026
+See [`validate_prompt_fixes.md`](docs/validate_prompt_fixes.md) for the June 10, 2026
 simulator investigation, implemented fixes, and remaining harness work.
 
 ## Package For G2

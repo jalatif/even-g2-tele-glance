@@ -1,7 +1,7 @@
 # TeleGlance Simulator Harness — Learnings & Behavior Coverage
 
 > Historical snapshot from June 2, 2026. Superseded by
-> [`validate_prompt_fixes.md`](../validate_prompt_fixes.md) for the current input,
+> [`validate_prompt_fixes.md`](validate_prompt_fixes.md) for the current input,
 > rendering, and harness architecture. In particular, blank glasses captures are
 > no longer replaced with desktop screenshots, and chat/topic navigation no longer
 > relies on a visible native list.
