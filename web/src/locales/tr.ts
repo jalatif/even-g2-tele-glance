@@ -136,6 +136,8 @@ const tr: LocaleStrings = {
   settingsBackendSecret: 'Arka uç paylaşılan sırrı',
   settingsBackendSecretHint: 'Gerekli. Arka uç kök dizinindeki .env dosyasında TELEGLANCE_SHARED_SECRET ile tamamen aynı değeri ayarlayın. Sır yerel olarak saklanır ve arka uç API yüklerini şifrelemek için her iki tarafta da kullanılır; düz metin olarak gönderilmez.',
   settingsBackendSecretPlaceholder: 'Gerekli',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'STT Sunucu URL\'si (İsteğe Bağlı)',
   settingsSttHint: 'Arka uç URL\'sini kullanmak için boş bırakın. Özel bir STT sunucusu aynı /api/transcribe uç noktasını sağlamalıdır.',
   settingsDebugEvents: 'Hata ayıklama olay günlüğü',

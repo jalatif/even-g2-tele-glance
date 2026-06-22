@@ -9,7 +9,7 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import type { GlassesBridge } from '../controller/appController'
 import type { AppInput, ScreenModel } from '../controller/model'
-import { defaultApiBaseUrl, type TelegramAuthConfig } from '../api'
+import { defaultApiBaseUrl, effectiveBackendSharedSecret, type TelegramAuthConfig } from '../api'
 import { encryptedTelegramAuthHeader, encryptJsonPayload } from '../secureAuth'
 import {
   isTeleGlanceFixtureMode,
@@ -912,15 +912,17 @@ function visibleListWindow(items: string[], selectedIndex: number, maxVisible: n
 async function logHardwareEvent(raw: unknown, mapped: AppInput | undefined, authConfig?: () => TelegramAuthConfig) {
   try {
     const config = authConfig?.()
-    const encryptedAuth = config ? await encryptedTelegramAuthHeader(config) : null
-    if (!encryptedAuth || !config?.backendSharedSecret?.trim()) return
+    const sharedSecret = config ? effectiveBackendSharedSecret(config, defaultApiBaseUrl()) : ''
+    const effectiveConfig = config ? { ...config, backendSharedSecret: sharedSecret } : undefined
+    const encryptedAuth = effectiveConfig ? await encryptedTelegramAuthHeader(effectiveConfig) : null
+    if (!encryptedAuth || !sharedSecret) return
     const body = JSON.stringify({
       source: 'even-hub',
       buildVersion: APP_BUILD_VERSION,
       raw: summarizeForDebug(raw),
       mapped: mapped ?? null,
     })
-    const encryptedPayload = await encryptJsonPayload(body, config.backendSharedSecret)
+    const encryptedPayload = await encryptJsonPayload(body, sharedSecret)
     await fetch(`${defaultApiBaseUrl()}/api/debug/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-TeleGlance-Auth': encryptedAuth },

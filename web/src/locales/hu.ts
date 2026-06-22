@@ -136,6 +136,8 @@ const hu: LocaleStrings = {
   settingsBackendSecret: 'Backend megosztott titok',
   settingsBackendSecretHint: 'Kötelező. Állítsa be pontosan ugyanazt az értéket a backend gyökér .env fájljában TELEGLANCE_SHARED_SECRET néven. A titok helyben tárolódik, és mindkét oldalon a backend API adatainak titkosítására szolgál; nem küldjük el nyers szövegként.',
   settingsBackendSecretPlaceholder: 'Kötelező',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'STT szerver URL (opcionális)',
   settingsSttHint: 'Hagyja üresen a backend URL használatához. Egy egyedi STT szervernek ugyanazt az /api/transcribe végpontot kell biztosítania.',
   settingsDebugEvents: 'Hibakeresési események naplózása',

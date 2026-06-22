@@ -136,6 +136,8 @@ const fi: LocaleStrings = {
   settingsBackendSecret: 'Taustajärjestelmän jaettu salaisuus',
   settingsBackendSecretHint: 'Pakollinen. Aseta täsmälleen sama arvo taustajärjestelmän juurikansion .env-tiedostoon muuttujaksi TELEGLANCE_SHARED_SECRET. Salaisuus tallennetaan paikallisesti ja sitä käytetään molemmin puolin taustajärjestelmän API-hyötykuormien salaamiseen; sitä ei lähetetä selkokielisenä.',
   settingsBackendSecretPlaceholder: 'Pakollinen',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'STT-palvelimen URL (Valinnainen)',
   settingsSttHint: 'Jätä tyhjäksi käyttääksesi taustajärjestelmän URL-osoitetta. Mukautetun STT-palvelimen on tarjottava sama /api/transcribe-päätepiste.',
   settingsDebugEvents: 'Vianmääritystapahtumien lokitus',

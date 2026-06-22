@@ -525,7 +525,7 @@ describe('screenModel', () => {
     expect(en.phoneSending).toBe('Sending...')
     expect(en.phoneVerifying).toBe('Verifying...')
     expect(en.phoneSendingLoginCode).toBe('Sending...')
-    expect(en.phoneSetupRequired).toBe('Backend shared secret, Telegram API ID, and Telegram API hash are required. Fill them in Settings using the setup instructions first.')
+    expect(en.phoneSetupRequired).toBe('Backend URL, Telegram API ID, and Telegram API hash are required. Custom backends also require Backend shared secret. Fill them in Settings using the setup instructions first.')
   })
 
   it('model correctly uses locale for typing footer and status text', () => {

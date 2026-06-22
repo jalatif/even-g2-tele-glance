@@ -136,6 +136,8 @@ const cs: LocaleStrings = {
   settingsBackendSecret: 'Tajemství sdílení backendu',
   settingsBackendSecretHint: 'Povinné. Nastavte přesně stejnou hodnotu v backend root .env jako TELEGLANCE_SHARED_SECRET. Tajemství je uloženo lokálně a používáno na obou stranách k šifrování backend API užitečných zatížení; není odesláno jako prostý text.',
   settingsBackendSecretPlaceholder: 'Vyžadováno',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'Adresa URL serveru STT (volitelná)',
   settingsSttHint: 'Chcete-li použít adresu URL backendu, ponechte pole prázdné. Vlastní STT server musí vystavit stejný /api/transkripční koncový bod.',
   settingsDebugEvents: 'Protokolování událostí ladění',

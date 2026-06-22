@@ -136,6 +136,8 @@ const sk: LocaleStrings = {
   settingsBackendSecret: 'Zdieľaný kľúč backendu',
   settingsBackendSecretHint: 'Vyžaduje sa. Nastavte presne rovnakú hodnotu v koreňovom súbore .env backendu ako TELEGLANCE_SHARED_SECRET. Tento kľúč sa ukladá lokálne a používa sa na oboch stranách na šifrovanie dát API backendu; neposiela sa ako čistý text.',
   settingsBackendSecretPlaceholder: 'Vyžaduje sa',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'URL adresa STT servera (voliteľné)',
   settingsSttHint: 'Ponechajte prázdne, ak chcete použiť URL adresu backendu. Vlastný STT server musí poskytovať rovnaký koncový bod /api/transcribe.',
   settingsDebugEvents: 'Zaznamenávanie ladiacich udalostí',

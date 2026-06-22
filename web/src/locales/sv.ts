@@ -136,6 +136,8 @@ const sv: LocaleStrings = {
   settingsBackendSecret: 'Delad backend-hemlighet',
   settingsBackendSecretHint: 'Krävs. Sätt exakt samma värde i backendens root-.env som TELEGLANCE_SHARED_SECRET. Hemligheten lagras lokalt och används på båda sidor för att kryptera backend-API-data; den skickas inte i klartext.',
   settingsBackendSecretPlaceholder: 'Krävs',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'STT-server-URL (Valfritt)',
   settingsSttHint: 'Lämna tomt för att använda backend-URL:en. En anpassad STT-server måste exponera samma /api/transcribe-slutpunkt.',
   settingsDebugEvents: 'Loggning av felsökningshändelser',

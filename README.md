@@ -222,11 +222,11 @@ simulator investigation, implemented fixes, and remaining harness work.
 ## Package For G2
 
 ```sh
-npm run build:tailscale --prefix web
+npm run build --prefix web
 npx --yes @evenrealities/evenhub-cli pack app.json web/dist -o tele-glance-<version>.ehpk
 ```
 
-The `.ehpk` contains only the frontend and manifest. Users must still run their own backend and configure its reachable URL in Settings.
+The default `.ehpk` contains only the frontend and manifest and keeps the shared testing backend available for onboarding. For a custom self-hosted or Tailscale backend package, run `npm run configure:tailscale --prefix web` first, then rebuild and pack.
 
 ## Debugging
 

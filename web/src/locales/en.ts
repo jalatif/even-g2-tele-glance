@@ -98,7 +98,7 @@ const en = {
   phoneBack: 'Back',
   phoneBackToChat: 'Back to chat',
   phoneOpenSettings: 'Open settings',
-  phoneSetupRequired: 'Backend shared secret, Telegram API ID, and Telegram API hash are required. Fill them in Settings using the setup instructions first.',
+  phoneSetupRequired: 'Backend URL, Telegram API ID, and Telegram API hash are required. Custom backends also require Backend shared secret. Fill them in Settings using the setup instructions first.',
   // ── Error / auth messages (phone + glasses) ──
   errorBackendUnreachable:
     'Backend is not reachable. Fill Backend URL in Settings and make sure the backend server is running.',
@@ -160,6 +160,8 @@ const en = {
   settingsBackendSecret: 'Backend shared secret',
   settingsBackendSecretHint: 'Required. Set the exact same value in backend root .env as TELEGLANCE_SHARED_SECRET. The secret is stored locally and used on both sides to encrypt backend API payloads; it is not sent as plaintext.',
   settingsBackendSecretPlaceholder: 'Required',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'STT Server Url (Optional)',
   settingsSttHint: 'Leave blank to use the backend URL. A custom STT server must expose the same /api/transcribe endpoint.',
   settingsDebugEvents: 'Debug event logging',

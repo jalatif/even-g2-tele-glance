@@ -136,6 +136,8 @@ const ca: LocaleStrings = {
   settingsBackendSecret: 'Secret compartit del dorsal',
   settingsBackendSecretHint: 'Obligatori. Defineix exactament el mateix valor a l\'arrel de fons .env que TELEGLANCE_Shared_SECRET. El secret s\'emmagatzema localment i s\'utilitza en ambdós costats per xifrar les càrregues útils de l\'API de fons; no s\'envia com a text pla.',
   settingsBackendSecretPlaceholder: 'Obligatori',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'URL del servidor STT (opcional)',
   settingsSttHint: 'Deixeu-ho en blanc per utilitzar l\'URL del backend. Un servidor STT personalitzat ha d\'exposar el mateix punt final/api/transcribe.',
   settingsDebugEvents: 'Registre d\'esdeveniments de depuració',

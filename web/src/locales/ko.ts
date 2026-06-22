@@ -162,6 +162,8 @@ const ko: LocaleStrings = {
   settingsBackendSecret: '백엔드 공유 암호',
   settingsBackendSecretHint: '필수 항목입니다. 백엔드 루트 .env 파일의 TELEGLANCE_SHARED_SECRET과 동일한 값을 설정하세요. 이 비밀번호는 로컬에 저장되며 백엔드 API 페이로드 암호화에 사용됩니다. 평문으로 전송되지 않습니다.',
   settingsBackendSecretPlaceholder: '필수 입력',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'STT 서버 URL (선택 사항)',
   settingsSttHint: '백엔드 URL을 사용하려면 비워 두세요. 자체 STT 서버는 동일한 /api/transcribe 엔드포인트를 제공해야 합니다.',
   settingsDebugEvents: '디버그 이벤트 로깅',

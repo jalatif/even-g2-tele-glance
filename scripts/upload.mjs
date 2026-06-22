@@ -293,7 +293,7 @@ function findEhpk() {
 // ── Build + pack ──────────────────────────────────────────
 function buildAndPack() {
   console.log('🔨 Building frontend...')
-  execSync('npm run build:tailscale --prefix web', {
+  execSync('npm run build --prefix web', {
     cwd: repoRoot,
     stdio: 'inherit',
   })

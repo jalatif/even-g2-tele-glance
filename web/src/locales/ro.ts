@@ -136,6 +136,8 @@ const ro: LocaleStrings = {
   settingsBackendSecret: 'Secret partajat backend',
   settingsBackendSecretHint: 'Obligatoriu. Setați exact aceeași valoare în fișierul .env din rădăcina backend-ului ca TELEGLANCE_SHARED_SECRET. Secretul este stocat local și utilizat de ambele părți pentru a cripta payload-urile API-ului backend; nu este trimis ca text simplu.',
   settingsBackendSecretPlaceholder: 'Obligatoriu',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'URL Server STT (Opțional)',
   settingsSttHint: 'Lăsați gol pentru a utiliza URL-ul backend-ului. Un server STT personalizat trebuie să expună același endpoint /api/transcribe.',
   settingsDebugEvents: 'Jurnalizare evenimente debug',

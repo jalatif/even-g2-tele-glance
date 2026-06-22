@@ -136,6 +136,8 @@ const vi: LocaleStrings = {
   settingsBackendSecret: 'Mật mã chia sẻ backend',
   settingsBackendSecretHint: 'Bắt buộc. Đặt cùng một giá trị trong tệp .env gốc của backend làm TELEGLANCE_SHARED_SECRET. Mật mã được lưu trữ cục bộ và được sử dụng ở cả hai phía để mã hóa dữ liệu API backend; nó không được gửi dưới dạng văn bản thuần túy.',
   settingsBackendSecretPlaceholder: 'Bắt buộc',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'URL máy chủ STT (Tùy chọn)',
   settingsSttHint: 'Để trống để sử dụng URL backend. Máy chủ STT tùy chỉnh phải cung cấp cùng một endpoint /api/transcribe.',
   settingsDebugEvents: 'Ghi nhật ký sự kiện gỡ lỗi',

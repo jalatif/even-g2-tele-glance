@@ -162,6 +162,8 @@ const zh: LocaleStrings = {
   settingsBackendSecret: '后端共享密钥',
   settingsBackendSecretHint: '必填。在后端根目录的 .env 文件中设置与 TELEGLANCE_SHARED_SECRET 完全相同的值。该密钥保存在本地，双方用于加密后端 API 负载；不会以明文发送。',
   settingsBackendSecretPlaceholder: '必填',
+  settingsSharedBackendSecretPlaceholder: 'Not used for testing backend',
+  settingsSharedBackendWarning: 'Use https://teleglance.akira-os.net only for testing. No user secret is needed for this backend. The testing URL may be unstable; switch to your own backend before relying on it.',
   settingsSttUrl: 'STT 服务器 URL（选填）',
   settingsSttHint: '留空则使用后端 URL。自定义 STT 服务器必须提供相同的 /api/transcribe 接口。',
   settingsDebugEvents: '调试事件日志',

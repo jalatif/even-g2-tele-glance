@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BACKEND_URL_PLACEHOLDER } from '../api'
+import { isSharedBackendUrl, SHARED_BACKEND_URL } from '../api'
 import { getLocale, LANGUAGE_NAMES } from '../locales/index'
 import { useApp } from '../contexts/AppContext'
 import type { FrontendConfig } from '../storage'
@@ -23,6 +23,7 @@ export function SettingsScreen({ buildVersion }: { buildVersion: string }) {
   const l = getLocale()
   const hasTelegramCredentials = Boolean(draft.telegramApiId.trim() && draft.telegramApiHash.trim())
   const hasBackendSecret = Boolean(draft.backendSharedSecret.trim())
+  const isSharedBackend = isSharedBackendUrl(draft.apiBaseUrl)
   const hasTelegramSession = Boolean(draft.telegramSession.trim())
   const isConnected = state.screen !== 'auth' && state.screen !== 'loading' && state.screen !== 'error'
 
@@ -95,13 +96,19 @@ scripts/start-backend.sh --reload`}</code></pre>
         </details>
         <label>
           <span>{l.settingsBackendUrl}</span>
-          <input value={draft.apiBaseUrl} onChange={(event) => update('apiBaseUrl', event.target.value)} placeholder={BACKEND_URL_PLACEHOLDER} />
+          <input value={draft.apiBaseUrl} onChange={(event) => update('apiBaseUrl', event.target.value)} placeholder={SHARED_BACKEND_URL} />
         </label>
         <label>
           <span>{l.settingsBackendSecret}</span>
-          <input type="password" value={draft.backendSharedSecret} onChange={(event) => update('backendSharedSecret', event.target.value)} placeholder={l.settingsBackendSecretPlaceholder} />
+          <input type="password" value={draft.backendSharedSecret} onChange={(event) => update('backendSharedSecret', event.target.value)} placeholder={isSharedBackend ? l.settingsSharedBackendSecretPlaceholder : l.settingsBackendSecretPlaceholder} />
         </label>
-        <p className="hint">{l.settingsBackendSecretHint}</p>
+        {isSharedBackend ? (
+          <p className="testing-banner">
+            <span className="asterisk">*</span> {l.settingsSharedBackendWarning}
+          </p>
+        ) : (
+          <p className="hint">{l.settingsBackendSecretHint}</p>
+        )}
       </section>
 
       <section className="phone-panel settings-group">

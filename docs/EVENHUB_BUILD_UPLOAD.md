@@ -19,7 +19,7 @@ node scripts/upload.mjs --dry-run
 
 2. **app.json**: Must exist at repo root with `package_id` and `version` fields set. The script reads `version` to discover the matching `.ehpk` file.
 
-3. **Built `.ehpk`**: Either let the script build it (`npm run build:tailscale --prefix web` + `evenhub pack`), or pass `--skip-build` if you already have the file.
+3. **Built `.ehpk`**: Either let the script build it (`npm run build --prefix web` + `evenhub pack`), or pass `--skip-build` if you already have the file.
 
 ## What happens
 
@@ -27,7 +27,9 @@ The script performs up to 3 steps:
 
 ### Step 1 — Build + Pack (unless `--skip-build`)
 
-Runs `npm run build:tailscale --prefix web` followed by `npx @evenrealities/evenhub-cli pack app.json web/dist -o tele-glance-<version>.ehpk`.
+Runs `npm run build --prefix web` followed by `npx @evenrealities/evenhub-cli pack app.json web/dist -o tele-glance-<version>.ehpk`.
+
+The default upload package keeps the shared testing backend (`https://teleglance.akira-os.net`) in `app.json`. Use `npm run configure:tailscale --prefix web` only for deliberate local device-test packages that should bake in a custom reachable backend origin.
 
 The `.ehpk` filename always matches `app.json`'s `version`. Bump `app.json` version before building.
 
