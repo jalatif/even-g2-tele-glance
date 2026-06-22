@@ -1,10 +1,45 @@
 import { describe, expect, it } from 'vitest'
-import { messageScrollUnitCount, screenModel } from '../src/controller/model'
+import { messageScrollUnitCount, nextMessageScrollOffset, screenModel } from '../src/controller/model'
 import type { AppState } from '../src/controller/model'
+import type { Message } from '../src/types'
 import { getLocale, setLocale } from '../src/locales'
 import ja from '../src/locales/ja'
 import en from '../src/locales/en'
 const encoder = new TextEncoder()
+
+function messageState(messages: Message[], scrollOffset = 0): AppState {
+  return {
+    screen: 'sidebar', focus: 'messages',
+    chats: [], selectedChatIndex: 0,
+    chat: { id: '1', title: 'Project', kind: 'group' },
+    messages,
+    scrollOffset,
+  }
+}
+
+function modelAt(messages: Message[], scrollOffset: number) {
+  const model = screenModel(messageState(messages, scrollOffset))
+  expect(model.kind).toBe('sidebar')
+  return model
+}
+
+function boxPart(messages: Message[], scrollOffset: number) {
+  const model = modelAt(messages, scrollOffset)
+  const heading = model.kind === 'sidebar' ? model.panelBox?.heading : undefined
+  const match = heading?.match(/^(.*?)\s+(\d+)\/(\d+)$/)
+  if (!match) return undefined
+  return { sender: match[1], part: Number(match[2]), total: Number(match[3]), heading }
+}
+
+function longText(seed: string, repeats = 5) {
+  return Array.from({ length: repeats }, (_, group) =>
+    `${seed}-${group} alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega`
+  ).join(' ')
+}
+
+function wordCountForTest(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean).length
+}
 
 describe('screenModel', () => {
   it('keeps message text under the Even Hub 999 byte text limit', () => {
@@ -55,6 +90,168 @@ describe('screenModel', () => {
     if (scrolled.kind === 'sidebar') {
       // scrollOffset 1 is Alice's short message
       expect(scrolled.panelBody).toContain('Alice')
+    }
+  })
+
+  it('navigates boxed message chunks in reading order with adjacent-message boundaries', () => {
+    const state: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [
+        { id: '1', sender: 'Alice', text: 'older note' },
+        { id: '2', sender: 'Bob', text: 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega '.repeat(3) },
+        { id: '3', sender: 'Carol', text: 'newer note' },
+      ],
+    }
+
+    const newest = screenModel({ ...state, scrollOffset: 0 })
+    expect(newest.kind).toBe('sidebar')
+    if (newest.kind === 'sidebar') expect(newest.panelBody).toContain('Carol')
+
+    const firstBoxOffset = nextMessageScrollOffset(state.messages, 0, 'up')
+    const firstBox = screenModel({ ...state, scrollOffset: firstBoxOffset })
+    expect(firstBox.kind).toBe('sidebar')
+    if (firstBox.kind === 'sidebar') {
+      expect(firstBox.panelBox?.heading).toContain('1/')
+      expect(firstBox.panelBox?.content).toContain('alpha')
+    }
+
+    const secondBoxOffset = nextMessageScrollOffset(state.messages, firstBoxOffset, 'down')
+    const secondBox = screenModel({ ...state, scrollOffset: secondBoxOffset })
+    expect(secondBox.kind).toBe('sidebar')
+    if (secondBox.kind === 'sidebar') {
+      expect(secondBox.panelBox?.heading).toContain('2/')
+      expect(nextMessageScrollOffset(state.messages, secondBoxOffset, 'up')).toBe(firstBoxOffset)
+    }
+
+    const thirdBoxOffset = nextMessageScrollOffset(state.messages, secondBoxOffset, 'down')
+    const thirdBox = screenModel({ ...state, scrollOffset: thirdBoxOffset })
+    expect(thirdBox.kind).toBe('sidebar')
+    if (thirdBox.kind === 'sidebar') {
+      expect(thirdBox.panelBox?.heading).toContain('3/')
+      expect(nextMessageScrollOffset(state.messages, thirdBoxOffset, 'up')).toBe(secondBoxOffset)
+    }
+
+    expect(nextMessageScrollOffset(state.messages, firstBoxOffset, 'up')).toBe(messageScrollUnitCount(state.messages) - 1)
+    const olderOffset = messageScrollUnitCount(state.messages) - 1
+    const older = screenModel({ ...state, scrollOffset: olderOffset })
+    expect(older.kind).toBe('sidebar')
+    if (older.kind === 'sidebar') expect(older.panelBody).toContain('Alice')
+    expect(nextMessageScrollOffset(state.messages, olderOffset, 'down')).toBe(firstBoxOffset)
+
+    let lastBoxOffset = firstBoxOffset
+    while (true) {
+      const next = nextMessageScrollOffset(state.messages, lastBoxOffset, 'down')
+      if (next === 0) break
+      lastBoxOffset = next
+    }
+    expect(nextMessageScrollOffset(state.messages, lastBoxOffset, 'down')).toBe(0)
+  })
+
+  it('keeps navigation ordering correct across mixed small messages and multi-chunk boxes', () => {
+    const messages: Message[] = [
+      { id: 'old-small', sender: 'Alice', text: 'old small message' },
+      { id: 'old-box', sender: 'Bob', text: longText('old-box', 4) },
+      { id: 'middle-small', sender: 'Carol', text: 'middle small message' },
+      { id: 'new-box', sender: 'Dana', text: longText('new-box', 4) },
+      { id: 'new-small', sender: 'Eve', text: 'new small message' },
+    ]
+
+    const newest = modelAt(messages, 0)
+    if (newest.kind === 'sidebar') expect(newest.panelBody).toContain('Eve')
+
+    const newBoxFirst = nextMessageScrollOffset(messages, 0, 'up')
+    expect(boxPart(messages, newBoxFirst)).toMatchObject({ sender: 'Dana', part: 1 })
+
+    const newBoxSecond = nextMessageScrollOffset(messages, newBoxFirst, 'down')
+    expect(boxPart(messages, newBoxSecond)).toMatchObject({ sender: 'Dana', part: 2 })
+
+    const newBoxThird = nextMessageScrollOffset(messages, newBoxSecond, 'down')
+    expect(boxPart(messages, newBoxThird)).toMatchObject({ sender: 'Dana', part: 3 })
+    expect(nextMessageScrollOffset(messages, newBoxThird, 'up')).toBe(newBoxSecond)
+
+    const middleSmall = nextMessageScrollOffset(messages, newBoxFirst, 'up')
+    const middleModel = modelAt(messages, middleSmall)
+    if (middleModel.kind === 'sidebar') expect(middleModel.panelBody).toContain('Carol')
+    expect(nextMessageScrollOffset(messages, middleSmall, 'down')).toBe(newBoxFirst)
+
+    const oldBoxFirst = nextMessageScrollOffset(messages, middleSmall, 'up')
+    expect(boxPart(messages, oldBoxFirst)).toMatchObject({ sender: 'Bob', part: 1 })
+    expect(boxPart(messages, nextMessageScrollOffset(messages, oldBoxFirst, 'down'))).toMatchObject({ sender: 'Bob', part: 2 })
+
+    const oldSmall = nextMessageScrollOffset(messages, oldBoxFirst, 'up')
+    const oldSmallModel = modelAt(messages, oldSmall)
+    if (oldSmallModel.kind === 'sidebar') expect(oldSmallModel.panelBody).toContain('Alice')
+    expect(nextMessageScrollOffset(messages, oldSmall, 'down')).toBe(oldBoxFirst)
+  })
+
+  it('fuzzes mixed small/large message navigation around every boxed message', () => {
+    let seed = 0x5eed
+    const nextRand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 0x100000000
+    }
+
+    for (let run = 0; run < 25; run++) {
+      const messages: Message[] = []
+      const count = 6 + Math.floor(nextRand() * 5)
+      for (let index = 0; index < count; index++) {
+        const makeLarge = index > 0 && index < count - 1 && nextRand() > 0.45
+        messages.push({
+          id: `run-${run}-msg-${index}`,
+          sender: makeLarge ? `Box${run}-${index}` : `Small${run}-${index}`,
+          text: makeLarge ? longText(`run-${run}-msg-${index}`, 4 + Math.floor(nextRand() * 3)) : `small-${run}-${index}`,
+        })
+      }
+      if (!messages.some((message) => wordCountForTest(message.text) > 25)) {
+        messages.splice(2, 0, { id: `run-${run}-forced-box`, sender: `Box${run}-forced`, text: longText(`forced-${run}`, 5) })
+      }
+
+      const maxOffset = messageScrollUnitCount(messages) - 1
+      for (let offset = 0; offset <= maxOffset; offset++) {
+        const first = boxPart(messages, offset)
+        if (!first || first.part !== 1 || first.total < 3) continue
+
+        const offsets = [offset]
+        for (let part = 2; part <= first.total; part++) {
+          const nextOffset = nextMessageScrollOffset(messages, offsets[offsets.length - 1], 'down')
+          const nextPart = boxPart(messages, nextOffset)
+          expect(nextPart).toMatchObject({ sender: first.sender, part, total: first.total })
+          offsets.push(nextOffset)
+        }
+
+        const afterLast = nextMessageScrollOffset(messages, offsets[offsets.length - 1], 'down')
+        const afterLastPart = boxPart(messages, afterLast)
+        expect(afterLast === offsets[offsets.length - 1] || afterLastPart?.sender !== first.sender).toBe(true)
+
+        for (let index = offsets.length - 1; index > 0; index--) {
+          expect(nextMessageScrollOffset(messages, offsets[index], 'up')).toBe(offsets[index - 1])
+        }
+
+        const beforeFirst = nextMessageScrollOffset(messages, offset, 'up')
+        const beforeFirstPart = boxPart(messages, beforeFirst)
+        expect(beforeFirst === offset || beforeFirstPart?.sender !== first.sender).toBe(true)
+        if (beforeFirst !== offset) {
+          expect(nextMessageScrollOffset(messages, beforeFirst, 'down')).toBe(offset)
+        }
+      }
+    }
+  })
+
+  it('renders a placeholder instead of an empty sender-only message', () => {
+    const state: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: [{ id: '1', sender: 'Akira', text: '' }],
+    }
+
+    const model = screenModel(state)
+
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelBody).toContain('Akira: [Unsupported message]')
     }
   })
 

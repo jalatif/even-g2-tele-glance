@@ -35,6 +35,7 @@ const it: LocaleStrings = {
   sanitizeYellow: '[giallo]',
   senderMe: 'Io',
   senderUnknown: 'Sconosciuto',
+  messageUnsupported: '[Messaggio non supportato]',
   statusLoadingMessages: 'Caricamento messaggi...',
   statusLoadingOlderMessages: 'Caricamento precedenti...',
   statusNewReply: 'Nuova risposta',

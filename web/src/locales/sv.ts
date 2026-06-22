@@ -38,6 +38,7 @@ const sv: LocaleStrings = {
   confirmCancel: 'Avbryt',
   senderMe: 'Jag',
   senderUnknown: 'Okänd',
+  messageUnsupported: '[Meddelande stöds inte]',
   sanitizeRed: '[röd]',
   sanitizeYellow: '[gul]',
   sanitizeGreen: '[grön]',

@@ -38,6 +38,7 @@ const pl: LocaleStrings = {
   confirmCancel: 'Anuluj',
   senderMe: 'Ja',
   senderUnknown: 'Nieznany',
+  messageUnsupported: '[Nieobsługiwana wiadomość]',
   sanitizeRed: '[czerwony]',
   sanitizeYellow: '[żółty]',
   sanitizeGreen: '[zielony]',

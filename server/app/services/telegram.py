@@ -155,13 +155,27 @@ def normalize_message(message: Any, entities_by_peer: Optional[dict[int, Any]] =
     if sender is None and entities_by_peer:
         sender = entities_by_peer.get(_message_peer_key(message))
     sender_name = _display_name(sender) if sender is not None else None
+    text = _message_readable_text(message)
     return MessageSummary(
         id=int(getattr(message, "id")),
         sender=sender_name,
-        text=str(getattr(message, "message", "") or ""),
+        text=text,
         sent_at=getattr(message, "date", None),
         outgoing=bool(getattr(message, "out", False)),
     )
+
+
+def _message_readable_text(message: Any) -> str:
+    text = str(getattr(message, "message", None) or getattr(message, "raw_text", None) or "").strip()
+    if not _message_has_unsupported_content(message):
+        return text
+    if text:
+        return f"{text} [unsupported content]"
+    return "[unsupported content]"
+
+
+def _message_has_unsupported_content(message: Any) -> bool:
+    return bool(getattr(message, "media", None) is not None or getattr(message, "action", None) is not None)
 
 
 def normalize_update_message(message: Any, chat_id: Optional[int] = None) -> TelegramUpdate:
@@ -172,7 +186,7 @@ def normalize_update_message(message: Any, chat_id: Optional[int] = None) -> Tel
     )
 
 
-def normalize_chat_action(event: Any) -> Optional[TypingUpdate]:
+def normalize_chat_action(event: Any, user_override: Any = None) -> Optional[TypingUpdate]:
     action_message = getattr(event, "action_message", None)
     action = action_message if action_message is not None else event
     action_value = getattr(action, "action", None)
@@ -191,9 +205,12 @@ def normalize_chat_action(event: Any) -> Optional[TypingUpdate]:
         else:
             return None
 
-    user = getattr(event, "user", None)
     user_name = None
-    if user is not None:
+    if isinstance(user_override, str):
+        user_name = user_override
+    else:
+        user = user_override if user_override is not None else getattr(event, "user", None)
+    if user_name is None and user is not None:
         user_name = getattr(user, "first_name", None) or getattr(user, "username", None)
     if not user_name:
         user_id = getattr(event, "user_id", None)
@@ -304,6 +321,7 @@ class TelethonTelegramService:
         self._update_queues: set[asyncio.Queue[Union[TelegramUpdate, TypingUpdate]]] = set()
         self._updates_registered = False
         self._entity_cache: dict[int, Any] = {}
+        self._user_name_cache: dict[int, str] = {}
         self._phone_code_hashes: dict[str, str] = {}
 
     @property
@@ -396,7 +414,7 @@ class TelethonTelegramService:
     async def _handle_chat_action(self, event: Any) -> None:
         if not self._update_queues:
             return
-        update = normalize_chat_action(event)
+        update = normalize_chat_action(event, self._typing_user_override(event))
         if update is None:
             return
         for queue in list(self._update_queues):
@@ -404,6 +422,32 @@ class TelethonTelegramService:
                 queue.put_nowait(update)
             except asyncio.QueueFull:
                 pass
+
+    def _typing_user_override(self, event: Any) -> Any:
+        user = getattr(event, "user", None)
+        if user is not None:
+            self._cache_user_name(user)
+            return user
+        user_id = getattr(event, "user_id", None)
+        if user_id is None:
+            return None
+        return self._user_name_cache.get(int(user_id))
+
+    def _cache_user_name(self, entity: Any) -> None:
+        if entity is None:
+            return
+        entity_id = getattr(entity, "id", None)
+        if entity_id is None:
+            return
+        name = _display_name(entity)
+        if name:
+            self._user_name_cache[int(entity_id)] = name
+
+    def _cache_message_sender(self, message: Any, entities_by_peer: Optional[dict[int, Any]] = None) -> None:
+        sender = getattr(message, "sender", None)
+        if sender is None and entities_by_peer:
+            sender = entities_by_peer.get(_message_peer_key(message))
+        self._cache_user_name(sender)
 
     async def update_events(self) -> AsyncIterator[Union[TelegramUpdate, TypingUpdate]]:
         client = await self._get_client()
@@ -515,6 +559,8 @@ class TelethonTelegramService:
         client = await self._get_client()
         try:
             dialogs = await asyncio.wait_for(client.get_dialogs(limit=limit), timeout=20)
+            for dialog in dialogs:
+                self._cache_user_name(getattr(dialog, "entity", None))
             return [normalize_dialog(dialog) for dialog in dialogs]
         except Exception as exc:
             raise wrap_telegram_error(exc) from exc
@@ -584,9 +630,16 @@ class TelethonTelegramService:
                 )
                 entities = [*getattr(result, "users", []), *getattr(result, "chats", [])]
                 entities_by_peer = _entity_lookup(entities)
-                return [normalize_message(message, entities_by_peer) for message in getattr(result, "messages", [])]
+                for entity in entities:
+                    self._cache_user_name(entity)
+                messages = getattr(result, "messages", [])
+                for message in messages:
+                    self._cache_message_sender(message, entities_by_peer)
+                return [normalize_message(message, entities_by_peer) for message in messages]
 
             messages = await asyncio.wait_for(client.get_messages(entity, **kwargs), timeout=20)
+            for message in messages:
+                self._cache_message_sender(message)
             return [normalize_message(message) for message in messages]
         except Exception as exc:
             raise wrap_telegram_error(exc) from exc

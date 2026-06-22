@@ -41,6 +41,7 @@ const ja: LocaleStrings = {
 
   senderMe: 'Jibun',
   senderUnknown: 'Fumei',
+  messageUnsupported: '[未対応メッセージ]',
 
   phoneScreenOff: 'Megane gamen ofu...',
   phoneRecording: 'Megane de rokuon-chuu...',

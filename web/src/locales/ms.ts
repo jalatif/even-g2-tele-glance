@@ -39,6 +39,7 @@ const ms: LocaleStrings = {
 
   senderMe: 'Saya',
   senderUnknown: 'Tidak dikenali',
+  messageUnsupported: '[Mesej tidak disokong]',
 
   phoneScreenOff: 'Skrin cermin mata mati...',
   phoneRecording: 'Merakam di cermin mata...',

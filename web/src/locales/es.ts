@@ -43,6 +43,7 @@ const es: LocaleStrings = {
   confirmCancel: 'Cancelar',
   senderMe: 'Yo',
   senderUnknown: 'Desconocido',
+  messageUnsupported: '[Mensaje no compatible]',
   sanitizeRed: '[rojo]',
   sanitizeYellow: '[amarillo]',
   sanitizeGreen: '[verde]',

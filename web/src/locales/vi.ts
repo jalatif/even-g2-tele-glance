@@ -38,6 +38,7 @@ const vi: LocaleStrings = {
   confirmCancel: 'Hủy',
   senderMe: 'Tôi',
   senderUnknown: 'Không xác định',
+  messageUnsupported: '[Tin nhắn không hỗ trợ]',
   sanitizeRed: '[đỏ]',
   sanitizeYellow: '[vàng]',
   sanitizeGreen: '[xanh lá]',

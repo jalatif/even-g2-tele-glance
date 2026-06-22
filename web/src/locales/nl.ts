@@ -38,6 +38,7 @@ const nl: LocaleStrings = {
   confirmCancel: 'Annuleren',
   senderMe: 'Ik',
   senderUnknown: 'Onbekend',
+  messageUnsupported: '[Niet-ondersteund bericht]',
   sanitizeRed: '[rood]',
   sanitizeYellow: '[geel]',
   sanitizeGreen: '[groen]',

@@ -38,6 +38,7 @@ const sk: LocaleStrings = {
   confirmCancel: 'Zrušiť',
   senderMe: 'Ja',
   senderUnknown: 'Neznámy',
+  messageUnsupported: '[Nepodporovaná správa]',
   sanitizeRed: '[červená]',
   sanitizeYellow: '[žltá]',
   sanitizeGreen: '[zelená]',

@@ -380,6 +380,56 @@ export function messageScrollUnitCount(messages: Message[]) {
   return messageDisplayPages(messages).length
 }
 
+export function nextMessageScrollOffset(messages: Message[], scrollOffset = 0, direction: 'up' | 'down') {
+  const pages = messageDisplayPages(messages)
+  if (pages.length === 0) return 0
+  const maxOffset = pages.length - 1
+  const currentOffset = Math.max(0, Math.min(maxOffset, scrollOffset))
+  const currentPage = pages[pages.length - 1 - currentOffset]
+
+  if (!currentPage.boxGroupId || currentPage.boxPartIndex === undefined || currentPage.boxPartCount === undefined) {
+    const nextOffset = direction === 'up'
+      ? Math.min(currentOffset + 1, maxOffset)
+      : Math.max(currentOffset - 1, 0)
+    const nextPage = pages[pages.length - 1 - nextOffset]
+    if (nextPage?.boxGroupId) {
+      return offsetForBoxPart(pages, nextPage.boxGroupId, 0) ?? nextOffset
+    }
+    return nextOffset
+  }
+
+  const groupOffsets = boxGroupOffsets(pages, currentPage.boxGroupId)
+
+  if (direction === 'down') {
+    if (currentPage.boxPartIndex < currentPage.boxPartCount - 1) {
+      return offsetForBoxPart(pages, currentPage.boxGroupId, currentPage.boxPartIndex + 1) ?? currentOffset
+    }
+    const newerOffset = groupOffsets[0] - 1
+    return newerOffset >= 0 ? newerOffset : currentOffset
+  }
+
+  if (currentPage.boxPartIndex > 0) {
+    return offsetForBoxPart(pages, currentPage.boxGroupId, currentPage.boxPartIndex - 1) ?? currentOffset
+  }
+  const olderOffset = groupOffsets[groupOffsets.length - 1] + 1
+  return olderOffset <= maxOffset ? olderOffset : currentOffset
+}
+
+function offsetForBoxPart(pages: MessageDisplayPage[], boxGroupId: string, boxPartIndex: number) {
+  const match = pages
+    .map((page, index) => ({ page, offset: pages.length - 1 - index }))
+    .find(({ page }) => page.boxGroupId === boxGroupId && page.boxPartIndex === boxPartIndex)
+  return match?.offset
+}
+
+function boxGroupOffsets(pages: MessageDisplayPage[], boxGroupId: string) {
+  return pages
+    .map((page, index) => ({ page, offset: pages.length - 1 - index }))
+    .filter(({ page }) => page.boxGroupId === boxGroupId)
+    .map(({ offset }) => offset)
+    .sort((a, b) => a - b)
+}
+
 function messageDisplayPages(messages: Message[]): MessageDisplayPage[] {
   const cached = messagePageCache.get(messages)
   if (cached) return cached
@@ -426,6 +476,9 @@ function messageDisplayPages(messages: Message[]): MessageDisplayPage[] {
 type MessageDisplayPage = {
   body: string
   box?: BoxedText
+  boxGroupId?: string
+  boxPartIndex?: number
+  boxPartCount?: number
 }
 
 function messageDisplayBlocks(messages: Message[]): MessageDisplayBlock[] {
@@ -440,14 +493,17 @@ function messageDisplayBlocks(messages: Message[]): MessageDisplayBlock[] {
 type MessageDisplayBlock = {
   text: string
   box?: BoxedText
+  boxGroupId?: string
+  boxPartIndex?: number
+  boxPartCount?: number
   gap?: true
 }
 
 function formatMessageBlocks(message: Message): MessageDisplayBlock[] {
   const l = getLocale()
   const sender = sanitizeGlassesText(message.outgoing ? l.senderMe : message.sender || l.senderUnknown)
-  const text = sanitizeGlassesText(message.text || '')
-  if (wordCount(text) > MESSAGE_BOX_WORD_THRESHOLD) return formatMessageBox(sender, text)
+  const text = sanitizeGlassesText(message.text || '').trim() || l.messageUnsupported
+  if (wordCount(text) > MESSAGE_BOX_WORD_THRESHOLD) return formatMessageBox(String(message.id), sender, text)
 
   return [{ text: formatCompactMessageRows(sender, text).join('\n') }]
 }
@@ -466,15 +522,18 @@ function formatCompactMessageRows(sender: string, text: string) {
   }
   return rows
 }
-function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
+function formatMessageBox(messageId: string, sender: string, text: string): MessageDisplayBlock[] {
   const topBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
   const midBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
   const bottomBorder = `+${'-'.repeat(MESSAGE_BOX_WIDTH - 2)}+`
   const rows = splitBoxRows(text)
   const pages: MessageDisplayBlock[] = []
+  const partCount = Math.ceil(rows.length / MESSAGE_BOX_CONTENT_ROWS)
+  const boxGroupId = `${messageId}:${sender}:${text}`
   for (let index = 0; index < rows.length; index += MESSAGE_BOX_CONTENT_ROWS) {
     const pageRows = rows.slice(index, index + MESSAGE_BOX_CONTENT_ROWS)
-    const pageNumber = rows.length > MESSAGE_BOX_CONTENT_ROWS ? ` ${Math.floor(index / MESSAGE_BOX_CONTENT_ROWS) + 1}/${Math.ceil(rows.length / MESSAGE_BOX_CONTENT_ROWS)}` : ''
+    const partIndex = Math.floor(index / MESSAGE_BOX_CONTENT_ROWS)
+    const pageNumber = rows.length > MESSAGE_BOX_CONTENT_ROWS ? ` ${partIndex + 1}/${partCount}` : ''
     const heading = trimBoxText(`${sender}${pageNumber}`)
     const content = pageRows.join(' ')
     pages.push({
@@ -489,6 +548,9 @@ function formatMessageBox(sender: string, text: string): MessageDisplayBlock[] {
         heading,
         content,
       },
+      boxGroupId,
+      boxPartIndex: partIndex,
+      boxPartCount: partCount,
     })
   }
   return pages.reverse()
@@ -573,6 +635,9 @@ function formatPage(blocks: MessageDisplayBlock[]): MessageDisplayPage {
   return {
     body: content.map((block) => block.text).join('\n'),
     box: content.length === 1 ? content[0].box : undefined,
+    boxGroupId: content.length === 1 ? content[0].boxGroupId : undefined,
+    boxPartIndex: content.length === 1 ? content[0].boxPartIndex : undefined,
+    boxPartCount: content.length === 1 ? content[0].boxPartCount : undefined,
   }
 }
 

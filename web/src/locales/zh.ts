@@ -41,6 +41,7 @@ const zh: LocaleStrings = {
 
   senderMe: 'Wo',
   senderUnknown: 'Weizhi',
+  messageUnsupported: '[不支持的消息]',
 
   phoneScreenOff: 'Yanjing pingmu guanbi...',
   phoneRecording: 'Yanjing luyin-zhong...',

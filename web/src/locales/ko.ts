@@ -41,6 +41,7 @@ const ko: LocaleStrings = {
 
   senderMe: 'Na',
   senderUnknown: 'Al su eopseum',
+  messageUnsupported: '[지원되지 않는 메시지]',
 
   phoneScreenOff: 'Ankyeong hwamyeon kkeojim...',
   phoneRecording: 'Ankyeong-eseo nogeum-jung...',

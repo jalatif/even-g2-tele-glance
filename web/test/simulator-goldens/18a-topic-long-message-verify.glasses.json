@@ -17,9 +17,9 @@
   "panelBody": "",
   "panelFooter": "Older messages | Swipe scroll | Click record | Double click back",
   "panelBox": {
-    "heading": "Topic Three 3/5",
-    "contentLength": 109,
-    "content": "helpers, and includes the unique anchor fixture-long-topic-body-anchor so the harness can confirm the box did",
-    "contentExcerpt": "helpers, and includes the unique anchor fixture-long-topic-body-anchor so the harness can confirm the box did"
+    "heading": "Topic Three 1/5",
+    "contentLength": 106,
+    "content": "Fixture topic long message body is intended to validate the box rendering path on real G2 hardware and the",
+    "contentExcerpt": "Fixture topic long message body is intended to validate the box rendering path on real G2 hardware and the"
   }
 }

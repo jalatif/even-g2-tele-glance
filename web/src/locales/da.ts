@@ -38,6 +38,7 @@ const da: LocaleStrings = {
   confirmCancel: 'Annuller',
   senderMe: 'Mig',
   senderUnknown: 'Ukendt',
+  messageUnsupported: '[Besked understøttes ikke]',
   sanitizeRed: '[rød]',
   sanitizeYellow: '[gul]',
   sanitizeGreen: '[grøn]',

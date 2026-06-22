@@ -38,6 +38,7 @@ const en = {
   confirmCancel: 'Cancel',
   senderMe: 'Me',
   senderUnknown: 'Unknown',
+  messageUnsupported: '[Unsupported message]',
   sanitizeRed: '[red]',
   sanitizeYellow: '[yellow]',
   sanitizeGreen: '[green]',

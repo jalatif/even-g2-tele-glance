@@ -38,6 +38,7 @@ const no: LocaleStrings = {
   confirmCancel: 'Avbryt',
   senderMe: 'Meg',
   senderUnknown: 'Ukjent',
+  messageUnsupported: '[Melding støttes ikke]',
   sanitizeRed: '[rød]',
   sanitizeYellow: '[gul]',
   sanitizeGreen: '[grønn]',

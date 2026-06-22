@@ -38,6 +38,7 @@ const tr: LocaleStrings = {
   confirmCancel: 'İptal',
   senderMe: 'Ben',
   senderUnknown: 'Bilinmeyen',
+  messageUnsupported: '[Desteklenmeyen mesaj]',
   sanitizeRed: '[kırmızı]',
   sanitizeYellow: '[sarı]',
   sanitizeGreen: '[yeşil]',

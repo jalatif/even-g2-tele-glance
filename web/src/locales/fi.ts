@@ -38,6 +38,7 @@ const fi: LocaleStrings = {
   confirmCancel: 'Peruuta',
   senderMe: 'Minä',
   senderUnknown: 'Tuntematon',
+  messageUnsupported: '[Ei tuettu viesti]',
   sanitizeRed: '[punainen]',
   sanitizeYellow: '[keltainen]',
   sanitizeGreen: '[vihreä]',

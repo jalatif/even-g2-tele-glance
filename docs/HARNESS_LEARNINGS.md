@@ -94,9 +94,9 @@ These are the green signals that survive even with the blank-glasses and timeout
 
 ## 5. Behaviors confirmed broken by the harness
 
-### 5.1 Long-message box rendering drops middle/end content
+### 5.1 Long-message box rendering uses box-local pagination
 
-Steps `18-topics-open-topic-three` and `21c-archive-long-message` inject a 100-word message (`LONG_ALPHA_BODY`, `LONG_TOPIC_BODY`) and an anchor near the end. The expected `renderBodyContains: ["fixture-long-topic-body-anchor", ...]` fails because the box rendering caps at `MESSAGE_BOX_CONTENT_ROWS = 8` rows of `MESSAGE_BOX_CONTENT_WIDTH = 38` chars and shows the **last** 8 lines, not the first. Real users would see only the trailing fragment of any message longer than ~300 chars. The fix is in `formatMessageBlocks` / `splitBoxRows` in `web/src/controller/model.ts`: truncate the BEGINNING of long content with a "…" prefix instead of the end, or scroll-paginate within the box.
+Steps `18-topics-open-topic-three` and `21c-archive-long-message` inject long fixture messages (`LONG_ALPHA_BODY`, `LONG_TOPIC_BODY`). Long messages now render chunk `1/N` first, then use box-local reading order: swipe down advances to the next chunk, swipe up returns to the previous chunk, and the box boundaries move to the adjacent Telegram messages. Harness expectations should assert the first chunk on initial entry and use explicit follow-up inputs for later anchors.
 
 ### 5.2 Pagination step finds the older page, but not in time
 

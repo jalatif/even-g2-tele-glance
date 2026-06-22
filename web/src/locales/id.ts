@@ -38,6 +38,7 @@ const id: LocaleStrings = {
   confirmCancel: 'Batal',
   senderMe: 'Saya',
   senderUnknown: 'Tidak dikenal',
+  messageUnsupported: '[Pesan tidak didukung]',
   sanitizeRed: '[merah]',
   sanitizeYellow: '[kuning]',
   sanitizeGreen: '[hijau]',

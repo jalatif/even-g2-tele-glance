@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { TelegramAppController, type GlassesBridge } from '../src/controller/appController'
 import type { TelegramApi } from '../src/api'
 import type { Chat, Message, Topic, TranscriptionResult } from '../src/types'
+import { screenModel } from '../src/controller/model'
 import type { AppState, ScreenModel } from '../src/controller/model'
 
 const chats: Chat[] = [
@@ -892,6 +893,36 @@ describe('TelegramAppController', () => {
     })
   })
 
+  it('keeps swipe-up inside a boxed message until the first chunk', async () => {
+    const boxedThread: Message[] = [
+      { id: '100', sender: 'Alice', text: 'older small', sentAt: '2026-05-29T10:00:00Z' },
+      { id: '101', sender: 'Bob', text: controllerLongText('boxed', 3), sentAt: '2026-05-29T10:01:00Z' },
+      { id: '102', sender: 'Carol', text: 'newer small', sentAt: '2026-05-29T10:02:00Z' },
+    ]
+    const api = fakeApi({ authorized: true, latestMessages: boxedThread })
+    const controller = new TelegramAppController(api, fakeBridge())
+
+    await controller.init()
+    await controller.dispatch({ type: 'press' })
+    await controller.dispatch({ type: 'swipeUp' })
+    expect(messagePanelHeading(controller.snapshot)).toContain('Bob 1/')
+
+    await controller.dispatch({ type: 'swipeDown' })
+    expect(messagePanelHeading(controller.snapshot)).toContain('Bob 2/')
+
+    await controller.dispatch({ type: 'swipeDown' })
+    expect(messagePanelHeading(controller.snapshot)).toContain('Bob 3/')
+
+    await controller.dispatch({ type: 'swipeUp' })
+    expect(messagePanelHeading(controller.snapshot)).toContain('Bob 2/')
+
+    await controller.dispatch({ type: 'swipeUp' })
+    expect(messagePanelHeading(controller.snapshot)).toContain('Bob 1/')
+
+    await controller.dispatch({ type: 'swipeUp' })
+    expect(messagePanelBody(controller.snapshot)).toContain('Alice')
+  })
+
   it('does not cycle when swiping down on the newest message page', async () => {
     const api = fakeApi({ authorized: true })
     const controller = new TelegramAppController(api, fakeBridge())
@@ -1753,6 +1784,24 @@ function clearInputQuiet(controller: TelegramAppController) {
 function flushReadAcks(controller: TelegramAppController) {
   clearInputQuiet(controller)
   ;(controller as unknown as { flushReadAcks: () => void }).flushReadAcks()
+}
+
+function messagePanelHeading(state: AppState) {
+  const model = screenModel(state)
+  expect(model.kind).toBe('sidebar')
+  return model.kind === 'sidebar' ? model.panelBox?.heading : undefined
+}
+
+function messagePanelBody(state: AppState) {
+  const model = screenModel(state)
+  expect(model.kind).toBe('sidebar')
+  return model.kind === 'sidebar' ? model.panelBody : ''
+}
+
+function controllerLongText(seed: string, repeats = 3) {
+  return Array.from({ length: repeats }, (_, index) =>
+    `${seed}-${index} alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega`
+  ).join(' ')
 }
 
 function latestMessageCallCount(api: TelegramApi) {

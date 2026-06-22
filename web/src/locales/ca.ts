@@ -38,6 +38,7 @@ const ca: LocaleStrings = {
   confirmCancel: 'Cancel·la',
   senderMe: 'Jo',
   senderUnknown: 'Desconegut',
+  messageUnsupported: '[Missatge no admès]',
   sanitizeRed: 'Vermell',
   sanitizeYellow: 'Groc',
   sanitizeGreen: 'Verd',

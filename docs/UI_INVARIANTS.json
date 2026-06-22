@@ -1048,7 +1048,7 @@
       "target": "sidebar.messages.topic",
       "expect": {
         "renderBodyContains": [
-          "fixture-long-topic-body-anchor"
+          "Fixture topic long message body"
         ]
       },
       "budgetMs": 1000
@@ -1190,7 +1190,7 @@
           "isNewestPage": false
         },
         "renderBodyContains": [
-          "layout, and the page-byte-limit"
+          "This is a deliberately long fixture message"
         ]
       },
       "budgetMs": 1500

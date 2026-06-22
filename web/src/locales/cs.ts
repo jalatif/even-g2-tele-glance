@@ -38,6 +38,7 @@ const cs: LocaleStrings = {
   confirmCancel: 'Zrušit',
   senderMe: 'Mně',
   senderUnknown: 'Neznámo',
+  messageUnsupported: '[Nepodporovaná zpráva]',
   sanitizeRed: 'Červené',
   sanitizeYellow: 'Žlutá',
   sanitizeGreen: 'Zelené',

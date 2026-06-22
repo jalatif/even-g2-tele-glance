@@ -1,8 +1,10 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.services.telegram import normalize_chat_action, normalize_dialog, normalize_message, normalize_topic
+from app.config import Settings
+from app.services.telegram import TelethonTelegramService, normalize_chat_action, normalize_dialog, normalize_message, normalize_topic
 
 
 @dataclass
@@ -29,6 +31,30 @@ class Message:
     id: int
     message: str
     date: datetime
+    out: bool = False
+    sender: Optional[Entity] = None
+    from_id: object = None
+
+
+@dataclass
+class RawTextMessage:
+    id: int
+    message: str
+    raw_text: str
+    date: datetime
+    out: bool = False
+    sender: Optional[Entity] = None
+    from_id: object = None
+
+
+@dataclass
+class RichMessage:
+    id: int
+    message: str
+    raw_text: str
+    date: datetime
+    media: object = None
+    action: object = None
     out: bool = False
     sender: Optional[Entity] = None
     from_id: object = None
@@ -138,6 +164,47 @@ def test_normalize_message_sender_from_result_entities_when_sender_is_missing():
     assert normalized.sender == "Lin"
 
 
+def test_normalize_message_uses_raw_text_when_message_body_is_empty():
+    message = RawTextMessage(
+        id=14,
+        message="",
+        raw_text="Raw text fallback",
+        date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    normalized = normalize_message(message)
+
+    assert normalized.text == "Raw text fallback"
+
+
+def test_normalize_message_appends_unsupported_marker_to_readable_media_caption():
+    message = RichMessage(
+        id=15,
+        message="Readable caption",
+        raw_text="Readable caption",
+        media=object(),
+        date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    normalized = normalize_message(message)
+
+    assert normalized.text == "Readable caption [unsupported content]"
+
+
+def test_normalize_message_shows_unsupported_marker_when_media_has_no_text():
+    message = RichMessage(
+        id=16,
+        message="",
+        raw_text="",
+        media=object(),
+        date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    normalized = normalize_message(message)
+
+    assert normalized.text == "[unsupported content]"
+
+
 def test_normalize_typing_from_chat_action_event():
     event = TypingEvent(
         chat_id=123,
@@ -167,6 +234,51 @@ def test_normalize_typing_from_user_update_event_without_name():
     update = normalize_chat_action(event)
 
     assert update is not None
+    assert update.chat_id == 123
+    assert update.user_name == "User 42"
+    assert update.action == "typing"
+
+
+def test_normalize_typing_uses_resolved_user_override():
+    event = TypingEvent(
+        chat_id=123,
+        user_id=42,
+        action=SendMessageTypingAction(),
+    )
+
+    update = normalize_chat_action(event, Entity(id=42, first_name="Akira"))
+
+    assert update is not None
+    assert update.user_name == "Akira"
+
+
+def test_normalize_typing_uses_cached_name_string_override():
+    event = TypingEvent(
+        chat_id=123,
+        user_id=42,
+        action=SendMessageTypingAction(),
+    )
+
+    update = normalize_chat_action(event, "Akira")
+
+    assert update is not None
+    assert update.user_name == "Akira"
+
+
+def test_handle_chat_action_does_not_wait_for_async_user_lookup():
+    class SlowTypingEvent(TypingEvent):
+        async def get_user(self):
+            await asyncio.sleep(60)
+            return Entity(id=42, first_name="Too Late")
+
+    service = TelethonTelegramService(settings=Settings())
+    queue: asyncio.Queue = asyncio.Queue()
+    service._update_queues.add(queue)
+    event = SlowTypingEvent(chat_id=123, user_id=42, action=SendMessageTypingAction())
+
+    asyncio.run(asyncio.wait_for(service._handle_chat_action(event), timeout=0.1))
+
+    update = queue.get_nowait()
     assert update.chat_id == 123
     assert update.user_name == "User 42"
     assert update.action == "typing"

@@ -38,6 +38,7 @@ const hu: LocaleStrings = {
   confirmCancel: 'Mégse',
   senderMe: 'Én',
   senderUnknown: 'Ismeretlen',
+  messageUnsupported: '[Nem támogatott üzenet]',
   sanitizeRed: '[piros]',
   sanitizeYellow: '[sárga]',
   sanitizeGreen: '[zöld]',

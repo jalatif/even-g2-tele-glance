@@ -2,7 +2,7 @@ import { pcmChunksToWav } from '../audio/wav'
 import type { TelegramApi } from '../api'
 import type { Chat, Id, Message, TelegramUpdate, TelegramTypingUpdate, Topic } from '../types'
 import type { AppInput, AppState, RecoverableState, ScreenModel } from './model'
-import { messageScrollUnitCount, screenModel } from './model'
+import { messageScrollUnitCount, nextMessageScrollOffset, screenModel } from './model'
 import { isTeleGlanceFixtureMode, logLifecycleEvent, logRecordingEvent, logStateWork, nowMs } from '../testMode'
 import { consumeInjectedAudioChunks } from '../fixtureApi'
 
@@ -1324,8 +1324,8 @@ export class TelegramAppController {
 
   private async loadOlderMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
     const currentOffset = state.scrollOffset ?? 0
-    const nextOffset = Math.min(currentOffset + 1, maxScrollOffset(state.messages))
-    if (nextOffset > currentOffset) {
+    const nextOffset = nextMessageScrollOffset(state.messages, currentOffset, 'up')
+    if (nextOffset !== currentOffset) {
       await this.setState({
         ...state,
         scrollOffset: nextOffset,
@@ -1357,7 +1357,7 @@ export class TelegramAppController {
   }
 
   private async loadNewerMessages(state: Extract<AppState, { screen: 'sidebar'; focus: 'messages' }>) {
-    const nextOffset = Math.max(0, (state.scrollOffset ?? 0) - 1)
+    const nextOffset = nextMessageScrollOffset(state.messages, state.scrollOffset ?? 0, 'down')
     if (nextOffset === (state.scrollOffset ?? 0)) return
     await this.setState({
       ...state,

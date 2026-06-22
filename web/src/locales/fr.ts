@@ -42,6 +42,7 @@ const fr: LocaleStrings = {
   confirmCancel: 'Annuler',
   senderMe: 'Moi',
   senderUnknown: 'Inconnu',
+  messageUnsupported: '[Message non pris en charge]',
   sanitizeRed: '[rouge]',
   sanitizeYellow: '[jaune]',
   sanitizeGreen: '[vert]',

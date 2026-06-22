@@ -38,6 +38,7 @@ const ro: LocaleStrings = {
   confirmCancel: 'Anulează',
   senderMe: 'Eu',
   senderUnknown: 'Necunoscut',
+  messageUnsupported: '[Mesaj neacceptat]',
   sanitizeRed: '[roșu]',
   sanitizeYellow: '[galben]',
   sanitizeGreen: '[verde]',

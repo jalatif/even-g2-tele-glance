@@ -35,6 +35,7 @@ const pt: LocaleStrings = {
   sanitizeYellow: '[amarelo]',
   senderMe: 'Eu',
   senderUnknown: 'Desconhecido',
+  messageUnsupported: '[Mensagem não suportada]',
   statusLoadingMessages: 'Carregando mensagens...',
   statusLoadingOlderMessages: 'Carregando antigas...',
   statusNewReply: 'Nova resposta',
