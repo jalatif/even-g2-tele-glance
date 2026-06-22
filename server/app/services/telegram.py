@@ -56,7 +56,12 @@ class TelegramService(Protocol):
     async def start_phone_login(self, phone: str) -> PhoneLoginStart:
         ...
 
-    async def complete_phone_login(self, phone: str, code: str) -> PhoneLoginStatus:
+    async def complete_phone_login(
+        self,
+        phone: str,
+        code: str,
+        phone_code_hash: Optional[str] = None,
+    ) -> PhoneLoginStatus:
         ...
 
     async def logout(self) -> None:
@@ -168,22 +173,34 @@ def normalize_update_message(message: Any, chat_id: Optional[int] = None) -> Tel
 
 
 def normalize_chat_action(event: Any) -> Optional[TypingUpdate]:
-    action = getattr(event, "action_message", None)
-    if action is None:
-        return None
-    action_type = type(action.action).__name__
-    if action_type == "SendMessageTypingAction":
+    action_message = getattr(event, "action_message", None)
+    action = action_message if action_message is not None else event
+    action_value = getattr(action, "action", None)
+    if action_value is None:
+        action_value = getattr(event, "action", None)
+    if action_value is None and getattr(event, "typing", False):
         typing_action: Literal["typing", "cancel"] = "typing"
-    elif action_type == "SendMessageCancelAction":
-        typing_action: Literal["typing", "cancel"] = "cancel"
-    else:
+    elif action_value is None:
         return None
-    
+    else:
+        action_type = type(action_value).__name__
+        if action_type == "SendMessageTypingAction":
+            typing_action = "typing"
+        elif action_type == "SendMessageCancelAction":
+            typing_action = "cancel"
+        else:
+            return None
+
     user = getattr(event, "user", None)
-    user_name = user.first_name if user else None
+    user_name = None
+    if user is not None:
+        user_name = getattr(user, "first_name", None) or getattr(user, "username", None)
+    if not user_name:
+        user_id = getattr(event, "user_id", None)
+        user_name = f"User {user_id}" if user_id is not None else "Someone"
     chat_id = getattr(event, "chat_id", None)
     topic_id = _chat_action_topic_id(action)
-    
+
     return TypingUpdate(
         chat_id=chat_id,
         topic_id=topic_id,
@@ -360,6 +377,7 @@ class TelethonTelegramService:
 
         self._client.add_event_handler(self._handle_new_message, events.NewMessage())
         self._client.add_event_handler(self._handle_chat_action, events.ChatAction())
+        self._client.add_event_handler(self._handle_chat_action, events.UserUpdate())
         self._updates_registered = True
 
     async def _handle_new_message(self, event: Any) -> None:
@@ -422,9 +440,19 @@ class TelethonTelegramService:
         phone_code_hash = getattr(sent, "phone_code_hash", None)
         if phone_code_hash:
             self._phone_code_hashes[normalized_phone] = str(phone_code_hash)
-        return PhoneLoginStart(phone=normalized_phone, sent=True, message="Verification code sent.")
+        return PhoneLoginStart(
+            phone=normalized_phone,
+            sent=True,
+            message="Verification code sent.",
+            phone_code_hash=str(phone_code_hash) if phone_code_hash else None,
+        )
 
-    async def complete_phone_login(self, phone: str, code: str) -> PhoneLoginStatus:
+    async def complete_phone_login(
+        self,
+        phone: str,
+        code: str,
+        phone_code_hash: Optional[str] = None,
+    ) -> PhoneLoginStatus:
         if not self.configured:
             raise TelegramServiceError("Telegram API credentials are not configured")
         normalized_phone = phone.strip()
@@ -435,9 +463,9 @@ class TelethonTelegramService:
             "phone": normalized_phone,
             "code": code.strip(),
         }
-        phone_code_hash = self._phone_code_hashes.get(normalized_phone)
-        if phone_code_hash:
-            kwargs["phone_code_hash"] = phone_code_hash
+        resolved_phone_code_hash = (phone_code_hash or "").strip() or self._phone_code_hashes.get(normalized_phone)
+        if resolved_phone_code_hash:
+            kwargs["phone_code_hash"] = resolved_phone_code_hash
         try:
             await client.sign_in(**kwargs)
         except Exception as exc:

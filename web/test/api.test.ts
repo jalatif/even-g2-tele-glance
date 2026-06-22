@@ -102,6 +102,30 @@ describe('HttpTelegramApi secret selection', () => {
     expect(payload.phone).toBe('+1234567890')
   })
 
+  it('sends Telegram phone code hash in the encrypted verify body', async () => {
+    stubFetch()
+    const api = new HttpTelegramApi(
+      'http://localhost:8787',
+      () => ({
+        telegramApiId: '123',
+        telegramApiHash: 'abc',
+        backendSharedSecret: 'user-secret',
+      }),
+    )
+
+    await api.verifyPhoneAuth('+1234567890', '12345', 'telegram-hash')
+
+    expect(capturedBody).toBeTruthy()
+    const body = JSON.parse(capturedBody!)
+    const decrypted = await decryptJsonPayload(body.encryptedPayload, 'user-secret')
+    const payload = JSON.parse(decrypted)
+    expect(payload).toEqual({
+      phone: '+1234567890',
+      code: '12345',
+      phoneCodeHash: 'telegram-hash',
+    })
+  })
+
   it('request bodies are encrypted with the effective secret for the shared backend', async () => {
     stubFetch()
     const api = new HttpTelegramApi(

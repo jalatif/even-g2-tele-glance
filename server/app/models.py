@@ -26,11 +26,13 @@ class PhoneLoginStart(ApiModel):
     phone: str
     sent: bool = True
     message: Optional[str] = None
+    phone_code_hash: Optional[str] = None
 
 
 class PhoneLoginVerifyRequest(ApiModel):
     phone: str = Field(min_length=5)
     code: str = Field(min_length=2)
+    phone_code_hash: Optional[str] = None
 
 
 class PhoneLoginStatus(ApiModel):

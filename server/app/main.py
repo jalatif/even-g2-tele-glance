@@ -142,7 +142,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         telegram: TelegramService = Depends(get_telegram_service),
     ) -> PhoneLoginStatus:
         try:
-            return await telegram.complete_phone_login(payload.phone, payload.code)
+            return await telegram.complete_phone_login(payload.phone, payload.code, payload.phone_code_hash)
         except (TelegramServiceError, TimeoutError) as exc:
             raise_telegram_http_error(exc)
 

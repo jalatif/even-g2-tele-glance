@@ -31,6 +31,7 @@ export function ChatScreen() {
     } catch (error) {
       setSendError(error instanceof Error ? error.message : l.phoneSendFailed)
     } finally {
+      setIsSending(false)
     }
   }
 

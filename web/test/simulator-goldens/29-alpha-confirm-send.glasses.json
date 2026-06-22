@@ -12,7 +12,7 @@
     "Fixture Research",
     "Fixture Archive"
   ],
-  "panelBody": "Fixture Alpha: Alpha message page contains\n  fixture-alpha-body for\n  startup testing.\n\nMe: Alpha outgoing marker for visual\n  validation.\n\nMe: Fixture transcript",
+  "panelBody": "Me: Alpha outgoing marker for visual\n  validation.\n\nMe: Fixture transcript",
   "panelFooter": "Sent | Swipe scroll | Click record | Double click back",
   "panelBox": null
 }

@@ -1044,14 +1044,14 @@
     },
     {
       "name": "18a-topic-long-message-verify",
-      "input": "up",
+      "input": "pressSequence:up,up",
       "target": "sidebar.messages.topic",
       "expect": {
         "renderBodyContains": [
           "fixture-long-topic-body-anchor"
         ]
       },
-      "budgetMs": 500
+      "budgetMs": 1000
     },
     {
       "name": "19-topic-three-back",

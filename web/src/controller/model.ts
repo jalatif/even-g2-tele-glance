@@ -4,7 +4,7 @@ import { getLocale } from '../locales'
 const TEXT_CONTAINER_BYTE_LIMIT = 999
 const MESSAGE_ROW_BYTE_LIMIT = 120
 const MESSAGE_ROW_CHAR_LIMIT = 44
-const MESSAGE_VISIBLE_ROW_LIMIT = 8
+const MESSAGE_VISIBLE_ROW_LIMIT = 7
 const MESSAGE_BOX_WIDTH = 42
 const MESSAGE_BOX_CONTENT_WIDTH = MESSAGE_BOX_WIDTH - 4
 const MESSAGE_BOX_CONTENT_ROWS = MESSAGE_VISIBLE_ROW_LIMIT - 4
@@ -49,7 +49,7 @@ export type BoxedText = {
 
 export type AppState =
   | { screen: 'loading'; message: string }
-  | { screen: 'auth'; mode: 'needsSetup' | 'signedOut' | 'phonePending'; message: string; phone?: string }
+  | { screen: 'auth'; mode: 'needsSetup' | 'signedOut' | 'phonePending'; message: string; phone?: string; phoneCodeHash?: string | null }
   | { screen: 'sidebar'; focus: 'chats'; chats: Chat[]; selectedChatIndex: number; status?: string; previewMessages?: Message[]; previewCursor?: Id; previewScrollOffset?: number; previewNewerPages?: Message[][]; previewIsNewestPage?: boolean }
   | { screen: 'asleep'; chats: Chat[]; selectedChatIndex: number }
   | { screen: 'newMessage'; chat: Chat; topic?: Topic; message: string; chats: Chat[]; selectedChatIndex: number }
@@ -553,7 +553,12 @@ function splitBoxRows(value: string) {
 }
 
 function lineCount(blocks: MessageDisplayBlock[]) {
-  return blocks.reduce((total, block) => total + (block.gap ? 0 : block.text.split('\n').length), 0)
+  const content = blocks.filter((block, i) => {
+    if (!block.gap) return true
+    return i > 0 && i < blocks.length - 1
+  })
+  if (content.length === 0) return 0
+  return content.map((block) => block.text).join('\n').split('\n').length
 }
 
 function wordCount(value: string) {

@@ -478,6 +478,7 @@ export class TelegramAppController {
         screen: 'auth',
         mode: 'phonePending',
         phone: result.phone || trimmed,
+        phoneCodeHash: result.phoneCodeHash ?? null,
         message: result.message ?? `Verification code sent to ${result.phone || trimmed}. Enter it on the phone.`,
       })
     }, this.state.screen === 'auth' ? this.state : undefined)
@@ -487,8 +488,11 @@ export class TelegramAppController {
     const trimmedPhone = phone.trim()
     const trimmedCode = code.trim()
     if (!trimmedPhone || !trimmedCode) return
-    await this.run(async () => {
-      const status = await this.api.verifyPhoneAuth(trimmedPhone, trimmedCode)
+    const phoneCodeHash = this.state.screen === 'auth' && this.state.mode === 'phonePending' && this.state.phone === trimmedPhone
+      ? this.state.phoneCodeHash
+      : undefined
+    try {
+      const status = await this.api.verifyPhoneAuth(trimmedPhone, trimmedCode, phoneCodeHash)
       if (status.authorized) {
         if (status.sessionString) this.onTelegramSession?.(status.sessionString)
         await this.loadChats()
@@ -498,9 +502,23 @@ export class TelegramAppController {
         screen: 'auth',
         mode: 'phonePending',
         phone: trimmedPhone,
+        phoneCodeHash,
         message: status.message ?? 'Code was not accepted. Check the Telegram code and try again.',
       })
-    }, this.state.screen === 'auth' ? this.state : undefined)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Code was not accepted. Check the Telegram code and try again.'
+      const expired = /expired/i.test(message)
+      await this.setState({
+        screen: 'auth',
+        mode: expired ? 'signedOut' : 'phonePending',
+        phone: trimmedPhone,
+        phoneCodeHash: expired ? null : phoneCodeHash,
+        message: expired
+          ? `${message}. Send a new login code and use the latest code from Telegram.`
+          : message,
+      })
+      throw error
+    }
   }
 
   private async handleSidebar(

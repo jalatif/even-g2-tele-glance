@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.services.telegram import normalize_dialog, normalize_message, normalize_topic
+from app.services.telegram import normalize_chat_action, normalize_dialog, normalize_message, normalize_topic
 
 
 @dataclass
@@ -45,6 +45,35 @@ class Topic:
     title: str
     top_message: int
     unread_count: int = 0
+
+
+@dataclass
+class ActionMessage:
+    action: object
+    reply_to: object = None
+
+
+@dataclass
+class TypingEvent:
+    chat_id: int
+    user: Optional[Entity] = None
+    user_id: Optional[int] = None
+    action_message: Optional[ActionMessage] = None
+    action: object = None
+    typing: bool = False
+
+
+@dataclass
+class ReplyTo:
+    reply_to_msg_id: int
+
+
+class SendMessageTypingAction:
+    pass
+
+
+class SendMessageCancelAction:
+    pass
 
 
 def test_normalize_dialog_from_user_entity():
@@ -107,3 +136,51 @@ def test_normalize_message_sender_from_result_entities_when_sender_is_missing():
     normalized = normalize_message(message, {2: Entity(id=2, first_name="Lin")})
 
     assert normalized.sender == "Lin"
+
+
+def test_normalize_typing_from_chat_action_event():
+    event = TypingEvent(
+        chat_id=123,
+        user=Entity(id=5, first_name="Ada"),
+        action_message=ActionMessage(
+            action=SendMessageTypingAction(),
+            reply_to=ReplyTo(reply_to_msg_id=77),
+        ),
+    )
+
+    update = normalize_chat_action(event)
+
+    assert update is not None
+    assert update.chat_id == 123
+    assert update.topic_id == 77
+    assert update.user_name == "Ada"
+    assert update.action == "typing"
+
+
+def test_normalize_typing_from_user_update_event_without_name():
+    event = TypingEvent(
+        chat_id=123,
+        user_id=42,
+        action=SendMessageTypingAction(),
+    )
+
+    update = normalize_chat_action(event)
+
+    assert update is not None
+    assert update.chat_id == 123
+    assert update.user_name == "User 42"
+    assert update.action == "typing"
+
+
+def test_normalize_typing_cancel_from_user_update_event():
+    event = TypingEvent(
+        chat_id=123,
+        user=Entity(id=5, username="ada"),
+        action=SendMessageCancelAction(),
+    )
+
+    update = normalize_chat_action(event)
+
+    assert update is not None
+    assert update.user_name == "ada"
+    assert update.action == "cancel"

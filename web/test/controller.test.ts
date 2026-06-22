@@ -1375,7 +1375,22 @@ describe('TelegramAppController', () => {
     } as AppState
 
     await controller.verifyPhoneLogin('+1234567890', '12345')
-    expect(api.verifyPhoneAuth).toHaveBeenCalledWith('+1234567890', '12345')
+    expect(api.verifyPhoneAuth).toHaveBeenCalledWith('+1234567890', '12345', undefined)
+  })
+
+  it('passes the Telegram phone code hash from start to verify', async () => {
+    const api = fakeApi({ authorized: true })
+    vi.mocked(api.startPhoneAuth).mockResolvedValueOnce({
+      phone: '+1234567890',
+      sent: true,
+      phoneCodeHash: 'telegram-hash',
+    })
+    const controller = new TelegramAppController(api, fakeBridge(), {})
+
+    await controller.startPhoneLogin('+1234567890')
+    await controller.verifyPhoneLogin('+1234567890', '12345')
+
+    expect(api.verifyPhoneAuth).toHaveBeenCalledWith('+1234567890', '12345', 'telegram-hash')
   })
 
   it('shows error when listChats fails during init', async () => {

@@ -538,7 +538,7 @@ function buildSidebarPage(model: Extract<ScreenModel, { kind: 'sidebar' }>, Cont
     xPosition: fullWidth ? 2 : 170,
     yPosition: 38,
     width: fullWidth ? 572 : 404,
-    height: 206,
+    height: fullWidth ? 188 : 206,
     borderWidth: 0,
     borderColor: 8,
     paddingLength: 4,

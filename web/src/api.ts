@@ -18,7 +18,7 @@ import { decryptJsonPayload, encryptedTelegramAuthHeader, encryptJsonPayload } f
 export interface TelegramApi {
   authStatus(): Promise<AuthStatus>
   startPhoneAuth(phone: string): Promise<PhoneAuthStart>
-  verifyPhoneAuth(phone: string, code: string): Promise<PhoneAuthStatus>
+  verifyPhoneAuth(phone: string, code: string, phoneCodeHash?: string | null): Promise<PhoneAuthStatus>
   logout(): Promise<void>
   listChats(limit?: number): Promise<Chat[]>
   listTopics(chatId: Id): Promise<Topic[]>
@@ -100,8 +100,8 @@ export class HttpTelegramApi implements TelegramApi {
     return this.post('/api/session/phone/start', { phone })
   }
 
-  async verifyPhoneAuth(phone: string, code: string): Promise<PhoneAuthStatus> {
-    return this.post('/api/session/phone/verify', { phone, code })
+  async verifyPhoneAuth(phone: string, code: string, phoneCodeHash?: string | null): Promise<PhoneAuthStatus> {
+    return this.post('/api/session/phone/verify', { phone, code, phoneCodeHash })
   }
 
   async logout(): Promise<void> {

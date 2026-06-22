@@ -223,7 +223,7 @@ export class FixtureTelegramApi implements TelegramApi {
   }
 
   async startPhoneAuth(phone: string) {
-    return { phone, sent: true, message: 'Fixture login bypassed.' }
+    return { phone, sent: true, message: 'Fixture login bypassed.', phoneCodeHash: 'fixture-phone-code-hash' }
   }
 
   async verifyPhoneAuth() {
@@ -782,4 +782,3 @@ const fixtureTopics: Topic[] = [
   // can assert "I saw message N of topic T" without parsing the
   // structure of the controller's `state.messages` array.
 ]
-

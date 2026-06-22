@@ -6,6 +6,11 @@ function flushAsync(ms = 0) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
+function textObjectById(container: unknown, containerID: number) {
+  const textObject = (container as { textObject?: Array<{ containerID?: number }> }).textObject ?? []
+  return textObject.find((item) => item.containerID === containerID) as { yPosition: number; height: number } | undefined
+}
+
 describe('EvenHubGlassesBridge', () => {
   it('renders structured boxed text without sending ASCII box markers to the glasses box', async () => {
     let rendered: unknown
@@ -96,6 +101,44 @@ describe('EvenHubGlassesBridge', () => {
     const output = JSON.stringify(rebuilt)
     expect(output).toContain('"containerID":7')
     expect(output).toContain('"containerName":"panel-box"')
+  })
+
+  it('leaves a gap between full-width message body and footer containers', async () => {
+    let rendered: unknown
+    const bridge = new EvenHubGlassesBridge({
+      async createStartUpPageContainer(container: unknown) {
+        rendered = container
+        return 0
+      },
+      async rebuildPageContainer() {
+        return true
+      },
+      async audioControl() {
+        return undefined
+      },
+      onEvenHubEvent() {
+        return undefined
+      },
+    })
+
+    await bridge.render({
+      kind: 'sidebar',
+      title: 'Akira',
+      sidebarTitle: 'Chats',
+      sidebarItems: ['Akira'],
+      sidebarSelected: 0,
+      panelTitle: '',
+      panelBody: Array.from({ length: 7 }, (_, index) => `line ${index + 1}`).join('\n'),
+      panelFooter: 'Swipe scroll | Click record | Double click back',
+      fullWidth: true,
+      focus: 'panel',
+    })
+
+    const body = textObjectById(rendered, 6)
+    const footer = textObjectById(rendered, 4)
+    expect(body).toBeDefined()
+    expect(footer).toBeDefined()
+    expect((body?.yPosition ?? 0) + (body?.height ?? 0)).toBeLessThan(footer?.yPosition ?? 0)
   })
 
   it('uses one event overlay and an app-rendered sidebar while the sidebar has focus', async () => {

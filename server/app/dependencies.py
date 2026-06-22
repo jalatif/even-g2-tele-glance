@@ -1,5 +1,6 @@
 from functools import lru_cache
 import hashlib
+import time
 from typing import Annotated, Optional
 
 from fastapi import Header, HTTPException
@@ -11,6 +12,8 @@ from app.services.transcription import WhisperTranscriptionService
 
 
 _telegram_services: dict[str, TelegramService] = {}
+_pending_telegram_services: dict[str, tuple[float, TelegramService]] = {}
+PENDING_TELEGRAM_SERVICE_TTL_SECONDS = 10 * 60
 
 
 def get_telegram_service(
@@ -19,12 +22,31 @@ def get_telegram_service(
     settings = get_settings()
     credentials = telegram_credentials_from_encrypted_header(x_teleglance_auth, settings.teleglance_shared_secret)
     if credentials is not None and not credentials.session_string:
-        return TelethonTelegramService(settings, credentials)
+        return get_pending_telegram_service(settings, credentials)
     cache_key = telegram_service_cache_key(credentials)
     service = _telegram_services.get(cache_key)
     if service is None:
         service = TelethonTelegramService(settings, credentials)
         _telegram_services[cache_key] = service
+    return service
+
+
+def get_pending_telegram_service(settings, credentials: TelegramClientCredentials) -> TelegramService:
+    now = time.monotonic()
+    expired_keys = [
+        key
+        for key, (created_at, _service) in _pending_telegram_services.items()
+        if now - created_at > PENDING_TELEGRAM_SERVICE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        _pending_telegram_services.pop(key, None)
+
+    cache_key = telegram_service_cache_key(credentials)
+    cached = _pending_telegram_services.get(cache_key)
+    if cached is not None:
+        return cached[1]
+    service = TelethonTelegramService(settings, credentials)
+    _pending_telegram_services[cache_key] = (now, service)
     return service
 
 

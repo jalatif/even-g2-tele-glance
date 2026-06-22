@@ -9,6 +9,7 @@ export type PhoneAuthStart = {
   phone: string
   sent: boolean
   message?: string | null
+  phoneCodeHash?: string | null
 }
 
 export type PhoneAuthStatus = {

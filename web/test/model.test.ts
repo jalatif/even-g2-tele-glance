@@ -50,7 +50,7 @@ describe('screenModel', () => {
       expect(fullModel.panelBox).toBeDefined()
     }
 
-    const scrolled = screenModel({ ...state, scrollOffset: 1 })
+    const scrolled = screenModel({ ...state, scrollOffset: messageScrollUnitCount(state.messages) - 1 })
     expect(scrolled.kind).toBe('sidebar')
     if (scrolled.kind === 'sidebar') {
       // scrollOffset 1 is Alice's short message
@@ -75,6 +75,29 @@ describe('screenModel', () => {
     if (topPage.kind === 'sidebar') {
       expect(topPage.panelBody).toContain('Alice')
       expect(topPage.panelBody).toContain('Bob')
+    }
+  })
+
+  it('reserves a footer row by limiting message pages to seven visible rows', () => {
+    const state: AppState = {
+      screen: 'sidebar', focus: 'messages',
+      chats: [], selectedChatIndex: 0,
+      chat: { id: '1', title: 'Project', kind: 'group' },
+      messages: Array.from({ length: 8 }, (_, index) => ({
+        id: String(index + 1),
+        sender: index % 2 === 0 ? 'Akira' : 'Me',
+        text: `message ${index + 1}`,
+        outgoing: index % 2 === 1,
+      })),
+      scrollOffset: 0,
+    }
+
+    const model = screenModel(state)
+
+    expect(model.kind).toBe('sidebar')
+    if (model.kind === 'sidebar') {
+      expect(model.panelBody.split('\n').length).toBeLessThanOrEqual(7)
+      expect(model.panelFooter).toContain('Double click back')
     }
   })
 

@@ -15,9 +15,9 @@
   "panelBody": "",
   "panelFooter": "Older messages | Swipe scroll | Click record | Double click back",
   "panelBox": {
-    "heading": "Fixture Long 2/5",
-    "contentLength": 141,
-    "content": "layout, and the page-byte-limit trim path. It is well past the fifty-word boundary so the harness can confirm the text container and panelBox",
-    "contentExcerpt": "layout, and the page-byte-limit trim path. It is well past the fifty-word boundary so the harness can confirm the text container and panelBox"
+    "heading": "Fixture Long 2/6",
+    "contentLength": 109,
+    "content": "including word wrapping, multi-line layout, and the page-byte-limit trim path. It is well past the fifty-word",
+    "contentExcerpt": "including word wrapping, multi-line layout, and the page-byte-limit trim path. It is well past the fifty-word"
   }
 }

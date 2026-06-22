@@ -15,9 +15,9 @@
   "panelBody": "",
   "panelFooter": "Older messages | Swipe scroll | Click record | Double click back",
   "panelBox": {
-    "heading": "Fixture Long 1/5",
-    "contentLength": 144,
-    "content": "This is a deliberately long fixture message that is intended to exercise the long-message rendering pipeline including word wrapping, multi-line",
-    "contentExcerpt": "This is a deliberately long fixture message that is intended to exercise the long-message rendering pipeline including word wrapping, multi-line"
+    "heading": "Fixture Long 1/6",
+    "contentLength": 108,
+    "content": "This is a deliberately long fixture message that is intended to exercise the long-message rendering pipeline",
+    "contentExcerpt": "This is a deliberately long fixture message that is intended to exercise the long-message rendering pipeline"
   }
 }
